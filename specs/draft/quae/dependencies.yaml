@@ -1,0 +1,64 @@
+external:
+  - name: cuelang.org/go
+    version: ">=0.11"
+    purpose: CUE evaluator — structural unification via Value.Unify() API
+
+  - name: mvdan.cc/sh
+    version: ">=3.9"
+    purpose: Bash parser — full AST extraction (program, args, redirections, pipes)
+
+internal:
+  # P1 dependency chain
+  - from: T1
+    to: [T2, T4, T5, T6]
+    reason: All P1 tasks need project scaffolding
+
+  - from: T2
+    to: T3
+    reason: Evaluator needs loaded rules
+
+  - from: T4
+    to: T3
+    reason: Evaluator needs preprocessed input with parsed AST
+
+  - from: T1
+    to: T17
+    reason: Standard library needs project scaffolding
+
+  - from: T17
+    to: T3
+    reason: Evaluator uses standard library constraint definitions for matching
+
+  - from: T3
+    to: T5
+    reason: Synthesis needs evaluation results (DecisionSet)
+
+  - from: [T5, T7]
+    to: T6
+    reason: CLI wraps full pipeline including vendor adapter
+
+  - from: T3
+    to: T7
+    reason: Claude Code adapter needs evaluator output types
+
+  # P2 dependency chain
+  - from: T7
+    to: [T8, T9, T10]
+    reason: Subsequent adapters follow pattern established by Claude Code adapter
+
+  - from: T3
+    to: T11
+    reason: Layered config builds on single-scope evaluation
+
+  - from: [T7, T8, T9, T10]
+    to: T12
+    reason: Auto-detection needs adapters to exist
+
+  # P3 dependency chain
+  - from: T17
+    to: T13
+    reason: Advanced patterns extend base standard library
+
+  - from: T6
+    to: [T14, T15, T16]
+    reason: Tooling subcommands extend the CLI

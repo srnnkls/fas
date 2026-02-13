@@ -1,0 +1,101 @@
+issue_type: initiative
+name: quae
+status: draft
+created: 2026-02-13
+
+ambiguity_scan:
+  scope:
+    status: clear
+    gaps: []
+  behavior:
+    status: clear
+    gaps: []
+  data_model:
+    status: clear
+    gaps: []
+  constraints:
+    status: clear
+    gaps: []
+  edge_cases:
+    status: clear
+    gaps: []
+  integration:
+    status: clear
+    gaps: []
+  terminology:
+    status: clear
+    gaps: []
+
+questions_used: 13
+taxonomy_coverage:
+  scope: covered
+  behavior: covered
+  data_model: covered
+  constraints: covered
+  edge_cases: covered
+  integration: covered
+  terminology: covered
+
+approach_selected: CUE Unify() loop
+implementation_strategy: MVP First
+
+sdd_optins:
+  - tech_decisions
+  - api_contract
+  - data_model
+  - design
+
+clarification_log:
+  - question: Relationship to cupcake?
+    answer: Entirely separate project. Different author, different approach.
+    area: scope
+
+  - question: Delivery scope for v0.1?
+    answer: Multi-vendor with vendor-agnostic core + vendor-specific adapters
+    area: scope
+
+  - question: Repository location?
+    answer: New standalone repo
+    area: scope
+
+  - question: CUE list matching approach?
+    answer: "Pure CUE: list.MatchN + or() + strings.Join in a standard library (quae.cue). No Go-computed derived booleans. Three layers: value lists, constraint definitions, structural constraints."
+    area: behavior
+
+  - question: Rules organization on disk?
+    answer: "Layered configs: global (~/.config/quae/) + project (.quae/)"
+    area: behavior
+
+  - question: Built-in rules?
+    answer: No defaults. Blank slate.
+    area: behavior
+
+  - question: Primary interface?
+    answer: stdin/stdout JSON
+    area: integration
+
+  - question: Vendor discovery?
+    answer: Explicit --harness flag with auto-detect fallback
+    area: integration
+
+  - question: Performance budget?
+    answer: <50ms per evaluation
+    area: constraints
+
+  - question: Error handling for malformed input?
+    answer: "Configurable: default fail-open, optional fail-closed"
+    area: constraints
+
+  - question: Feature prioritization?
+    answer: "MVP First: P1 engine + preprocessing, P2 all vendors + config, P3 advanced features"
+    area: scope
+
+  - question: Implementation approach?
+    answer: "MVP First: ship P1, iterate based on usage"
+    area: scope
+
+  - question: Architecture approach?
+    answer: CUE Unify() loop — structural unification of when-clauses against input
+    area: behavior
+
+markers: []

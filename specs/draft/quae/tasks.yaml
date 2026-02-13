@@ -1,0 +1,155 @@
+tasks:
+  # P1 — Core Engine
+  - id: T1
+    title: Project scaffolding
+    priority: P1
+    estimate: S
+    description: >
+      Go module init, directory structure, CI setup, Makefile/justfile.
+      Package layout: cmd/quae/, internal/{evaluator,preprocess,synthesis,adapter,config}/.
+
+  - id: T2
+    title: CUE rule loader
+    priority: P1
+    estimate: M
+    description: >
+      Load .cue files from a directory. Parse into structured rule objects
+      with when/then clauses using cuelang.org/go. Validate against #Rule schema.
+
+  - id: T3
+    title: CUE unification evaluator
+    priority: P1
+    estimate: M
+    description: >
+      For each loaded rule, attempt Unify(rule.when, input) via CUE Go API.
+      If Validate() returns nil, rule matches. Collect matched rules' then-actions
+      into a DecisionSet.
+
+  - id: T4
+    title: Bash AST preprocessor
+    priority: P1
+    estimate: M
+    description: >
+      Parse bash commands via mvdan.cc/sh. Extract program, args, targets,
+      redirections, flags, prefix_commands, pipes, subcommands. Resolve
+      relative paths against cwd. Handle quoting, escaping, heredocs gracefully.
+      No derived booleans — all matching is done in CUE.
+
+  - id: T5
+    title: Decision synthesis
+    priority: P1
+    estimate: S
+    description: >
+      Merge DecisionSet into FinalDecision using priority hierarchy
+      (Halt > Deny/Block > Ask > Modify > Allow). Aggregate reasons by severity.
+      Handle context injection accumulation.
+
+  - id: T6
+    title: CLI eval command
+    priority: P1
+    estimate: M
+    description: >
+      quae eval reads stdin JSON, runs full pipeline, writes stdout JSON.
+      Flags: --harness, --config, --fail-closed. Exit code 0 on success,
+      non-zero on engine error.
+
+  - id: T7
+    title: Claude Code vendor adapter
+    priority: P1
+    estimate: M
+    description: >
+      Input: normalize Claude Code hook event JSON (PreToolUse, PostToolUse,
+      UserPromptSubmit, SubagentStart, Stop) to internal schema.
+      Output: format FinalDecision as Claude Code response JSON.
+
+  - id: T17
+    title: CUE standard library (quae.cue)
+    priority: P1
+    estimate: M
+    description: >
+      Ship quae.cue with three layers: value lists (#SystemPrefixes, etc.),
+      constraint definitions (#systemTarget via strings.Join, #escalationCommand
+      via or(), etc.), and structural constraints (#hasSystemTarget,
+      #hasPrivilegeEscalation, #hasDestructiveFlags, #isPreToolUse, #isBash,
+      #isFileWrite, #isUserPrompt). Also defines #Rule and #Action schemas.
+      All matching done via list.MatchN, or(), and strings.Join — no Go-computed
+      derived booleans.
+
+  # P2 — Multi-Vendor + Configuration
+  - id: T8
+    title: Cursor vendor adapter
+    priority: P2
+    estimate: M
+    description: >
+      Normalize Cursor hook events (beforeShellExecution, beforeReadFile,
+      beforeMCPExecution, beforeSubmitPrompt, stop) to internal schema.
+      Format responses with permission/user_message/agent_message.
+
+  - id: T9
+    title: OpenCode vendor adapter
+    priority: P2
+    estimate: M
+    description: >
+      Normalize OpenCode hook events to internal schema. Map OpenCode-specific
+      tool names and event names to quae's canonical format.
+
+  - id: T10
+    title: Factory AI vendor adapter
+    priority: P2
+    estimate: S
+    description: >
+      Normalize Factory AI hook events to internal schema.
+      Factory uses same structure as Claude Code with minor differences.
+
+  - id: T11
+    title: Layered config resolution
+    priority: P2
+    estimate: M
+    description: >
+      Resolve rules from project (.quae/rules/) and global (~/.config/quae/rules/).
+      Two-phase evaluation: global first with early termination on blocking decisions,
+      then project rules.
+
+  - id: T12
+    title: Vendor auto-detection
+    priority: P2
+    estimate: S
+    description: >
+      Inspect input JSON payload structure to infer vendor when --harness flag
+      is absent. Detection heuristics based on field names and structure
+      (e.g., hook_event_name vs beforeShellExecution).
+
+  # P3 — Advanced Features + Tooling
+  - id: T13
+    title: Advanced CUE matching patterns
+    priority: P3
+    estimate: S
+    description: >
+      Documentation and examples for advanced CUE matching beyond the standard
+      library: custom constraint definitions, multi-field compositions,
+      negation patterns via list.MatchN(0, ...). Core list.MatchN support
+      is already in P1 via T17.
+
+  - id: T14
+    title: quae init scaffolding
+    priority: P3
+    estimate: S
+    description: >
+      CLI command to create .quae/ directory with example rules and config.
+      Generate vendor-specific hook registration configs.
+
+  - id: T15
+    title: quae check validation
+    priority: P3
+    estimate: S
+    description: >
+      CLI command to validate CUE rules without evaluating.
+      Reports schema errors, missing fields, type mismatches.
+
+  - id: T16
+    title: quae test assertions
+    priority: P3
+    estimate: M
+    description: >
+      CLI command to run CUE rules against fixture events with expected outcomes.
+      Declarative test format: input event + expected decision.
