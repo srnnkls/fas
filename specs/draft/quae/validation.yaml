@@ -36,7 +36,7 @@ taxonomy_coverage:
   integration: covered
   terminology: covered
 
-approach_selected: CUE Unify() loop
+approach_selected: CUE Unify() loop with modular parser/signal pipeline
 implementation_strategy: MVP First
 
 sdd_optins:
@@ -87,7 +87,7 @@ clarification_log:
     area: constraints
 
   - question: Feature prioritization?
-    answer: "MVP First: P1 engine + preprocessing, P2 all vendors + config, P3 advanced features"
+    answer: "MVP First: P1 engine + preprocessing, P2 extensibility (signals, parser backends, modules), P3 tooling"
     area: scope
 
   - question: Implementation approach?
@@ -95,7 +95,7 @@ clarification_log:
     area: scope
 
   - question: Architecture approach?
-    answer: CUE Unify() loop — structural unification of when-clauses against input
+    answer: "CUE Unify() loop with modular parser/signal pipeline — structural unification of when-clauses against enriched input"
     area: behavior
 
 markers: []

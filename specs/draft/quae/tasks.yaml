@@ -6,45 +6,65 @@ tasks:
     estimate: S
     description: >
       Go module init, directory structure, CI setup, Makefile/justfile.
-      Package layout: cmd/quae/, internal/{evaluator,preprocess,synthesis,adapter,config}/.
+      Package layout: cmd/quae/, internal/{adapter,config,evaluator,parser,signal,synthesis}/.
+      CGO_ENABLED=0 enforced in build config.
 
   - id: T2
-    title: CUE rule loader
+    title: CUE schema definitions & rule loader
     priority: P1
     estimate: M
     description: >
-      Load .cue files from a directory. Parse into structured rule objects
-      with when/then clauses using cuelang.org/go. Validate against #Rule schema.
+      Define #Input, #Parsed, #SignalResult, #Rule, #Action, #Meta, #Module CUE schemas.
+      Load .cue rule files from a directory. Parse into structured rule objects
+      with when/then/meta clauses using cuelang.org/go. Validate against #Rule schema.
+      Schema validation step: unify adapter output against #Input as defense-in-depth.
 
   - id: T3
     title: CUE unification evaluator
     priority: P1
     estimate: M
     description: >
-      For each loaded rule, attempt Unify(rule.when, input) via CUE Go API.
-      If Validate() returns nil, rule matches. Collect matched rules' then-actions
-      into a DecisionSet.
+      For each loaded rule, unify rule.when against enriched input (including
+      signals.*). Evaluate if-guards for cross-field logic. Collect actions
+      from rules where then exists after evaluation. Supports optional then
+      (rules can match without producing actions).
 
   - id: T4
-    title: Bash AST preprocessor
+    title: Preprocessor framework & builtin parsers
+    priority: P1
+    estimate: L
+    description: >
+      Parser dispatch by tool_name: load parser.cue config per tool, route to
+      backend. Emit #Parsed at tool_input.parsed. Unknown tools pass through.
+      Builtin Go parsers for common tools (Bash via mvdan.cc/sh, file operations).
+      Extract canonical #Parsed shape: actions, targets, flags, attributes.
+      Parsers write only to tool_input.parsed namespace.
+
+  - id: T5
+    title: Synthesizer & gate dispatch
     priority: P1
     estimate: M
     description: >
-      Parse bash commands via mvdan.cc/sh. Extract program, args, targets,
-      redirections, flags, prefix_commands, pipes, subcommands. Resolve
-      relative paths against cwd. Handle quoting, escaping, heredocs gracefully.
-      No derived booleans — all matching is done in CUE.
-
-  - id: T5
-    title: Decision synthesis
-    priority: P1
-    estimate: S
-    description: >
-      Merge DecisionSet into FinalDecision using priority hierarchy
-      (Halt > Deny/Block > Ask > Modify > Allow). Aggregate reasons by severity.
-      Handle context injection accumulation.
+      Produce OutputEnvelope from matched rule actions. Gate selection: pick
+      winning gate (halt > deny/block > ask > allow). Inject aggregation:
+      sort by (priority, rule_id), dedup by rule_id, truncate by size budget.
+      Modify selection: highest priority, tie-break by rule_id. Drop
+      UpdatedInput if gate is Blocking. Gate dispatch: map gate action to
+      Category (Blocking/Asking/Allowing). Hardcoded, not configurable.
 
   - id: T6
+    title: Claude Code adapter
+    priority: P1
+    estimate: M
+    description: >
+      Implement Adapter interface: ParseInput() normalizes Claude Code hook
+      event JSON (PreToolUse, PostToolUse, UserPromptSubmit, SubagentStart,
+      Stop) to internal Input. Handles JSON-in-JSON parsing, field renaming,
+      event type inference, tool name normalization. RenderOutput() renders
+      OutputEnvelope as Claude Code response JSON, routing UserReason/AgentReason
+      to vendor-appropriate fields by Category.
+
+  - id: T7
     title: CLI eval command
     priority: P1
     estimate: M
@@ -53,103 +73,108 @@ tasks:
       Flags: --harness, --config, --fail-closed. Exit code 0 on success,
       non-zero on engine error.
 
-  - id: T7
-    title: Claude Code vendor adapter
-    priority: P1
-    estimate: M
-    description: >
-      Input: normalize Claude Code hook event JSON (PreToolUse, PostToolUse,
-      UserPromptSubmit, SubagentStart, Stop) to internal schema.
-      Output: format FinalDecision as Claude Code response JSON.
-
-  - id: T17
+  - id: T8
     title: CUE standard library (quae.cue)
     priority: P1
     estimate: M
     description: >
-      Ship quae.cue with three layers: value lists (#SystemPrefixes, etc.),
-      constraint definitions (#systemTarget via strings.Join, #escalationCommand
-      via or(), etc.), and structural constraints (#hasSystemTarget,
-      #hasPrivilegeEscalation, #hasDestructiveFlags, #isPreToolUse, #isBash,
-      #isFileWrite, #isUserPrompt). Also defines #Rule and #Action schemas.
-      All matching done via list.MatchN, or(), and strings.Join — no Go-computed
-      derived booleans.
-
-  # P2 — Multi-Vendor + Configuration
-  - id: T8
-    title: Cursor vendor adapter
-    priority: P2
-    estimate: M
-    description: >
-      Normalize Cursor hook events (beforeShellExecution, beforeReadFile,
-      beforeMCPExecution, beforeSubmitPrompt, stop) to internal schema.
-      Format responses with permission/user_message/agent_message.
+      Ship quae.cue with stable vocabulary and composable constraints.
+      Layer 1: value lists (#SystemPrefixes, #EscalationCommands,
+      #DestructiveActions). Layer 2: derived constraints (#systemTarget via
+      strings.Join, #escalationCommand via or(), #destructiveAction via or()).
+      Layer 3: structural constraints (#hasSystemTarget, #hasPrivilegeEscalation,
+      #hasDestructiveAction, #isPreToolUse, #isBash, #isUserPrompt).
+      FlagSet template pattern: #FlagSpec, #FlagSet, #HasFlagMatching for
+      safe short-combo matching with tool-specific short-letter classes.
+      Example: #RmFlags with per-flag .when constraints.
 
   - id: T9
-    title: OpenCode vendor adapter
-    priority: P2
+    title: Two-phase evaluation & config resolution
+    priority: P1
     estimate: M
     description: >
-      Normalize OpenCode hook events to internal schema. Map OpenCode-specific
-      tool names and event names to quae's canonical format.
+      Global rules (~/.config/quae/rules/*.cue) evaluate first. Blocking
+      gates short-circuit phase 2, but effects always accumulate across
+      phases. Project rules (.quae/rules/*.cue) evaluate second. Config
+      resolution order for rules, parsers, modules, and schemas.
 
+  # P2 — Extensibility
   - id: T10
-    title: Factory AI vendor adapter
+    title: Wasm runtime integration
     priority: P2
-    estimate: S
+    estimate: L
     description: >
-      Normalize Factory AI hook events to internal schema.
-      Factory uses same structure as Claude Code with minor differences.
+      Integrate wazero as the Wasm runtime. Support fuel limits, memory limits,
+      timeout, max output size. WASI capability gates (fs, net) defaulting to
+      false. Module loading from ~/.config/quae/modules/ with sha256 verification
+      against lockfile.
 
   - id: T11
-    title: Layered config resolution
+    title: Signal execution engine
     priority: P2
     estimate: M
     description: >
-      Resolve rules from project (.quae/rules/) and global (~/.config/quae/rules/).
-      Two-phase evaluation: global first with early termination on blocking decisions,
-      then project rules.
+      Compute needed_signals = union(meta.requires) across all loaded rules
+      (global + project). Run only referenced Wasm signal modules (static
+      demand-driven). Attach results at signals.<name> as #SignalResult
+      (ok, data, err). Signal not referenced by any rule never runs.
 
   - id: T12
+    title: Module lockfile system
+    priority: P2
+    estimate: M
+    description: >
+      quae.lock.cue manifest declaring all executable modules with #Module
+      schema. SHA256 verification on load. Module resolution: lockfile →
+      ~/.config/quae/modules/<n>.wasm|.jq. Support for module dependencies
+      (deps field).
+
+  - id: T13
+    title: Additional parser backends
+    priority: P2
+    estimate: L
+    description: >
+      Regex parser backend (config-driven via parser.cue).
+      Tree-sitter parser backend (embedded Wasm grammars via wazero).
+      jq parser backend (in-process via gojq, lockfile-referenced).
+      Wasm parser backend (lockfile-referenced modules).
+      All backends emit canonical #Parsed at tool_input.parsed.
+
+  - id: T14
+    title: Additional vendor adapters
+    priority: P2
+    estimate: L
+    description: >
+      Cursor adapter: normalize Cursor hook events to internal schema,
+      format responses with permission/user_message/agent_message.
+      OpenCode adapter: normalize OpenCode hook events.
+      Factory AI adapter: normalize Factory AI hook events.
+      All implement Adapter interface (ParseInput/RenderOutput).
+
+  - id: T15
     title: Vendor auto-detection
     priority: P2
     estimate: S
     description: >
-      Inspect input JSON payload structure to infer vendor when --harness flag
-      is absent. Detection heuristics based on field names and structure
-      (e.g., hook_event_name vs beforeShellExecution).
+      Inspect input JSON payload structure to infer vendor when --harness
+      flag is absent. Detection heuristics based on field names and structure.
 
-  # P3 — Advanced Features + Tooling
-  - id: T13
-    title: Advanced CUE matching patterns
+  # P3 — Tooling
+  - id: T16
+    title: Validation commands
     priority: P3
-    estimate: S
+    estimate: M
     description: >
-      Documentation and examples for advanced CUE matching beyond the standard
-      library: custom constraint definitions, multi-field compositions,
-      negation patterns via list.MatchN(0, ...). Core list.MatchN support
-      is already in P1 via T17.
+      quae validate-rules: validate CUE rules against schema.
+      quae validate-adapter <vendor> [--fixture]: test adapter with fixtures.
+      quae validate-parser <tool> [--fixture]: test parser with fixtures.
+      quae validate-modules: verify lockfile integrity and module hashes.
 
-  - id: T14
+  - id: T17
     title: quae init scaffolding
     priority: P3
     estimate: S
     description: >
-      CLI command to create .quae/ directory with example rules and config.
-      Generate vendor-specific hook registration configs.
-
-  - id: T15
-    title: quae check validation
-    priority: P3
-    estimate: S
-    description: >
-      CLI command to validate CUE rules without evaluating.
-      Reports schema errors, missing fields, type mismatches.
-
-  - id: T16
-    title: quae test assertions
-    priority: P3
-    estimate: M
-    description: >
-      CLI command to run CUE rules against fixture events with expected outcomes.
-      Declarative test format: input event + expected decision.
+      CLI command to create .quae/ directory with example rules, parser
+      configs, and lockfile template. Generate vendor-specific hook
+      registration configs.

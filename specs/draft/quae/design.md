@@ -1,189 +1,206 @@
 # quae — Design
 
+> **quae** (Latin, "that which") — a CUE-based policy engine that determines *which* payloads match and *which* effects to emit.
+
+---
+
 ## Architecture
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│   stdin      │────▶│ Vendor       │────▶│ Preprocessor │
-│   (JSON)     │     │ Adapter (in) │     │ (AST parse)  │
+│   stdin      │────▶│ Go Adapter   │────▶│ CUE Validate │
+│   (JSON)     │     │ ParseInput() │     │ #Input       │
 └─────────────┘     └──────────────┘     └──────┬───────┘
                                                  │
-                    ┌──────────────┐     ┌───────▼──────┐
-                    │ Vendor       │◀────│ CUE          │
-                    │ Adapter (out)│     │ Evaluator    │
-                    └──────┬───────┘     └──────┬───────┘
-                           │                    │
-                    ┌──────▼───────┐     ┌──────▼──────┐
-                    │   stdout     │     │ Synthesizer  │
-                    │   (JSON)     │     │ (priority)   │
-                    └──────────────┘     └─────────────┘
+                                          ┌──────▼───────┐
+                                          │ Preprocessor │
+                                          │ (Parsers)    │
+                                          │ → parsed     │
+                                          └──────┬───────┘
+                                                 │
+                                          ┌──────▼───────┐
+                                          │ Signals      │
+                                          │ (Wasm mods)  │
+                                          │ → signals.*  │
+                                          └──────┬───────┘
+                                                 │
+┌──────────────┐     ┌──────────────┐     ┌──────▼───────┐
+│   stdout     │◀────│ Go Adapter   │     │ CUE          │
+│   (JSON)     │     │ RenderOutput │     │ Evaluator    │
+└──────────────┘     └──────┬───────┘     └──────┬───────┘
+                            ▲                     │
+                     ┌──────┴───────┐      ┌─────▼────────┐
+                     │ Engine       │◀─────│ Synthesizer  │
+                     │ (gate        │      │ Gate+Effects │
+                     │  dispatch)   │      └──────────────┘
+                     └──────────────┘
 ```
 
-### Evaluation Pipeline
+---
 
-1. **Vendor adapter (in):** Normalize vendor-specific JSON to internal schema
-2. **Preprocessor:** Parse bash commands via mvdan.cc/sh, extract structured AST, resolve paths
-3. **CUE evaluator:** Load rules, attempt `Unify(rule.when, input)` for each rule, collect matched actions
-4. **Synthesizer:** Merge matched actions by priority into a single decision
-5. **Vendor adapter (out):** Format decision as vendor-specific response JSON
+## Evaluation Pipeline
 
-### Two-Phase Evaluation
+1. **Adapter (input):** `Adapter.ParseInput()` — compiled Go code normalizes vendor JSON to `Input`. Handles JSON-in-JSON parsing, field renaming, event type inference, tool name normalization. No user-configurable code.
+2. **Schema validate:** Unify against `#Input` — defense-in-depth check that the adapter produced valid internal input.
+3. **Preprocessor:** Dispatch to parser by `tool_name` — load `parser.cue` config, run backend (builtin, regex, tree-sitter, or lockfile-referenced module). Emit `#Parsed` at `tool_input.parsed`. Unknown tools pass through. Parsers write only to the `tool_input.parsed` namespace.
+4. **Signals:** Compute `needed_signals = union(meta.requires)` across **all loaded rules** (global + project). Run only those Wasm modules. Attach results at `signals.<name>`. "Demand-driven" means only *referenced* signals run (statically), not conditionally on match.
+5. **CUE evaluator:** Load rules, unify each rule's `when` against enriched input (including `signals.*`), evaluate `if` guards, collect actions from rules where `then` exists after evaluation.
+6. **Synthesizer:** Produce an `OutputEnvelope`:
+
+   * pick the winning **gate** (halt > deny/block > ask > allow)
+   * aggregate **inject** effects (sorted by `(priority, rule_id)`, deduped by `rule_id`, truncated by size budget)
+   * select the winning **modify** effect (highest priority, tie-broken by `rule_id`)
+   * **If the gate is Blocking:** drop `UpdatedInput` entirely (blocked actions have no payload to rewrite).
+7. **Gate dispatch (Go, hardcoded):** Map the gate action to a category — Blocking/Asking/Allowing. Not configurable.
+8. **Adapter (output):** `Adapter.RenderOutput()` — compiled Go code renders vendor-specific JSON from the full `OutputEnvelope`. Cannot change the category. Routes `UserReason`/`AgentReason` to vendor-appropriate fields by category and maps effects where supported.
+
+---
+
+## Two-Phase Evaluation
 
 ```
 Global rules (~/.config/quae/rules/*.cue)
     │
-    ├── halt/deny/block? → short-circuit, return immediately
+    ├── gate = halt/deny/block? → short-circuit gate, but still collect effects
     │
-    └── allow/inject? → continue to project rules
+    └── gate = ask/allow or effects only? → continue to project rules
                 │
                 ▼
 Project rules (.quae/rules/*.cue)
     │
-    └── synthesize all matched actions → final decision
+    └── synthesize gate + effects → OutputEnvelope
 ```
+
+Effects (inject, modify) accumulate across both phases. Only the **gate** can short-circuit; effects always aggregate (subject to synthesizer rules like "drop UpdatedInput if Blocking").
+
+---
 
 ## Tech Decisions
 
 ### Go + CUE
 
-Go as the implementation language. CUE's reference implementation (`cuelang.org/go`) is native Go, giving direct access to the unification API without FFI or subprocess overhead.
+Go is the implementation language. CUE is the **only** policy language.
 
-CUE as the policy language. Unification-based semantics where values are constraints. A rule's `when` clause is a structural constraint that unifies against the input — if unification succeeds (no validation error), the rule matches.
+* `when` matches by **structural unification** (constraints unify against input).
+* `if` guards handle cross-field logic (comparisons, arithmetic, existence branching).
 
-### mvdan.cc/sh for Bash Parsing
+No CEL/Rego/Cedar in the pipeline.
 
-Mature Go bash parser producing full ASTs. Extracts program, arguments, targets, redirections, pipes, and subcommands as structured data. Moves intelligence from the policy language into the preprocessing layer, making structural matching sufficient for command analysis.
+### Go Adapters
 
-### CUE Standard Library (quae.cue)
+Adapters are compiled Go code. No user-configurable transforms exist between stdin and policy evaluation, or between policy evaluation and stdout. This is a deliberate security property.
 
-Matching is done entirely in CUE using `list.MatchN`, `or()`, and `strings.Join`. No derived booleans are computed in Go — the preprocessor only parses and structures, CUE does all matching.
+#### Adapter Interface
 
-Three layers, each building on the previous:
+```go
+type Category int
 
-**Layer 1 — Value lists (single source of truth):**
-```cue
-#SystemPrefixes:     ["/etc", "/sys", "/proc", "/boot", "/dev"]
-#EscalationCommands: ["sudo", "doas", "su"]
-#DestructiveFlags:   ["-rf", "--force", "--hard", "--no-preserve-root"]
-```
+const (
+    Blocking Category = iota  // halt, deny, block
+    Asking                     // ask (+confirm mode modify)
+    Allowing                   // allow (+silent mode modify)
+)
 
-**Layer 2 — Constraint definitions (derived validators):**
-```cue
-#systemTarget:      =~"^(\(strings.Join(#SystemPrefixes, "|")))"
-#escalationCommand: or(#EscalationCommands)
-#destructiveFlag:   or(#DestructiveFlags)
-```
+type OutputEnvelope struct {
+    Category          Category
+    UserReason        string
+    AgentReason       string
+    AdditionalContext string
+    UpdatedInput      json.RawMessage
+}
 
-**Layer 3 — Structural constraints (composable matchers):**
-```cue
-#hasSystemTarget:        { tool_input: parsed: targets:         list.MatchN(>0, [#systemTarget]) }
-#hasPrivilegeEscalation: { tool_input: parsed: prefix_commands: list.MatchN(>0, [#escalationCommand]) }
-#hasDestructiveFlags:    { tool_input: parsed: flags:           list.MatchN(>0, [#destructiveFlag]) }
-
-#isPreToolUse:  { hook_event_name: "PreToolUse" }
-#isBash:        { tool_name: "Bash" }
-#isFileWrite:   { tool_name: "Write" }
-#isUserPrompt:  { hook_event_name: "UserPromptSubmit" }
-```
-
-Rules compose structural constraints via `&`. Power users can skip layer 3 and use `list.MatchN` directly with custom constraint definitions.
-
-## API Contract
-
-### CLI Interface
-
-```
-quae eval [--harness <vendor>] [--config <path>] [--fail-closed]
-```
-
-Reads JSON from stdin, writes JSON to stdout. Exit code 0 on success (any decision), non-zero on engine error.
-
-### Input — Normalized Internal Schema
-
-After vendor adapter normalization, all inputs conform to:
-
-```json
-{
-  "hook_event_name": "PreToolUse",
-  "tool_name": "Bash",
-  "tool_input": {
-    "command": "cat /etc/passwd 2>/dev/null",
-    "parsed": {
-      "program": "cat",
-      "args": ["/etc/passwd"],
-      "targets": ["/etc/passwd"],
-      "redirections": [{"op": "2>", "target": "/dev/null"}],
-      "pipes": [],
-      "prefix_commands": [],
-      "flags": []
-    }
-  },
-  "resolved_file_path": null,
-  "session_id": "...",
-  "cwd": "/path/to/project"
+type Adapter interface {
+    Name() string
+    ParseInput(raw json.RawMessage) (*Input, error)
+    RenderOutput(out OutputEnvelope) (json.RawMessage, error)
 }
 ```
 
-### Output — Per Vendor
+#### Gate Categories (Core-Owned)
 
-**Claude Code:**
-```json
-{"decision": "block", "reason": "Command targets critical system paths"}
-```
+| Category     | Gate actions                 | Meaning             |
+| ------------ | ---------------------------- | ------------------- |
+| **Blocking** | halt, deny, block            | Action is forbidden |
+| **Asking**   | ask, modify(mode:"confirm")  | User must confirm   |
+| **Allowing** | allow, modify(mode:"silent") | Action is permitted |
 
-**Cursor:**
-```json
-{"permission": "deny", "user_message": "...", "agent_message": "..."}
-```
+Inject and modify are **effects**; only the gate determines category.
 
-**OpenCode / Factory AI:** Adapter-specific, follows each vendor's hook response schema.
-
-### Decision Types
-
-| Decision | Priority | Semantics |
-|----------|----------|-----------|
-| halt | 1 (highest) | Immediate cessation |
-| deny | 2 | Block the action |
-| block | 2 | Block progression |
-| ask | 3 | Require user confirmation |
-| modify | 4 | Transform input and allow |
-| inject | 5 | Add context, allow |
-| allow | 6 (default) | Permit the action |
+---
 
 ## Data Model
 
-### CUE Rule Schema
+### Internal Input Schema
+
+Parsers write only to `tool_input.parsed`. Signals write only to `signals.<name>`.
+
+```go
+type Input struct {
+    HookEventName string                 `json:"hook_event_name"`
+    ToolName      string                 `json:"tool_name,omitempty"`
+    ToolInput     json.RawMessage        `json:"tool_input,omitempty"`
+    SessionID     string                 `json:"session_id,omitempty"`
+    CWD           string                 `json:"cwd,omitempty"`
+    Signals       map[string]SignalResult `json:"signals,omitempty"`
+}
+
+type SignalResult struct {
+    OK   bool            `json:"ok"`
+    Data json.RawMessage `json:"data,omitempty"`
+    Err  string          `json:"err,omitempty"`
+}
+```
+
+CUE schema:
+
+```cue
+#Input: {
+    hook_event_name: string
+    tool_name?:      string
+    tool_input?: {
+        command?: string
+        parsed?:  #Parsed
+        ...
+    }
+    session_id?: string
+    cwd?:        string
+    signals?: {[string]: #SignalResult}
+}
+
+#SignalResult: {
+    ok:    bool
+    data?: _
+    err?:  string
+}
+```
+
+### Rule Schema
 
 ```cue
 #Rule: {
-    when: {...}
-    then: #Action
+    when:  {...}
+    then?: #Action
+    meta?: #Meta
+}
+
+#Meta: {
+    requires?: [...string]
 }
 
 #Action: #Halt | #Deny | #Block | #Ask | #Modify | #Inject | #Allow
 
-#Halt: halt: {
-    rule_id:  string
-    reason:   string
-    severity: *"CRITICAL" | "HIGH" | "MEDIUM" | "LOW"
-}
+#Halt:  halt:  { rule_id: string, reason: string, severity: *"CRITICAL" | "HIGH" | "MEDIUM" | "LOW" }
+#Deny:  deny:  { rule_id: string, reason: string, severity: *"HIGH" | "CRITICAL" | "MEDIUM" | "LOW" }
+#Block: block: { rule_id: string, reason: string, severity: *"HIGH" | "CRITICAL" | "MEDIUM" | "LOW" }
+#Ask:   ask:   { rule_id: string, reason: string, question: string }
+#Allow: allow: true
 
-#Deny: deny: {
+#Inject: inject: {
     rule_id:  string
-    reason:   string
-    severity: *"HIGH" | "CRITICAL" | "MEDIUM" | "LOW"
-}
-
-#Block: block: {
-    rule_id:  string
-    reason:   string
-    severity: *"HIGH" | "CRITICAL" | "MEDIUM" | "LOW"
-}
-
-#Ask: ask: {
-    rule_id:  string
-    reason:   string
-    question: string
+    priority: *50 | int & >=1 & <=100
+    channel:  *"agent" | "user"
+    text:     string
+    tags?:    [...string]
 }
 
 #Modify: modify: {
@@ -191,123 +208,328 @@ After vendor adapter normalization, all inputs conform to:
     reason:        string
     updated_input: _
     priority:      *50 | int & >=1 & <=100
-}
-
-#Inject: inject: string
-
-#Allow: allow: true
-```
-
-### Example Rules
-
-Using standard library structural constraints:
-
-```cue
-package rules
-
-import "github.com/you/quae"
-
-system_protection: #Rule & {
-    when: quae.#isPreToolUse & quae.#isBash & quae.#hasSystemTarget
-    then: halt: {
-        rule_id:  "SYS-001"
-        reason:   "Command targets critical system paths"
-        severity: "CRITICAL"
-    }
-}
-
-no_sudo: #Rule & {
-    when: quae.#isPreToolUse & quae.#isBash & quae.#hasPrivilegeEscalation
-    then: deny: {
-        rule_id:  "SEC-001"
-        reason:   "Privilege escalation not permitted"
-        severity: "HIGH"
-    }
-}
-
-coding_standards: #Rule & {
-    when: quae.#isUserPrompt
-    then: inject: """
-        Use relative paths for all file operations.
-        Run tests before committing.
-        """
+    mode:          *"confirm" | "silent"
 }
 ```
 
-Power users mix library constraints with inline ones:
+---
+
+## Parsers
+
+Parsers transform raw tool input into canonical `#Parsed` at `tool_input.parsed`.
+
+* Builtin (Go)
+* Regex (config-driven)
+* Tree-sitter (embedded Wasm grammars)
+* Wasm (lockfile module)
+* jq (lockfile module; runs in-process via gojq; reproducible but not fuel/mem sandboxed)
+
+Parsers are **structure only**: they do not emit policy decisions and do not compute derived "booleans for rules".
+
+---
+
+## Signals
+
+Signals are Wasm modules that enrich input at `signals.<name>`.
+
+* `needed_signals = union(meta.requires)` across **all loaded rules** (global + project)
+* A signal not referenced by any rule never runs
+* Results are always `#SignalResult`
+
+---
+
+## Modules & Lockfile
+
+Executable artifacts must be declared and pinned by hash.
 
 ```cue
-package rules
+#Module: {
+    name:    string
+    kind:    "signal" | "parser"
+    format:  *"wasm" | "jq"
+    sha256:  string
+
+    deps?: [...string]
+
+    if format == "wasm" {
+        limits: {
+            mem_mb:      *16 | int & >=1 & <=256
+            fuel:        *1000000 | int & >=1000
+            timeout_ms:  *5000 | int & >=100 & <=30000
+            max_out_kb:  *64 | int & >=1 & <=1024
+        }
+        caps: {
+            wasi_fs:  *false | bool
+            wasi_net: *false | bool
+        }
+    }
+}
+
+modules: [...#Module]
+```
+
+Resolution:
+
+```
+1. quae.lock.cue
+2. ~/.config/quae/modules/<n>.wasm or <n>.jq (verified against sha256)
+```
+
+---
+
+## CUE Matching Strategy
+
+### Design Principles
+
+1. **No derived booleans.** Rules are constraints; the preprocessor emits structure only.
+2. **Use definitions/aliases, not hidden fields.** Prefer `#Something` over `_something` for reusable logic.
+3. **Lists are the source of truth.** Derive `or()` and regexes from lists.
+4. **Three-layer pattern.** Value lists → derived constraints → structural constraints.
+
+### The Standard Library (`quae.cue`)
+
+The stdlib has two responsibilities:
+
+1. Ship **stable vocabulary** (paths, action names, flag specs).
+2. Provide **composable constraints** ("traits") that attach validators to canonical fields.
+
+#### Layer 1 — Value Lists
+
+```cue
+package quae
+
+#SystemPrefixes:     ["/etc", "/sys", "/proc", "/boot", "/dev"]
+#EscalationCommands: ["sudo", "doas", "su"]
+
+// Cross-tool action vocabulary (normalized by parsers into parsed.actions)
+#DestructiveActions: ["delete", "drop", "remove", "rm", "destroy", "truncate"]
+```
+
+#### Layer 2 — Derived Constraints (Regex / Disjunction)
+
+```cue
+import "strings"
+
+#systemTarget:      =~"^(\(strings.Join(#SystemPrefixes, "|")))"
+#escalationCommand: or(#EscalationCommands)
+#destructiveAction: or(#DestructiveActions)
+```
+
+#### Layer 3 — Structural Constraints
+
+```cue
+import "list"
+
+#hasSystemTarget: {
+    tool_input: parsed: targets: list.MatchN(>0, [#systemTarget])
+}
+
+#hasPrivilegeEscalation: {
+    tool_input: parsed: attributes: prefix_commands: list.MatchN(>0, [#escalationCommand])
+}
+
+#hasDestructiveAction: {
+    tool_input: parsed: actions: list.MatchN(>0, [#destructiveAction])
+}
+
+#isPreToolUse: { hook_event_name: "PreToolUse" }
+#isUserPrompt: { hook_event_name: "UserPromptSubmit" }
+#isBash:       { tool_name: "Bash" }
+```
+
+### Standardlib Augmentation: Flags as `#Flags` (Template-Based Vocabulary)
+
+Flags are a *tool-specific vocabulary*. The stdlib provides a **template** to define a flag set once and then consume it ergonomically from rules.
+
+Key properties:
+
+* No "semantic option parsing" (no `{"force": true}` normalization).
+* Works with the canonical representation everybody expects: a **list of flag tokens** (`parsed.flags`).
+* Handles **short-combos** safely by constraining combos to the *known short-letter set* for that tool (avoids false positives like `-force` matching "-r" just because it contains an `r`).
+
+#### Building Block: "has a flag token matching regex"
+
+```cue
+package quae
+
+import "list"
+
+#HasFlagMatching: {
+    #re: string
+    tool_input: parsed: flags: list.MatchN(>0, [=~#re])
+}
+```
+
+#### Template: Define a FlagSet once, get `.when` traits for free
+
+```cue
+package quae
+
+import "strings"
+
+// A FlagSet is a tool-specific map: name -> {short?, long?}
+#FlagSpec: {
+    short?: string  // single letter (e.g. "f")
+    long?:  string  // long name (e.g. "force")
+}
+
+#FlagSet: {
+    // user provides these entries:
+    [Name=_]: #FlagSpec
+
+    // derived short-letter class for safe short-combo matching (e.g. "friv")
+    #shortLetters: [ for _, v in _|_ {
+        // this comprehension is "templated" below; see note
+    } ]
+
+    // Template applied per field: adds a stable `.when` constraint per flag name.
+    [Name=_]: {
+        name: Name
+
+        // Optional: accept both --long and -long (Go-style single-dash long).
+        // Also accept --long=value.
+        // For short-combos: match only tokens made of known short letters.
+        //
+        // NOTE: the short-combo part is only enabled when `short` is set.
+        re: string
+
+        when: #HasFlagMatching & { #re: re }
+    }
+}
+```
+
+CUE doesn't let us write a true "function", but templates *do* let us stamp per-flag constraints idiomatically. Here's the concrete, fully working version for a **specific tool** (example: `rm`), which is how you'll actually ship it:
+
+```cue
+package quae
 
 import (
-    "list"
     "strings"
-    "github.com/you/quae"
 )
 
-#sensitivePaths: ["/migrations", "/deploy", "/.env"]
-#sensitiveTarget: =~"(\(strings.Join(#sensitivePaths, "|")))"
+// rm's *known* short flags (subset; extend as desired)
+#RmFlags: {
+    force:     { short: "f", long: "force" }
+    recursive: { short: "r", long: "recursive" }
+    interactive: { short: "i", long: "interactive" }
+    verbose:     { short: "v", long: "verbose" }
 
-protect_sensitive: #Rule & {
-    when: quae.#isPreToolUse & quae.#isFileWrite & {
-        tool_input: parsed: targets: list.MatchN(>0, [#sensitiveTarget])
+    // Derived: character class for rm's short flags.
+    #shortClass: "\(strings.Join([
+        for _, v in #RmFlags if v.short != _|_ { v.short }
+    ], ""))"
+
+    // Template: generates `.when` for each flag entry.
+    [Name=_]: {
+        name: Name
+
+        // long forms:
+        //   --force, --force=..., -force, -force=...
+        // short forms:
+        //   -f, -rf, -vrf (but only if token is made of rm's known short letters)
+        re: *(
+            // long (double dash)
+            "^--\(long)(=|$)" +
+            // OR long (single dash)
+            "|^-\(long)(=|$)" +
+            // OR short/short-combo (safe)
+            "|^-[\(#shortClass)]+$"
+        ) | string
+
+        // For a particular flag, require the token both:
+        //  - be a valid rm short-combo token, AND
+        //  - contain that specific letter somewhere.
+        //
+        // We do this by specializing `re` further per-flag below.
     }
-    then: ask: {
-        rule_id:  "PROJ-002"
-        reason:   "Modifying sensitive project files"
-        question: "This touches a protected path. Continue?"
+
+    // Specialize per flag to "contain the specific short letter"
+    force: {
+        re: "^--\(long)(=|$)|^-\(long)(=|$)|^-[\(#shortClass)]*f[\(#shortClass)]*$"
     }
+    recursive: {
+        re: "^--\(long)(=|$)|^-\(long)(=|$)|^-[\(#shortClass)]*r[\(#shortClass)]*$"
+    }
+    interactive: {
+        re: "^--\(long)(=|$)|^-\(long)(=|$)|^-[\(#shortClass)]*i[\(#shortClass)]*$"
+    }
+    verbose: {
+        re: "^--\(long)(=|$)|^-\(long)(=|$)|^-[\(#shortClass)]*v[\(#shortClass)]*$"
+    }
+
+    // Export the actual composable constraints
+    force:     { when: #HasFlagMatching & { #re: re } }
+    recursive: { when: #HasFlagMatching & { #re: re } }
+    interactive: { when: #HasFlagMatching & { #re: re } }
+    verbose:     { when: #HasFlagMatching & { #re: re } }
 }
+
+// Convenience aliases (optional)
+#HasForce:     #RmFlags.force.when
+#HasRecursive: #RmFlags.recursive.when
 ```
 
-### Preprocessed Bash AST
+### AND / OR Composition
 
-```
-ParsedCommand {
-    program:            string
-    args:               []string
-    targets:            []string          // path-like arguments (resolved)
-    redirections:       []Redirection
-    pipes:              []ParsedCommand
-    prefix_commands:    []string          // sudo, doas, env, etc.
-    flags:              []string          // -rf, --force, etc.
-    subcommands:        []ParsedCommand   // $(), ``
-}
+Because these are **pure constraints** (no generated fields), they compose cleanly:
 
-Redirection {
-    op:     string      // ">", ">>", "<", "2>", etc.
-    target: string      // "/dev/null", "output.log", etc.
-}
+```cue
+// AND: require both
+when: #isPreToolUse & #isBash & (#HasForce & #HasRecursive)
+
+// OR: require either
+when: #isPreToolUse & #isBash & (#HasForce | #HasRecursive)
 ```
 
-### Config Resolution Order
+---
+
+## API Contract
+
+### CLI
 
 ```
-1. .quae/rules/*.cue           (project — highest priority)
-2. ~/.config/quae/rules/*.cue   (global)
+quae eval [--harness <vendor>] [--config <path>] [--fail-closed]
+quae validate-adapter <vendor> [--fixture <path>]
+quae validate-parser <tool> [--fixture <path>]
+quae validate-modules
+quae validate-rules
 ```
 
-Project rules evaluated after global rules. Global halt/deny short-circuits before project evaluation.
+---
 
-## Alternatives Considered
+## Config Resolution Order
 
-| Alternative | Why Not |
-|-------------|---------|
-| **OPA/Rego + WASM** | Verbose imperative syntax, string matching false positives, external binary dependency |
-| **CEL** | Expression language — imperative boolean logic, not structural matching |
-| **Nickel** | Rust-native, designed for config generation, not runtime policy evaluation |
-| **KCL** | CNCF project, config-language DNA |
-| **Dhall** | Typed config language, read-only Rust API |
-| **Starlark** | Full scripting language — over-engineered for structural matching |
-| **Polar (Oso)** | Pattern matching but deprecated |
-| **Custom Rust matcher** | Loses CUE's constraint expressiveness and type system |
+```
+Rules:
+  1. .quae/rules/*.cue                         (project)
+  2. ~/.config/quae/rules/*.cue                (global)
 
-CUE won on: native Go implementation, unification semantics (values-as-constraints), structural matching without imperative logic, active maintenance.
+Adapters:
+  3. compiled into the binary                  (--harness)
+
+Parsers:
+  4. ~/.config/quae/parsers/<tool>/parser.cue  (user overrides)
+  5. builtin parsers                           (shipped)
+
+Modules:
+  6. quae.lock.cue                             (manifest)
+  7. ~/.config/quae/modules/<n>.wasm|.jq        (verified artifacts)
+
+Schemas:
+  8. builtin schema.cue                         (#Input, #Parsed, #Decision)
+```
+
+---
 
 ## Invariants
 
-1. **Preprocessing is mandatory** — no raw input reaches CUE evaluation
-2. **Rules are pure constraints** — no side effects, no I/O in CUE files
-3. **Decision priority is fixed** — Halt > Deny/Block > Ask > Modify > Allow
-4. **Global before project** — global rules always evaluate first with early termination on blocking decisions
-5. **Fail mode is explicit** — default fail-open, configurable to fail-closed
+1. Parsers normalize to `#Parsed` (actions, targets, flags, attributes). No tool-specific shapes leak to the policy layer.
+2. Parsers and signals write only to fixed namespaces: `tool_input.parsed`, `signals.*`.
+3. Rules are pure constraints. No side effects, no I/O in CUE.
+4. Gate priority is fixed: halt > deny/block > ask > allow. Exactly one gate wins.
+5. Modify: at most one wins (highest priority, tie by `rule_id`). **Dropped if gate is Blocking.**
+6. Inject: many accumulate, sorted and size-truncated.
+7. Adapters are compiled Go; no user-configurable transforms on stdin→eval or eval→stdout.
+8. Global before project; blocking gates short-circuit phase 2, but effects aggregate across phases.
+9. Signals are static-demand-driven: `union(meta.requires)` across all loaded rules.
+10. Pure Go build: `CGO_ENABLED=0`; deps are pure Go or Wasm.

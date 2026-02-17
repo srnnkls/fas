@@ -7,63 +7,74 @@ created: 2026-02-13
 
 # quae
 
-Structural policy engine for AI coding agent hooks. Evaluates tool-call events against declarative CUE rules using unification-based pattern matching.
+CUE-based policy engine for AI coding agent hooks. Evaluates tool-call events against declarative rules using structural unification, with a modular parser/signal pipeline for input enrichment.
 
 ## Goals
 
-1. Eliminate false positives from string/regex-based command matching
+1. Eliminate false positives from string/regex-based command matching via structured preprocessing
 2. Provide a unified hooks interface across AI coding agent vendors
 3. Enable declarative policy authoring without imperative logic
-4. Support context injection as a first-class action alongside allow/deny
+4. Support context injection and input modification as first-class effects alongside gate actions
+5. Allow extensibility through Wasm signals and modular parsers without compromising security
 
 ## Success Criteria
 
 - Zero false positives on standard development workflows (git, npm, cargo, etc.)
-- <50ms evaluation latency per hook event
+- <50ms evaluation latency per hook event (excluding Wasm signal execution)
 - Vendor adapters for Claude Code, Cursor, OpenCode, and Factory AI
 - CUE rule authoring requires no Go code — pure `.cue` files
+- All executable modules (Wasm, jq) pinned by sha256 in lockfile
 
 ## User Stories
 
 ### P1 — Core Engine
 
-- As a developer, I can write CUE rules that structurally match tool-call events so that I don't need imperative guard logic
-- As a developer, I can define deny/allow/inject actions declaratively so that hook behavior is self-documenting
-- As a developer, bash commands are parsed into structured ASTs before matching so that path-based rules don't produce false positives on redirections, flags, or string coincidences
-- As a developer, I can run `quae eval` with JSON on stdin and get a decision on stdout so that any vendor's hook system can integrate
+- As a developer, I can write CUE rules with `when` clauses that structurally match tool-call events via unification
+- As a developer, I can use `if` guards in rules for cross-field logic (comparisons, arithmetic, existence branching)
+- As a developer, I can define gate actions (halt/deny/block/ask/allow) and effects (inject/modify) declaratively
+- As a developer, bash commands are parsed into canonical `#Parsed` structure (actions, targets, flags, attributes) before matching
+- As a developer, I can run `quae eval` with JSON on stdin and get an `OutputEnvelope` on stdout
+- As a developer, I can layer global rules (~/.config/quae/) with project rules (.quae/) where blocking gates short-circuit but effects accumulate
+- As a developer, I can use the CUE standard library (`quae.cue`) with composable structural constraints and FlagSet templates
 
-### P2 — Multi-Vendor + Configuration
+### P2 — Extensibility
 
-- As a developer, I can use quae with Claude Code, Cursor, OpenCode, or Factory AI with vendor-specific adapters normalizing input/output
-- As a developer, I can layer global rules (~/.config/quae/) with project rules (.quae/) where project rules override global
+- As a developer, I can write Wasm signal modules that enrich input at `signals.<name>`, running only when referenced by rule `meta.requires`
+- As a developer, I can use multiple parser backends (builtin, regex, tree-sitter, Wasm, jq) to preprocess tool input for different tools
+- As a developer, all executable modules are declared in `quae.lock.cue` with sha256 hashes and resource limits
+- As a developer, I can use quae with Claude Code, Cursor, OpenCode, or Factory AI via compiled Go adapters
 - As a developer, vendor is auto-detected from the input payload when I don't pass --harness
 
-### P3 — Advanced Matching + Tooling
+### P3 — Tooling
 
-- As a developer, I can use advanced CUE matching patterns (custom constraint definitions, negation via list.MatchN(0, ...)) for rules beyond the standard library
+- As a developer, I can run `quae validate-rules` to check CUE rules against the schema
+- As a developer, I can run `quae validate-adapter` and `quae validate-parser` with fixtures
+- As a developer, I can run `quae validate-modules` to verify lockfile integrity
 - As a developer, I can run `quae init` to scaffold a .quae/ directory with example rules
-- As a developer, I can run `quae check` to validate my CUE rules without evaluating
-- As a developer, I can run `quae test` to run rule assertions against fixture events
 
 ## Architecture Overview
 
 ```
-stdin JSON → Vendor Adapter (normalize) → Preprocessor (AST parse, derive fields)
-    → CUE Evaluator (unify rules against input) → Synthesizer (priority merge)
-    → Vendor Adapter (format response) → stdout JSON
+stdin JSON → Go Adapter (ParseInput) → #Input validation
+    → Preprocessor (parser dispatch by tool_name) → tool_input.parsed
+    → Signals (demand-driven Wasm modules) → signals.*
+    → CUE Evaluator (when unification + if guards) → matched actions
+    → Synthesizer (gate + inject + modify → OutputEnvelope)
+    → Gate Dispatch (Category: Blocking/Asking/Allowing)
+    → Go Adapter (RenderOutput) → stdout JSON
 ```
 
 **Two-phase evaluation:**
 
-1. Global rules (~/.config/quae/rules/*.cue) — early termination on halt/deny
-2. Project rules (.quae/rules/*.cue) — evaluated only if global allows
+1. Global rules (~/.config/quae/rules/*.cue) — blocking gates short-circuit, effects accumulate
+2. Project rules (.quae/rules/*.cue) — synthesize gate + effects into OutputEnvelope
 
-**Decision priority:** Halt > Deny/Block > Ask > Modify > Allow (with context injection)
+**Gate priority:** halt > deny/block > ask > allow. Effects (inject, modify) are orthogonal to the gate.
 
 ## Implementation Strategy
 
 **MVP First:**
 
-- **v0.1 (P1):** CUE engine + bash preprocessing + CLI + Claude Code adapter
-- **v0.2 (P2):** All vendor adapters + layered config resolution + auto-detection
-- **v0.3 (P3):** Advanced CUE features + developer tooling (init, check, test)
+- **v0.1 (P1):** CUE engine + builtin parsers + synthesizer + CLI eval + Claude Code adapter + stdlib
+- **v0.2 (P2):** Wasm runtime + signals + additional parser backends + module lockfile + remaining adapters
+- **v0.3 (P3):** Validation commands + developer tooling (init)
