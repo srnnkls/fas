@@ -2,18 +2,22 @@ external:
   - name: cuelang.org/go
     version: ">=0.11"
     purpose: CUE evaluator — structural unification, schema validation, rule loading
+    phase: P1
 
   - name: mvdan.cc/sh
     version: ">=3.9"
     purpose: Builtin Bash parser — AST extraction (program, args, redirections, pipes, flags)
+    phase: P1
 
   - name: github.com/tetratelabs/wazero
     version: ">=1.8"
     purpose: Wasm runtime — signal modules and parser modules with fuel/memory sandboxing
+    phase: P3
 
   - name: github.com/itchyny/gojq
     version: ">=0.12"
     purpose: jq parser backend — in-process jq execution for parser modules
+    phase: P3
 
 internal:
   # P1 dependency chain
@@ -50,35 +54,39 @@ internal:
     reason: Config resolution loads stdlib as part of rule loading
 
   # P2 dependency chain
-  - from: T10
-    to: [T11, T13]
+  - from: T6
+    to: [T10, T11, T12]
+    reason: Subsequent adapters follow pattern established by Claude Code adapter
+
+  - from: [T10, T11, T12]
+    to: T13
+    reason: Auto-detection needs adapters to exist
+
+  - from: [T2, T6, T4]
+    to: T14
+    reason: Validation commands test rules, adapters, and parsers
+
+  - from: T7
+    to: T15
+    reason: Init scaffolding is a CLI subcommand
+
+  # P3 dependency chain
+  - from: T16
+    to: [T17, T19]
     reason: Signal engine and Wasm/tree-sitter parser backends need Wasm runtime
 
   - from: T3
-    to: T11
+    to: T17
     reason: Signal engine feeds enriched input to evaluator
 
-  - from: T10
-    to: T12
+  - from: T16
+    to: T18
     reason: Module lockfile verifies Wasm/jq artifacts loaded by runtime
 
-  - from: T6
-    to: T14
-    reason: Subsequent adapters follow pattern established by Claude Code adapter
-
-  - from: T14
-    to: T15
-    reason: Auto-detection needs adapters to exist
-
   - from: T4
-    to: T13
+    to: T19
     reason: Additional parser backends plug into preprocessor framework
 
-  # P3 dependency chain
-  - from: [T2, T6, T4, T12]
-    to: T16
-    reason: Validation commands test rules, adapters, parsers, and modules
-
-  - from: T7
-    to: T17
-    reason: Init scaffolding is a CLI subcommand
+  - from: T18
+    to: T20
+    reason: validate-modules depends on module lockfile system

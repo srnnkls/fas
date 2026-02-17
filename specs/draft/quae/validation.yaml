@@ -87,15 +87,15 @@ clarification_log:
     area: constraints
 
   - question: Feature prioritization?
-    answer: "MVP First: P1 engine + preprocessing, P2 extensibility (signals, parser backends, modules), P3 tooling"
+    answer: "MVP First: P1 core engine (Go parsing, adapters, canonical #Parsed, CUE stdlib), P2 multi-vendor + tooling, P3 extensibility (Wasm signals, custom parser backends, module lockfile)"
     area: scope
 
   - question: Implementation approach?
-    answer: "MVP First: ship P1, iterate based on usage"
+    answer: "MVP First: ship P1 with builtin Go parsers only, iterate based on usage"
     area: scope
 
   - question: Architecture approach?
-    answer: "CUE Unify() loop with modular parser/signal pipeline — structural unification of when-clauses against enriched input"
+    answer: "CUE Unify() loop — structural unification of when-clauses against input. Signals and custom parser backends deferred to P3."
     area: behavior
 
 markers: []

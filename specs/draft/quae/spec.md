@@ -32,25 +32,26 @@ CUE-based policy engine for AI coding agent hooks. Evaluates tool-call events ag
 - As a developer, I can write CUE rules with `when` clauses that structurally match tool-call events via unification
 - As a developer, I can use `if` guards in rules for cross-field logic (comparisons, arithmetic, existence branching)
 - As a developer, I can define gate actions (halt/deny/block/ask/allow) and effects (inject/modify) declaratively
-- As a developer, bash commands are parsed into canonical `#Parsed` structure (actions, targets, flags, attributes) before matching
+- As a developer, tool input is parsed by builtin Go parsers into canonical `#Parsed` structure (actions, targets, flags, attributes) before matching
 - As a developer, I can run `quae eval` with JSON on stdin and get an `OutputEnvelope` on stdout
 - As a developer, I can layer global rules (~/.config/quae/) with project rules (.quae/) where blocking gates short-circuit but effects accumulate
 - As a developer, I can use the CUE standard library (`quae.cue`) with composable structural constraints and FlagSet templates
+- As a developer, I can use quae with Claude Code via a compiled Go adapter
 
-### P2 — Extensibility
+### P2 — Multi-Vendor + Tooling
 
-- As a developer, I can write Wasm signal modules that enrich input at `signals.<name>`, running only when referenced by rule `meta.requires`
-- As a developer, I can use multiple parser backends (builtin, regex, tree-sitter, Wasm, jq) to preprocess tool input for different tools
-- As a developer, all executable modules are declared in `quae.lock.cue` with sha256 hashes and resource limits
-- As a developer, I can use quae with Claude Code, Cursor, OpenCode, or Factory AI via compiled Go adapters
+- As a developer, I can use quae with Cursor, OpenCode, or Factory AI via compiled Go adapters
 - As a developer, vendor is auto-detected from the input payload when I don't pass --harness
-
-### P3 — Tooling
-
 - As a developer, I can run `quae validate-rules` to check CUE rules against the schema
 - As a developer, I can run `quae validate-adapter` and `quae validate-parser` with fixtures
-- As a developer, I can run `quae validate-modules` to verify lockfile integrity
 - As a developer, I can run `quae init` to scaffold a .quae/ directory with example rules
+
+### P3 — Extensibility
+
+- As a developer, I can write Wasm signal modules that enrich input at `signals.<name>`, running only when referenced by rule `meta.requires`
+- As a developer, I can use additional parser backends (regex, tree-sitter, Wasm, jq) to preprocess tool input for different tools
+- As a developer, all executable modules are declared in `quae.lock.cue` with sha256 hashes and resource limits
+- As a developer, I can run `quae validate-modules` to verify lockfile integrity
 
 ## Architecture Overview
 
@@ -75,6 +76,6 @@ stdin JSON → Go Adapter (ParseInput) → #Input validation
 
 **MVP First:**
 
-- **v0.1 (P1):** CUE engine + builtin parsers + synthesizer + CLI eval + Claude Code adapter + stdlib
-- **v0.2 (P2):** Wasm runtime + signals + additional parser backends + module lockfile + remaining adapters
-- **v0.3 (P3):** Validation commands + developer tooling (init)
+- **v0.1 (P1):** CUE engine + builtin Go parsers + synthesizer + CLI eval + Claude Code adapter + stdlib
+- **v0.2 (P2):** Remaining vendor adapters + auto-detection + validation commands + init
+- **v0.3 (P3):** Wasm runtime + signals + custom parser backends + module lockfile

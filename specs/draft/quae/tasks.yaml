@@ -6,7 +6,7 @@ tasks:
     estimate: S
     description: >
       Go module init, directory structure, CI setup, Makefile/justfile.
-      Package layout: cmd/quae/, internal/{adapter,config,evaluator,parser,signal,synthesis}/.
+      Package layout: cmd/quae/, internal/{adapter,config,evaluator,parser,synthesis}/.
       CGO_ENABLED=0 enforced in build config.
 
   - id: T2
@@ -14,7 +14,7 @@ tasks:
     priority: P1
     estimate: M
     description: >
-      Define #Input, #Parsed, #SignalResult, #Rule, #Action, #Meta, #Module CUE schemas.
+      Define #Input, #Parsed, #Rule, #Action, #Meta CUE schemas.
       Load .cue rule files from a directory. Parse into structured rule objects
       with when/then/meta clauses using cuelang.org/go. Validate against #Rule schema.
       Schema validation step: unify adapter output against #Input as defense-in-depth.
@@ -24,21 +24,19 @@ tasks:
     priority: P1
     estimate: M
     description: >
-      For each loaded rule, unify rule.when against enriched input (including
-      signals.*). Evaluate if-guards for cross-field logic. Collect actions
-      from rules where then exists after evaluation. Supports optional then
-      (rules can match without producing actions).
+      For each loaded rule, unify rule.when against input. Evaluate if-guards
+      for cross-field logic. Collect actions from rules where then exists after
+      evaluation. Supports optional then (rules can match without producing actions).
 
   - id: T4
-    title: Preprocessor framework & builtin parsers
+    title: Preprocessor framework & builtin Go parsers
     priority: P1
     estimate: L
     description: >
-      Parser dispatch by tool_name: load parser.cue config per tool, route to
-      backend. Emit #Parsed at tool_input.parsed. Unknown tools pass through.
-      Builtin Go parsers for common tools (Bash via mvdan.cc/sh, file operations).
-      Extract canonical #Parsed shape: actions, targets, flags, attributes.
-      Parsers write only to tool_input.parsed namespace.
+      Parser dispatch by tool_name. Emit #Parsed at tool_input.parsed. Unknown
+      tools pass through. Builtin Go parsers for common tools (Bash via
+      mvdan.cc/sh, file operations). Extract canonical #Parsed shape: actions,
+      targets, flags, attributes. Parsers write only to tool_input.parsed namespace.
 
   - id: T5
     title: Synthesizer & gate dispatch
@@ -86,7 +84,6 @@ tasks:
       #hasDestructiveAction, #isPreToolUse, #isBash, #isUserPrompt).
       FlagSet template pattern: #FlagSpec, #FlagSet, #HasFlagMatching for
       safe short-combo matching with tool-specific short-letter classes.
-      Example: #RmFlags with per-flag .when constraints.
 
   - id: T9
     title: Two-phase evaluation & config resolution
@@ -96,12 +93,63 @@ tasks:
       Global rules (~/.config/quae/rules/*.cue) evaluate first. Blocking
       gates short-circuit phase 2, but effects always accumulate across
       phases. Project rules (.quae/rules/*.cue) evaluate second. Config
-      resolution order for rules, parsers, modules, and schemas.
+      resolution order for rules, parsers, and schemas.
 
-  # P2 — Extensibility
+  # P2 — Multi-Vendor + Tooling
   - id: T10
-    title: Wasm runtime integration
+    title: Cursor vendor adapter
     priority: P2
+    estimate: M
+    description: >
+      Normalize Cursor hook events (beforeShellExecution, beforeReadFile,
+      beforeMCPExecution, beforeSubmitPrompt, stop) to internal schema.
+      Format responses with permission/user_message/agent_message.
+
+  - id: T11
+    title: OpenCode vendor adapter
+    priority: P2
+    estimate: M
+    description: >
+      Normalize OpenCode hook events to internal schema. Map OpenCode-specific
+      tool names and event names to quae's canonical format.
+
+  - id: T12
+    title: Factory AI vendor adapter
+    priority: P2
+    estimate: S
+    description: >
+      Normalize Factory AI hook events to internal schema.
+      Factory uses same structure as Claude Code with minor differences.
+
+  - id: T13
+    title: Vendor auto-detection
+    priority: P2
+    estimate: S
+    description: >
+      Inspect input JSON payload structure to infer vendor when --harness
+      flag is absent. Detection heuristics based on field names and structure.
+
+  - id: T14
+    title: Validation commands
+    priority: P2
+    estimate: M
+    description: >
+      quae validate-rules: validate CUE rules against schema.
+      quae validate-adapter <vendor> [--fixture]: test adapter with fixtures.
+      quae validate-parser <tool> [--fixture]: test parser with fixtures.
+
+  - id: T15
+    title: quae init scaffolding
+    priority: P2
+    estimate: S
+    description: >
+      CLI command to create .quae/ directory with example rules and config.
+      Generate vendor-specific hook registration configs.
+
+  # P3 — Extensibility
+  - id: T16
+    title: Wasm runtime integration
+    priority: P3
     estimate: L
     description: >
       Integrate wazero as the Wasm runtime. Support fuel limits, memory limits,
@@ -109,9 +157,9 @@ tasks:
       false. Module loading from ~/.config/quae/modules/ with sha256 verification
       against lockfile.
 
-  - id: T11
+  - id: T17
     title: Signal execution engine
-    priority: P2
+    priority: P3
     estimate: M
     description: >
       Compute needed_signals = union(meta.requires) across all loaded rules
@@ -119,9 +167,9 @@ tasks:
       demand-driven). Attach results at signals.<name> as #SignalResult
       (ok, data, err). Signal not referenced by any rule never runs.
 
-  - id: T12
+  - id: T18
     title: Module lockfile system
-    priority: P2
+    priority: P3
     estimate: M
     description: >
       quae.lock.cue manifest declaring all executable modules with #Module
@@ -129,9 +177,9 @@ tasks:
       ~/.config/quae/modules/<n>.wasm|.jq. Support for module dependencies
       (deps field).
 
-  - id: T13
+  - id: T19
     title: Additional parser backends
-    priority: P2
+    priority: P3
     estimate: L
     description: >
       Regex parser backend (config-driven via parser.cue).
@@ -140,41 +188,10 @@ tasks:
       Wasm parser backend (lockfile-referenced modules).
       All backends emit canonical #Parsed at tool_input.parsed.
 
-  - id: T14
-    title: Additional vendor adapters
-    priority: P2
-    estimate: L
-    description: >
-      Cursor adapter: normalize Cursor hook events to internal schema,
-      format responses with permission/user_message/agent_message.
-      OpenCode adapter: normalize OpenCode hook events.
-      Factory AI adapter: normalize Factory AI hook events.
-      All implement Adapter interface (ParseInput/RenderOutput).
-
-  - id: T15
-    title: Vendor auto-detection
-    priority: P2
+  - id: T20
+    title: validate-modules command
+    priority: P3
     estimate: S
     description: >
-      Inspect input JSON payload structure to infer vendor when --harness
-      flag is absent. Detection heuristics based on field names and structure.
-
-  # P3 — Tooling
-  - id: T16
-    title: Validation commands
-    priority: P3
-    estimate: M
-    description: >
-      quae validate-rules: validate CUE rules against schema.
-      quae validate-adapter <vendor> [--fixture]: test adapter with fixtures.
-      quae validate-parser <tool> [--fixture]: test parser with fixtures.
       quae validate-modules: verify lockfile integrity and module hashes.
-
-  - id: T17
-    title: quae init scaffolding
-    priority: P3
-    estimate: S
-    description: >
-      CLI command to create .quae/ directory with example rules, parser
-      configs, and lockfile template. Generate vendor-specific hook
-      registration configs.
+      Depends on module lockfile system (T18).
