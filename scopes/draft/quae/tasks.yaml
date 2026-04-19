@@ -25,6 +25,7 @@ tasks:
     title: CUE unification evaluator
     priority: P1
     estimate: M
+    status: completed
     description: >
       For each loaded rule, unify rule.when against input. Evaluate if-guards
       for cross-field logic. Collect actions from rules where then exists after
@@ -203,3 +204,25 @@ tasks:
     description: >
       quae validate-modules: verify lockfile integrity and module hashes.
       Depends on module lockfile system (T18).
+
+  # Integration tests — end-to-end CLI behavior across all harnesses
+  - id: T21
+    title: Scrut-based integration tests
+    priority: P2
+    estimate: M
+    description: >
+      End-to-end CLI integration tests using scrut (facebookincubator/scrut).
+      A single markdown file (tests/policies.md) contains scrut code blocks that
+      pipe JSON hook events into `quae eval` and snapshot the exact stdout JSON.
+      A small clean-room set of policy files lives under tests/policies/ (CUE
+      rules that are NOT installed globally — the tests pass --config to point
+      at them). Cover the canonical scenarios: rm -rf / (system-path block),
+      git commit --no-verify (policy deny), git add .env (secret file),
+      destructive action via compound command (semicolon / && / |), safe
+      commands that should allow, and at least one modify/inject effect.
+      Also exercise each vendor harness (claude, cursor, opencode, factoryai)
+      to verify each adapter renders the envelope correctly.
+      Run via: `scrut test -w . tests/policies.md`. Wire into CI as a make
+      target (`make test-integration`) and add to .github/workflows/ci.yml.
+      Depends on: T7 (CLI), T6 (Claude Code adapter), T10-T12 (other vendor
+      adapters) so all harnesses can be exercised.

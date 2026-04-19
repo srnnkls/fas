@@ -100,6 +100,31 @@ batch_reviews:
             - design.md fixed by orchestrator - list.MatchN takes a single schema (not a list); #HasRm* inlines list.MatchN (AND-composition conflicts on #re if composed via #HasFlagMatching)
     outcome: approved
 
+  - batch: 3
+    tasks: [T3]
+    phases:
+      tester:
+        subagent: task-tester
+        artifact: internal/evaluator/evaluator_test.go
+        tests: 14
+        red_verified: true
+      test_review:
+        subagent: task-reviewer
+        status: pass
+        deferred_mediums: 3
+        recommendation: proceed_to_implementer
+      implementer:
+        subagent: task-implementer
+        files:
+          - internal/evaluator/evaluator.go
+        green_verified: true
+      code_review:
+        subagent: task-reviewer
+        status: approved
+        issues: 0
+        recommendation: commit
+    outcome: approved
+
 deferred_issues:
   # Batch 1 — from test_review on scripts/verify-scaffolding.sh
   - batch: 1

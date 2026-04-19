@@ -90,3 +90,8 @@ internal:
   - from: T18
     to: T20
     reason: validate-modules depends on module lockfile system
+
+  # Integration tests — after all vendor adapters land so every harness is exercised
+  - from: [T7, T6, T10, T11, T12]
+    to: T21
+    reason: Scrut integration tests exercise `quae eval` across every vendor harness
