@@ -327,15 +327,15 @@ import "strings"
 import "list"
 
 #hasSystemTarget: {
-    tool_input: parsed: targets: list.MatchN(>0, [#systemTarget])
+    tool_input: parsed: targets: list.MatchN(>0, #systemTarget)
 }
 
 #hasPrivilegeEscalation: {
-    tool_input: parsed: attributes: prefix_commands: list.MatchN(>0, [#escalationCommand])
+    tool_input: parsed: attributes: prefix_commands: list.MatchN(>0, #escalationCommand)
 }
 
 #hasDestructiveAction: {
-    tool_input: parsed: actions: list.MatchN(>0, [#destructiveAction])
+    tool_input: parsed: actions: list.MatchN(>0, #destructiveAction)
 }
 
 #isPreToolUse: { hook_event_name: "PreToolUse" }
@@ -343,9 +343,11 @@ import "list"
 #isBash:       { tool_name: "Bash" }
 ```
 
+> **`list.MatchN` argument shape.** The second argument is a **single schema**, not a list of matchers. CUE `list.MatchN(>0, S)` succeeds when more than N elements unify with `S`. Wrapping `S` in `[S]` would require each element to itself be a one-element list — which is almost never what you want.
+
 ### Flags: Per-Tool Constraint Files
 
-Flags are *tool-specific vocabulary*. The stdlib ships one building block (`#HasFlagMatching`); each tool's flag set lives in its own file as explicit per-flag constraints. No template, no comprehension over template fields — the short-letter class is written as a concrete string per tool.
+Flags are *tool-specific vocabulary*. Each tool's flag set lives in its own file as **inline per-flag constraints** — no template, no comprehension, no compose-via-building-block.
 
 Key properties:
 
@@ -353,7 +355,7 @@ Key properties:
 * Works with the canonical representation: a **list of flag tokens** (`parsed.flags`).
 * Handles **short-combos** safely by constraining combos to the *known short-letter set* for that tool (avoids false positives like `-force` matching `-r` just because it contains `r`).
 
-#### Building Block: "has a flag token matching regex"
+#### Building Block (standalone): `#HasFlagMatching`
 
 ```cue
 package quae
@@ -362,14 +364,20 @@ import "list"
 
 #HasFlagMatching: {
     #re: string
-    tool_input: parsed: flags: list.MatchN(>0, [=~#re])
+    tool_input: parsed: flags: list.MatchN(>0, =~#re)
 }
 ```
+
+Use this **only in isolation** when parameterizing a regex from outside (e.g. tests, ad-hoc rules).
+
+> **Why per-flag constraints don't compose via `#HasFlagMatching`.** The obvious shorthand — `#HasRmForce: #HasFlagMatching & {#re: "^--force..."}` — looks cleaner, but it fails AND-composition. CUE exposes `#re` as a struct field on the unified value; unifying `#HasRmForce & #HasRmRecursive` produces conflicting `#re` values ("force" regex vs "recursive" regex) and the unification errors. The per-flag constraints must therefore **inline** the `list.MatchN` directly, with no `#re` field on the exposed shape.
 
 #### Per-Tool Example (`rm`)
 
 ```cue
 package quae
+
+import "list"
 
 // rm's known short-flag letters. Keep this string in sync with the
 // set of #HasRm* constraints defined below.
@@ -379,24 +387,24 @@ package quae
 //   --long | --long=... | -long | -long=...  (long form, dashed or Go-style single-dash)
 //   -[friv]*X[friv]*                         (short-combo containing letter X, made only of known rm letters)
 
-#HasRmForce: #HasFlagMatching & {
-    #re: "^--force(=|$)|^-force(=|$)|^-[\(#rmShortClass)]*f[\(#rmShortClass)]*$"
+#HasRmForce: {
+    tool_input: parsed: flags: list.MatchN(>0, =~"^--force(=|$)|^-force(=|$)|^-[\(#rmShortClass)]*f[\(#rmShortClass)]*$")
 }
 
-#HasRmRecursive: #HasFlagMatching & {
-    #re: "^--recursive(=|$)|^-recursive(=|$)|^-[\(#rmShortClass)]*r[\(#rmShortClass)]*$"
+#HasRmRecursive: {
+    tool_input: parsed: flags: list.MatchN(>0, =~"^--recursive(=|$)|^-recursive(=|$)|^-[\(#rmShortClass)]*r[\(#rmShortClass)]*$")
 }
 
-#HasRmInteractive: #HasFlagMatching & {
-    #re: "^--interactive(=|$)|^-interactive(=|$)|^-[\(#rmShortClass)]*i[\(#rmShortClass)]*$"
+#HasRmInteractive: {
+    tool_input: parsed: flags: list.MatchN(>0, =~"^--interactive(=|$)|^-interactive(=|$)|^-[\(#rmShortClass)]*i[\(#rmShortClass)]*$")
 }
 
-#HasRmVerbose: #HasFlagMatching & {
-    #re: "^--verbose(=|$)|^-verbose(=|$)|^-[\(#rmShortClass)]*v[\(#rmShortClass)]*$"
+#HasRmVerbose: {
+    tool_input: parsed: flags: list.MatchN(>0, =~"^--verbose(=|$)|^-verbose(=|$)|^-[\(#rmShortClass)]*v[\(#rmShortClass)]*$")
 }
 ```
 
-Boilerplate (3 lines per flag) is the cost of keeping the stdlib working in plain CUE. Rules compose the `#HasRm*` constraints directly via unification.
+Each `#HasRm*` is a **pure constraint** with no exposed fields beyond `tool_input.parsed.flags`, so multiple `#HasRm*` constraints AND-compose cleanly. Rules combine them directly via unification.
 
 ### AND / OR Composition
 

@@ -14,6 +14,7 @@ tasks:
     title: CUE schema definitions & rule loader
     priority: P1
     estimate: M
+    status: completed
     description: >
       Define #Input, #Parsed, #Rule, #Action, #Meta CUE schemas.
       Load .cue rule files from a directory. Parse into structured rule objects
@@ -33,6 +34,7 @@ tasks:
     title: Preprocessor framework & builtin Go parsers
     priority: P1
     estimate: L
+    status: completed
     description: >
       Parser dispatch by tool_name. Emit #Parsed at tool_input.parsed. Unknown
       tools pass through. Builtin Go parsers for common tools (Bash via
@@ -78,6 +80,7 @@ tasks:
     title: CUE standard library (quae.cue)
     priority: P1
     estimate: M
+    status: completed
     description: >
       Ship quae.cue with stable vocabulary and composable constraints.
       Layer 1: value lists (#SystemPrefixes, #EscalationCommands,
