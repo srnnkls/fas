@@ -4,6 +4,7 @@ tasks:
     title: Project scaffolding
     priority: P1
     estimate: S
+    status: completed
     description: >
       Go module init, directory structure, CI setup, Makefile/justfile.
       Package layout: cmd/quae/, internal/{adapter,config,evaluator,parser,synthesis}/.

@@ -1,2 +1,9 @@
 [tools]
 cue = "latest"
+go = "1.26.2"
+"golangci-lint" = "2.11.4"
+hk = "1.42.0"
+pkl = "0.31.0"
+
+[hooks]
+postinstall = "hk install --mise"
