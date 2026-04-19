@@ -1,0 +1,55 @@
+amends "package://github.com/jdx/hk/releases/download/v1.42.0/hk@1.42.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.42.0/hk@1.42.0#/Builtins.pkl"
+
+local goGlobs = List("**/*.go", "**/go.mod", "**/go.sum")
+
+local linters = new Mapping<String, Step> {
+  ["gofmt"] = Builtins.go_fmt
+  ["govet"] = Builtins.go_vet
+  ["golangci-lint"] = Builtins.golangci_lint
+  ["gomod-tidy"] = Builtins.gomod_tidy
+}
+
+local runners = new Mapping<String, Step> {
+  ["build"] {
+    glob = goGlobs
+    workspace_indicator = "go.mod"
+    check = "cd {{workspace}} && go build ./..."
+    stomp = true
+  }
+  ["test"] {
+    glob = goGlobs
+    workspace_indicator = "go.mod"
+    check = "cd {{workspace}} && go test ./..."
+    stomp = true
+  }
+}
+
+hooks {
+  ["pre-commit"] {
+    fix = true
+    stage = true
+    fail_on_fix = true
+    stash = "git"
+    steps = new {
+      ...linters
+      ...runners
+    }
+  }
+  ["check"] {
+    steps = new {
+      ...linters
+      ...runners
+    }
+  }
+  ["fix"] {
+    fix = true
+    steps {
+      ["gofmt"] = (linters["gofmt"]) {
+        check = null
+        check_list_files = null
+        check_diff = null
+      }
+    }
+  }
+}

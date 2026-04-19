@@ -1,0 +1,89 @@
+batch_reviews:
+  - batch: 1
+    tasks: [T1]
+    phases:
+      tester:
+        subagent: task-tester
+        artifact: scripts/verify-scaffolding.sh
+        assertions: 22
+        red_verified: true
+      test_review:
+        subagent: task-reviewer
+        status: pass
+        gates:
+          red_legitimate: pass
+          no_oracle_mirroring: pass
+          no_assertion_free_coverage: pass
+          no_tautologies: pass
+          covers_requirements: pass
+          failure_output_actionable: pass
+          robust: pass
+        deferred_mediums: 6
+        recommendation: proceed_to_implementer
+      implementer:
+        subagent: task-implementer
+        files:
+          - go.mod
+          - cmd/quae/main.go
+          - internal/adapter/package.go
+          - internal/config/package.go
+          - internal/evaluator/package.go
+          - internal/parser/package.go
+          - internal/synthesis/package.go
+          - Makefile
+          - .github/workflows/ci.yml
+          - mise.toml
+          - hk.pkl
+        green_verified: true
+      code_review:
+        subagent: task-reviewer
+        status: approved
+        gates:
+          correctness: pass
+          modern_go: pass
+          makefile_quality: pass
+          ci_workflow: pass
+          style: pass
+          no_focus_leakage: pass
+          security: pass
+          architecture: pass
+        recommendation: commit
+      fix_pass:
+        fixes:
+          - internal/*/doc.go → package.go (5 files)
+          - CI workflow permissions:contents:read
+        still_green: true
+    outcome: approved
+
+deferred_issues:
+  # From test_review (scripts/verify-scaffolding.sh) — non-blocking
+  - severity: medium
+    from: test_review
+    path: scripts/verify-scaffolding.sh
+    note: "Line 69 `continue` skips .go-file check when dir is missing; upstream assertion already failed. Add a clarifying comment."
+  - severity: medium
+    from: test_review
+    path: scripts/verify-scaffolding.sh
+    note: "`make -n <target>` can give misleading exit codes on BSD/macOS make. Consider `make -np | grep -E '^<target>:'` as a fallback."
+  - severity: medium
+    from: test_review
+    path: scripts/verify-scaffolding.sh
+    note: "CGO_ENABLED grep for mise.toml doesn't accept single-quoted TOML values. Broaden to `\"?0\"?|'?0'?`."
+  - severity: medium
+    from: test_review
+    path: scripts/verify-scaffolding.sh
+    note: "No explicit `grep -E '^module ' go.mod` check. `go build` catches it transitively but a direct assertion gives a clearer failure message."
+  - severity: medium
+    from: test_review
+    path: scripts/verify-scaffolding.sh
+    note: "No self-check that the script retains its executable bit. A one-liner `[[ -x scripts/verify-scaffolding.sh ]]` would protect against accidental chmod regressions."
+  - severity: medium
+    from: test_review
+    path: scripts/verify-scaffolding.sh
+    note: "`printf -- '----\\n'` uses an unneeded `--` guard. Minor style."
+
+  # From code_review — one kept, rest fixed inline
+  - severity: medium
+    from: code_review
+    path: mise.toml
+    note: "Consider adding `[env] CGO_ENABLED = \"0\"` so interactive-shell `go build` invocations also get the enforcement. Makefile already covers the built paths."
