@@ -3,6 +3,16 @@ import "package://github.com/jdx/hk/releases/download/v1.42.0/hk@1.42.0#/Builtin
 
 local goGlobs = List("**/*.go", "**/go.mod", "**/go.sum")
 
+// `go fix ./...` — Go 1.23+ modernizer. Safe, behavior-preserving; rewrites
+// obsolete idioms (pre-generics, pre-slices/maps stdlib, etc.). Runs in
+// fix-capable hooks only; no check command (fix-only step).
+local gofix: Step = new {
+  glob = goGlobs
+  workspace_indicator = "go.mod"
+  fix = "cd {{workspace}} && go fix ./..."
+  stomp = true
+}
+
 local linters = new Mapping<String, Step> {
   ["gofmt"] = Builtins.go_fmt
   ["govet"] = Builtins.go_vet
@@ -25,6 +35,16 @@ local runners = new Mapping<String, Step> {
   }
 }
 
+// Fix-only steps: gofmt in fix mode + go fix modernizer.
+local fixers = new Mapping<String, Step> {
+  ["gofmt-fix"] = (linters["gofmt"]) {
+    check = null
+    check_list_files = null
+    check_diff = null
+  }
+  ["gofix"] = gofix
+}
+
 hooks {
   ["pre-commit"] {
     fix = true
@@ -32,6 +52,7 @@ hooks {
     fail_on_fix = true
     stash = "git"
     steps = new {
+      ...fixers
       ...linters
       ...runners
     }
@@ -44,12 +65,6 @@ hooks {
   }
   ["fix"] {
     fix = true
-    steps {
-      ["gofmt"] = (linters["gofmt"]) {
-        check = null
-        check_list_files = null
-        check_diff = null
-      }
-    }
+    steps = fixers
   }
 }
