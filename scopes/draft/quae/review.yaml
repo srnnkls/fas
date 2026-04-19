@@ -10,14 +10,6 @@ batch_reviews:
       test_review:
         subagent: task-reviewer
         status: pass
-        gates:
-          red_legitimate: pass
-          no_oracle_mirroring: pass
-          no_assertion_free_coverage: pass
-          no_tautologies: pass
-          covers_requirements: pass
-          failure_output_actionable: pass
-          robust: pass
         deferred_mediums: 6
         recommendation: proceed_to_implementer
       implementer:
@@ -38,15 +30,6 @@ batch_reviews:
       code_review:
         subagent: task-reviewer
         status: approved
-        gates:
-          correctness: pass
-          modern_go: pass
-          makefile_quality: pass
-          ci_workflow: pass
-          style: pass
-          no_focus_leakage: pass
-          security: pass
-          architecture: pass
         recommendation: commit
       fix_pass:
         fixes:
@@ -55,35 +38,136 @@ batch_reviews:
         still_green: true
     outcome: approved
 
+  - batch: 2
+    tasks: [T2, T4, T8]
+    phases:
+      testers:
+        parallel: 3
+        artifacts:
+          - internal/config/loader_test.go
+          - internal/config/schema_test.go
+          - cue/schema_test.go
+          - internal/parser/preprocessor_test.go
+          - internal/parser/bash_test.go
+          - cue/stdlib_test.go
+        red_verified: true
+      test_reviews:
+        parallel: 3
+        outcomes:
+          T2: pass (3 mediums deferred)
+          T4: pass (5 mediums deferred)
+          T8: changes_requested → fixed inline (added -fvr / -if short-combo permutations)
+      implementers:
+        parallel: 3
+        files:
+          - cue/schema.cue
+          - cue/embed.go
+          - internal/config/schema.go
+          - internal/config/loader.go
+          - internal/config/schema_cache.go
+          - internal/parser/parsed.go
+          - internal/parser/preprocessor.go
+          - internal/parser/bash.go
+          - internal/parser/actions.go
+          - cue/quae.cue
+          - cue/flags/rm.cue
+        green_verified: true
+      code_reviews:
+        parallel: 3
+        outcomes:
+          T2: approved (6 mediums — one T3-blocker: Rule.When needed cue.Value)
+          T4: changes_requested (2 HIGH — AST compound-stmt gaps; subcommand resolution with global flags)
+          T8: approved (4 mediums — design.md spec defects on CUE syntax)
+      fix_pass:
+        parallel: 3
+        fixes:
+          T4:
+            - HIGH — AST walking via syntax.Walk covering all compound types
+            - HIGH — resolveVerb scans first non-flag token in rest
+            - MEDIUM — dead insideSubshell param removed
+            - MEDIUM — command-substitution leak suppressed
+            - MEDIUM — POSIX `--` end-of-flags honored
+            - MEDIUM — ParseBash dead error return dropped
+            - MEDIUM — Parsed JSON snake_case tags added
+            - MEDIUM — malformed tool_input on known tools surfaces parse_error
+            - NEW TESTS — ForLoop / IfBranch / GitWithGlobalFlag / DoubleDashEndsFlags / CmdSubstitution
+          T2:
+            - Rule.When now cue.Value (unblocks T3)
+            - sync.Once schema cache (perf)
+            - Tests now exercise //go:embed via SchemaSource()
+          T8:
+            - Agent blocked — design.md spec defects discovered
+            - design.md fixed by orchestrator - list.MatchN takes a single schema (not a list); #HasRm* inlines list.MatchN (AND-composition conflicts on #re if composed via #HasFlagMatching)
+    outcome: approved
+
 deferred_issues:
-  # From test_review (scripts/verify-scaffolding.sh) — non-blocking
-  - severity: medium
+  # Batch 1 — from test_review on scripts/verify-scaffolding.sh
+  - batch: 1
+    severity: medium
     from: test_review
     path: scripts/verify-scaffolding.sh
     note: "Line 69 `continue` skips .go-file check when dir is missing; upstream assertion already failed. Add a clarifying comment."
-  - severity: medium
+  - batch: 1
+    severity: medium
     from: test_review
     path: scripts/verify-scaffolding.sh
     note: "`make -n <target>` can give misleading exit codes on BSD/macOS make. Consider `make -np | grep -E '^<target>:'` as a fallback."
-  - severity: medium
+  - batch: 1
+    severity: medium
     from: test_review
     path: scripts/verify-scaffolding.sh
     note: "CGO_ENABLED grep for mise.toml doesn't accept single-quoted TOML values. Broaden to `\"?0\"?|'?0'?`."
-  - severity: medium
+  - batch: 1
+    severity: medium
     from: test_review
     path: scripts/verify-scaffolding.sh
     note: "No explicit `grep -E '^module ' go.mod` check. `go build` catches it transitively but a direct assertion gives a clearer failure message."
-  - severity: medium
+  - batch: 1
+    severity: medium
     from: test_review
     path: scripts/verify-scaffolding.sh
     note: "No self-check that the script retains its executable bit. A one-liner `[[ -x scripts/verify-scaffolding.sh ]]` would protect against accidental chmod regressions."
-  - severity: medium
+  - batch: 1
+    severity: medium
     from: test_review
     path: scripts/verify-scaffolding.sh
     note: "`printf -- '----\\n'` uses an unneeded `--` guard. Minor style."
-
-  # From code_review — one kept, rest fixed inline
-  - severity: medium
+  - batch: 1
+    severity: medium
     from: code_review
     path: mise.toml
     note: "Consider adding `[env] CGO_ENABLED = \"0\"` so interactive-shell `go build` invocations also get the enforcement. Makefile already covers the built paths."
+
+  # Batch 2 — T2 mediums not fixed in fix-pass
+  - batch: 2
+    severity: medium
+    from: code_review
+    task: T2
+    path: internal/config/loader.go
+    note: "Action is a flat struct with Kind discriminator rather than a Go sum type. Works but doesn't enforce 'only Kind-relevant fields populated' at compile time. Document the invariant or refactor to Body interface in a T3-era refactor."
+  - batch: 2
+    severity: medium
+    from: code_review
+    task: T2
+    path: internal/config/loader.go
+    note: "Rule files require top-level `rule:` container. Undocumented in rule-author-facing spec. Add package doc and richer error message when missing."
+  - batch: 2
+    severity: medium
+    from: code_review
+    task: T2
+    path: internal/config/loader.go
+    note: "decodeAction iterates ActionKind values relying on disjunction non-overlap. Add a comment or switch to CUE's disjunction-introspection API."
+
+  # Batch 2 — T8 code-review mediums
+  - batch: 2
+    severity: medium
+    from: code_review
+    task: T8
+    path: cue/flags/rm.cue
+    note: "Long-form alternation accepts single-dash `-force` in addition to `--force`. Tests assert this is intentional; worth adding a comment naming the lenient-matching choice."
+  - batch: 2
+    severity: medium
+    from: code_review
+    task: T8
+    path: cue/flags/rm.cue
+    note: "Zero comments on #rmShortClass. Add a one-line contract note explaining the single-source-of-truth intent, as cheap insurance against future reintroduction of the broken template-comprehension pattern."
