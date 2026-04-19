@@ -18,3 +18,11 @@ jobs:
       - run: make build
       - run: make test
       - run: make lint
+      # Install scrut via mise to match the local dev toolchain (mise.toml
+      # pins facebookincubator/scrut). The mise-action wires up PATH for all
+      # tools declared in mise.toml, so subsequent steps see both `scrut` and
+      # the mise-managed `go` binary.
+      - uses: jdx/mise-action@v2
+        with:
+          experimental: true
+      - run: make test-integration
