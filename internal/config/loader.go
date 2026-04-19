@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -195,7 +196,7 @@ func decodeAction(v cue.Value) (*Action, error) {
 		}
 		return decodeActionBody(kind, sub)
 	}
-	return nil, fmt.Errorf("no action member present")
+	return nil, errors.New("no action member present")
 }
 
 func decodeActionBody(kind ActionKind, body cue.Value) (*Action, error) {
