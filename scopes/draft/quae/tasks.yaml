@@ -214,6 +214,8 @@ tasks:
     title: Scrut-based integration tests
     priority: P2
     estimate: M
+    status: in_progress
+    status_note: "Claude slice landed (21/21 scrut tests). Extend with Cursor/OpenCode/FactoryAI sections as those adapters land (T10/T11/T12)."
     description: >
       End-to-end CLI integration tests using scrut (facebookincubator/scrut).
       A single markdown file (tests/policies.md) contains scrut code blocks that

@@ -1,0 +1,2 @@
+# Policy rules for integration tests live here (`*.cue` files).
+# Kept empty in RED; implementer fills it to make tests/policies.md pass.
