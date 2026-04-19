@@ -44,7 +44,7 @@ tasks:
     estimate: M
     description: >
       Produce OutputEnvelope from matched rule actions. Gate selection: pick
-      winning gate (halt > deny/block > ask > allow). Inject aggregation:
+      winning gate (deny > ask > allow). Inject aggregation:
       sort by (priority, rule_id), dedup by rule_id, truncate by size budget.
       Modify selection: highest priority, tie-break by rule_id. Drop
       UpdatedInput if gate is Blocking. Gate dispatch: map gate action to
@@ -60,7 +60,9 @@ tasks:
       Stop) to internal Input. Handles JSON-in-JSON parsing, field renaming,
       event type inference, tool name normalization. RenderOutput() renders
       OutputEnvelope as Claude Code response JSON, routing UserReason/AgentReason
-      to vendor-appropriate fields by Category.
+      to vendor-appropriate fields by Category. Declares adapter capabilities;
+      rejects rules emitting `modify` actions at rule-load time (CC's PreToolUse
+      hook has no payload-rewrite mechanism).
 
   - id: T7
     title: CLI eval command
@@ -174,7 +176,7 @@ tasks:
     description: >
       quae.lock.cue manifest declaring all executable modules with #Module
       schema. SHA256 verification on load. Module resolution: lockfile →
-      ~/.config/quae/modules/<n>.wasm|.jq. Support for module dependencies
+      ~/.config/quae/modules/<n>.wasm. Support for module dependencies
       (deps field).
 
   - id: T19
@@ -184,9 +186,11 @@ tasks:
     description: >
       Regex parser backend (config-driven via parser.cue).
       Tree-sitter parser backend (embedded Wasm grammars via wazero).
-      jq parser backend (in-process via gojq, lockfile-referenced).
       Wasm parser backend (lockfile-referenced modules).
       All backends emit canonical #Parsed at tool_input.parsed.
+      jq backend deferred — gojq lacks fuel/memory sandboxing and is
+      unacceptable on the security hot path until a wazero-hosted jq or
+      equivalent sandboxed path exists.
 
   - id: T20
     title: validate-modules command

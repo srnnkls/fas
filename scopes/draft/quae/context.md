@@ -27,7 +27,7 @@ CUE was selected for its unification semantics: values are constraints, matching
 - Configurable fail mode: default fail-open, optional fail-closed
 - No built-in rules ship by default — blank slate
 - Adapters are compiled Go; no user-configurable transforms on stdin→eval or eval→stdout
-- Executable modules (Wasm, jq) must be pinned by sha256 in lockfile
+- Executable Wasm modules must be pinned by sha256 in lockfile
 
 ## Assumptions
 
@@ -35,5 +35,4 @@ CUE was selected for its unification semantics: values are constraints, matching
 - CUE's `Value.Unify()` API supports the "try-match, check-for-error" pattern for rule evaluation
 - CUE file loading and compilation is fast enough for per-invocation use (<50ms budget)
 - wazero provides sufficient Wasm runtime performance for signal modules within the latency budget
-- gojq provides sufficient jq compatibility for parser modules
 - Tree-sitter Wasm grammars are available for languages commonly manipulated by AI coding agents

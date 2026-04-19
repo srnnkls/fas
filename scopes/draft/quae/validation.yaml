@@ -98,4 +98,28 @@ clarification_log:
     answer: "CUE Unify() loop — structural unification of when-clauses against input. Signals and custom parser backends deferred to P3."
     area: behavior
 
+  - question: How does `modify` reconcile with Claude Code's PreToolUse hook, which has no payload-rewrite mechanism?
+    answer: "CC adapter rejects rules emitting `modify` at rule-load time. `modify` stays defined for vendors whose protocols support input rewriting (Cursor, OpenCode). Adapter capabilities are declared and checked statically — no silent degradation."
+    area: integration
+
+  - question: Are halt/deny/block semantically distinct, or just severity differences?
+    answer: "Collapsed to a single `deny` gate with a `severity` field (LOW/MEDIUM/HIGH/CRITICAL). Gate priority is now deny > ask > allow."
+    area: data_model
+
+  - question: Does quae support cross-call state (retries, prior approvals, rate limits)?
+    answer: "No. Non-goal for v0.1–v0.3. Each hook event is evaluated independently. Rules are pure constraints over a single `#Input`; there is no state backend. Called out explicitly in spec.md and design.md."
+    area: scope
+
+  - question: Does `parsed.actions` contain command names (`rm`) or semantic verbs (`remove`)?
+    answer: "Semantic verbs only. Command names live on the raw input (`tool_input.command` for Bash), not in `actions`. `#DestructiveActions` drops `rm` to avoid the conflation."
+    area: data_model
+
+  - question: Is the jq parser backend sandboxed?
+    answer: "No — `gojq` is reproducible but lacks fuel/memory bounds. jq backend is deferred until a sandboxed execution path exists. P3 parser backends: builtin Go, regex, tree-sitter (Wasm), Wasm."
+    area: constraints
+
+  - question: Does the `#FlagSet` template in the stdlib work as written?
+    answer: "No — `_|_` iteration source and clashing `[Name=_]` templates make it non-evaluable. Replaced with per-tool constraint files: one `#HasFlagMatching` building block in the stdlib, explicit `#Has<Tool><Flag>` constraints per tool (short-letter class written as a concrete string)."
+    area: data_model
+
 markers: []

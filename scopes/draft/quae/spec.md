@@ -23,7 +23,13 @@ CUE-based policy engine for AI coding agent hooks. Evaluates tool-call events ag
 - <50ms evaluation latency per hook event (excluding Wasm signal execution)
 - Vendor adapters for Claude Code, Cursor, OpenCode, and Factory AI
 - CUE rule authoring requires no Go code — pure `.cue` files
-- All executable modules (Wasm, jq) pinned by sha256 in lockfile
+- All executable Wasm modules pinned by sha256 in lockfile
+
+## Non-Goals
+
+- **Session state / cross-call accumulation.** Each hook event is evaluated independently. Patterns like "agent has tried this three times" or "already approved this pattern once" require a state backend that is out of scope for v0.1–v0.3.
+- **Input modification on Claude Code.** CC's `PreToolUse` hook has no payload-rewrite mechanism. The CC adapter rejects `modify` rules at rule-load time. `modify` remains available for vendors whose protocols support it (Cursor, OpenCode).
+- **jq parser backend.** Deferred until a sandboxed execution path exists. `gojq` is reproducible but lacks fuel/memory bounds, which is unacceptable for a security-critical hot path. P3 parser backends: builtin Go, regex, tree-sitter, Wasm.
 
 ## User Stories
 
@@ -31,7 +37,7 @@ CUE-based policy engine for AI coding agent hooks. Evaluates tool-call events ag
 
 - As a developer, I can write CUE rules with `when` clauses that structurally match tool-call events via unification
 - As a developer, I can use `if` guards in rules for cross-field logic (comparisons, arithmetic, existence branching)
-- As a developer, I can define gate actions (halt/deny/block/ask/allow) and effects (inject/modify) declaratively
+- As a developer, I can define gate actions (deny/ask/allow) with severity and effects (inject/modify) declaratively
 - As a developer, tool input is parsed by builtin Go parsers into canonical `#Parsed` structure (actions, targets, flags, attributes) before matching
 - As a developer, I can run `quae eval` with JSON on stdin and get an `OutputEnvelope` on stdout
 - As a developer, I can layer global rules (~/.config/quae/) with project rules (.quae/) where blocking gates short-circuit but effects accumulate
@@ -70,7 +76,7 @@ stdin JSON → Go Adapter (ParseInput) → #Input validation
 1. Global rules (~/.config/quae/rules/*.cue) — blocking gates short-circuit, effects accumulate
 2. Project rules (.quae/rules/*.cue) — synthesize gate + effects into OutputEnvelope
 
-**Gate priority:** halt > deny/block > ask > allow. Effects (inject, modify) are orthogonal to the gate.
+**Gate priority:** deny > ask > allow. Effects (inject, modify) are orthogonal to the gate.
 
 ## Implementation Strategy
 

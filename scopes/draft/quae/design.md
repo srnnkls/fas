@@ -47,7 +47,7 @@
 5. **CUE evaluator:** Load rules, unify each rule's `when` against enriched input (including `signals.*`), evaluate `if` guards, collect actions from rules where `then` exists after evaluation.
 6. **Synthesizer:** Produce an `OutputEnvelope`:
 
-   * pick the winning **gate** (halt > deny/block > ask > allow)
+   * pick the winning **gate** (deny > ask > allow)
    * aggregate **inject** effects (sorted by `(priority, rule_id)`, deduped by `rule_id`, truncated by size budget)
    * select the winning **modify** effect (highest priority, tie-broken by `rule_id`)
    * **If the gate is Blocking:** drop `UpdatedInput` entirely (blocked actions have no payload to rewrite).
@@ -120,11 +120,17 @@ type Adapter interface {
 
 | Category     | Gate actions                 | Meaning             |
 | ------------ | ---------------------------- | ------------------- |
-| **Blocking** | halt, deny, block            | Action is forbidden |
+| **Blocking** | deny                         | Action is forbidden |
 | **Asking**   | ask, modify(mode:"confirm")  | User must confirm   |
 | **Allowing** | allow, modify(mode:"silent") | Action is permitted |
 
 Inject and modify are **effects**; only the gate determines category.
+
+#### Adapter Capabilities
+
+Not every vendor hook protocol supports every effect. Adapters declare which effects they can render; rules that produce unsupported effects are rejected at **rule-load time** (not silently dropped at evaluation).
+
+Claude Code's `PreToolUse` hook supports `allow` / `deny` / `ask` plus a reason string — it has **no payload-rewrite mechanism**. The Claude Code adapter therefore rejects rules that emit `modify` actions. `modify` remains defined for vendors whose protocols support input rewriting (e.g. Cursor, OpenCode).
 
 ---
 
@@ -187,11 +193,9 @@ CUE schema:
     requires?: [...string]
 }
 
-#Action: #Halt | #Deny | #Block | #Ask | #Modify | #Inject | #Allow
+#Action: #Deny | #Ask | #Modify | #Inject | #Allow
 
-#Halt:  halt:  { rule_id: string, reason: string, severity: *"CRITICAL" | "HIGH" | "MEDIUM" | "LOW" }
 #Deny:  deny:  { rule_id: string, reason: string, severity: *"HIGH" | "CRITICAL" | "MEDIUM" | "LOW" }
-#Block: block: { rule_id: string, reason: string, severity: *"HIGH" | "CRITICAL" | "MEDIUM" | "LOW" }
 #Ask:   ask:   { rule_id: string, reason: string, question: string }
 #Allow: allow: true
 
@@ -222,9 +226,12 @@ Parsers transform raw tool input into canonical `#Parsed` at `tool_input.parsed`
 * Regex (config-driven)
 * Tree-sitter (embedded Wasm grammars)
 * Wasm (lockfile module)
-* jq (lockfile module; runs in-process via gojq; reproducible but not fuel/mem sandboxed)
 
 Parsers are **structure only**: they do not emit policy decisions and do not compute derived "booleans for rules".
+
+### Action vocabulary
+
+`parsed.actions` contains **semantic verbs** only (e.g. `"remove"`, `"delete"`, `"truncate"`). Command names (`rm`, `psql`, `dd`) are not in `actions` — they live on the raw input (`tool_input.command` for Bash) or in tool-specific parser output. Rules that want to match a specific executable match the raw field; rules that want to match intent match `actions`.
 
 ---
 
@@ -246,22 +253,20 @@ Executable artifacts must be declared and pinned by hash.
 #Module: {
     name:    string
     kind:    "signal" | "parser"
-    format:  *"wasm" | "jq"
+    format:  "wasm"
     sha256:  string
 
     deps?: [...string]
 
-    if format == "wasm" {
-        limits: {
-            mem_mb:      *16 | int & >=1 & <=256
-            fuel:        *1000000 | int & >=1000
-            timeout_ms:  *5000 | int & >=100 & <=30000
-            max_out_kb:  *64 | int & >=1 & <=1024
-        }
-        caps: {
-            wasi_fs:  *false | bool
-            wasi_net: *false | bool
-        }
+    limits: {
+        mem_mb:      *16 | int & >=1 & <=256
+        fuel:        *1000000 | int & >=1000
+        timeout_ms:  *5000 | int & >=100 & <=30000
+        max_out_kb:  *64 | int & >=1 & <=1024
+    }
+    caps: {
+        wasi_fs:  *false | bool
+        wasi_net: *false | bool
     }
 }
 
@@ -272,7 +277,7 @@ Resolution:
 
 ```
 1. quae.lock.cue
-2. ~/.config/quae/modules/<n>.wasm or <n>.jq (verified against sha256)
+2. ~/.config/quae/modules/<n>.wasm (verified against sha256)
 ```
 
 ---
@@ -301,8 +306,9 @@ package quae
 #SystemPrefixes:     ["/etc", "/sys", "/proc", "/boot", "/dev"]
 #EscalationCommands: ["sudo", "doas", "su"]
 
-// Cross-tool action vocabulary (normalized by parsers into parsed.actions)
-#DestructiveActions: ["delete", "drop", "remove", "rm", "destroy", "truncate"]
+// Cross-tool action vocabulary — semantic verbs only (normalized by parsers into parsed.actions).
+// Command names like "rm" stay on the raw input, not here.
+#DestructiveActions: ["delete", "drop", "remove", "destroy", "truncate"]
 ```
 
 #### Layer 2 — Derived Constraints (Regex / Disjunction)
@@ -337,15 +343,15 @@ import "list"
 #isBash:       { tool_name: "Bash" }
 ```
 
-### Standardlib Augmentation: Flags as `#Flags` (Template-Based Vocabulary)
+### Flags: Per-Tool Constraint Files
 
-Flags are a *tool-specific vocabulary*. The stdlib provides a **template** to define a flag set once and then consume it ergonomically from rules.
+Flags are *tool-specific vocabulary*. The stdlib ships one building block (`#HasFlagMatching`); each tool's flag set lives in its own file as explicit per-flag constraints. No template, no comprehension over template fields — the short-letter class is written as a concrete string per tool.
 
 Key properties:
 
 * No "semantic option parsing" (no `{"force": true}` normalization).
-* Works with the canonical representation everybody expects: a **list of flag tokens** (`parsed.flags`).
-* Handles **short-combos** safely by constraining combos to the *known short-letter set* for that tool (avoids false positives like `-force` matching "-r" just because it contains an `r`).
+* Works with the canonical representation: a **list of flag tokens** (`parsed.flags`).
+* Handles **short-combos** safely by constraining combos to the *known short-letter set* for that tool (avoids false positives like `-force` matching `-r` just because it contains `r`).
 
 #### Building Block: "has a flag token matching regex"
 
@@ -360,114 +366,37 @@ import "list"
 }
 ```
 
-#### Template: Define a FlagSet once, get `.when` traits for free
+#### Per-Tool Example (`rm`)
 
 ```cue
 package quae
 
-import "strings"
+// rm's known short-flag letters. Keep this string in sync with the
+// set of #HasRm* constraints defined below.
+#rmShortClass: "friv"
 
-// A FlagSet is a tool-specific map: name -> {short?, long?}
-#FlagSpec: {
-    short?: string  // single letter (e.g. "f")
-    long?:  string  // long name (e.g. "force")
+// Each constraint matches:
+//   --long | --long=... | -long | -long=...  (long form, dashed or Go-style single-dash)
+//   -[friv]*X[friv]*                         (short-combo containing letter X, made only of known rm letters)
+
+#HasRmForce: #HasFlagMatching & {
+    #re: "^--force(=|$)|^-force(=|$)|^-[\(#rmShortClass)]*f[\(#rmShortClass)]*$"
 }
 
-#FlagSet: {
-    // user provides these entries:
-    [Name=_]: #FlagSpec
+#HasRmRecursive: #HasFlagMatching & {
+    #re: "^--recursive(=|$)|^-recursive(=|$)|^-[\(#rmShortClass)]*r[\(#rmShortClass)]*$"
+}
 
-    // derived short-letter class for safe short-combo matching (e.g. "friv")
-    #shortLetters: [ for _, v in _|_ {
-        // this comprehension is "templated" below; see note
-    } ]
+#HasRmInteractive: #HasFlagMatching & {
+    #re: "^--interactive(=|$)|^-interactive(=|$)|^-[\(#rmShortClass)]*i[\(#rmShortClass)]*$"
+}
 
-    // Template applied per field: adds a stable `.when` constraint per flag name.
-    [Name=_]: {
-        name: Name
-
-        // Optional: accept both --long and -long (Go-style single-dash long).
-        // Also accept --long=value.
-        // For short-combos: match only tokens made of known short letters.
-        //
-        // NOTE: the short-combo part is only enabled when `short` is set.
-        re: string
-
-        when: #HasFlagMatching & { #re: re }
-    }
+#HasRmVerbose: #HasFlagMatching & {
+    #re: "^--verbose(=|$)|^-verbose(=|$)|^-[\(#rmShortClass)]*v[\(#rmShortClass)]*$"
 }
 ```
 
-CUE doesn't let us write a true "function", but templates *do* let us stamp per-flag constraints idiomatically. Here's the concrete, fully working version for a **specific tool** (example: `rm`), which is how you'll actually ship it:
-
-```cue
-package quae
-
-import (
-    "strings"
-)
-
-// rm's *known* short flags (subset; extend as desired)
-#RmFlags: {
-    force:     { short: "f", long: "force" }
-    recursive: { short: "r", long: "recursive" }
-    interactive: { short: "i", long: "interactive" }
-    verbose:     { short: "v", long: "verbose" }
-
-    // Derived: character class for rm's short flags.
-    #shortClass: "\(strings.Join([
-        for _, v in #RmFlags if v.short != _|_ { v.short }
-    ], ""))"
-
-    // Template: generates `.when` for each flag entry.
-    [Name=_]: {
-        name: Name
-
-        // long forms:
-        //   --force, --force=..., -force, -force=...
-        // short forms:
-        //   -f, -rf, -vrf (but only if token is made of rm's known short letters)
-        re: *(
-            // long (double dash)
-            "^--\(long)(=|$)" +
-            // OR long (single dash)
-            "|^-\(long)(=|$)" +
-            // OR short/short-combo (safe)
-            "|^-[\(#shortClass)]+$"
-        ) | string
-
-        // For a particular flag, require the token both:
-        //  - be a valid rm short-combo token, AND
-        //  - contain that specific letter somewhere.
-        //
-        // We do this by specializing `re` further per-flag below.
-    }
-
-    // Specialize per flag to "contain the specific short letter"
-    force: {
-        re: "^--\(long)(=|$)|^-\(long)(=|$)|^-[\(#shortClass)]*f[\(#shortClass)]*$"
-    }
-    recursive: {
-        re: "^--\(long)(=|$)|^-\(long)(=|$)|^-[\(#shortClass)]*r[\(#shortClass)]*$"
-    }
-    interactive: {
-        re: "^--\(long)(=|$)|^-\(long)(=|$)|^-[\(#shortClass)]*i[\(#shortClass)]*$"
-    }
-    verbose: {
-        re: "^--\(long)(=|$)|^-\(long)(=|$)|^-[\(#shortClass)]*v[\(#shortClass)]*$"
-    }
-
-    // Export the actual composable constraints
-    force:     { when: #HasFlagMatching & { #re: re } }
-    recursive: { when: #HasFlagMatching & { #re: re } }
-    interactive: { when: #HasFlagMatching & { #re: re } }
-    verbose:     { when: #HasFlagMatching & { #re: re } }
-}
-
-// Convenience aliases (optional)
-#HasForce:     #RmFlags.force.when
-#HasRecursive: #RmFlags.recursive.when
-```
+Boilerplate (3 lines per flag) is the cost of keeping the stdlib working in plain CUE. Rules compose the `#HasRm*` constraints directly via unification.
 
 ### AND / OR Composition
 
@@ -475,10 +404,10 @@ Because these are **pure constraints** (no generated fields), they compose clean
 
 ```cue
 // AND: require both
-when: #isPreToolUse & #isBash & (#HasForce & #HasRecursive)
+when: #isPreToolUse & #isBash & (#HasRmForce & #HasRmRecursive)
 
 // OR: require either
-when: #isPreToolUse & #isBash & (#HasForce | #HasRecursive)
+when: #isPreToolUse & #isBash & (#HasRmForce | #HasRmRecursive)
 ```
 
 ---
@@ -513,7 +442,7 @@ Parsers:
 
 Modules:
   6. quae.lock.cue                             (manifest)
-  7. ~/.config/quae/modules/<n>.wasm|.jq        (verified artifacts)
+  7. ~/.config/quae/modules/<n>.wasm           (verified artifacts)
 
 Schemas:
   8. builtin schema.cue                         (#Input, #Parsed, #Decision)
@@ -526,10 +455,19 @@ Schemas:
 1. Parsers normalize to `#Parsed` (actions, targets, flags, attributes). No tool-specific shapes leak to the policy layer.
 2. Parsers and signals write only to fixed namespaces: `tool_input.parsed`, `signals.*`.
 3. Rules are pure constraints. No side effects, no I/O in CUE.
-4. Gate priority is fixed: halt > deny/block > ask > allow. Exactly one gate wins.
+4. Gate priority is fixed: deny > ask > allow. Exactly one gate wins.
 5. Modify: at most one wins (highest priority, tie by `rule_id`). **Dropped if gate is Blocking.**
 6. Inject: many accumulate, sorted and size-truncated.
 7. Adapters are compiled Go; no user-configurable transforms on stdin→eval or eval→stdout.
 8. Global before project; blocking gates short-circuit phase 2, but effects aggregate across phases.
 9. Signals are static-demand-driven: `union(meta.requires)` across all loaded rules.
 10. Pure Go build: `CGO_ENABLED=0`; deps are pure Go or Wasm.
+11. Adapter capabilities are checked at rule-load time; unsupported effects (e.g. `modify` on Claude Code) cause load failure, not silent drop.
+
+---
+
+## Non-Goals
+
+- **Session state.** Each hook event is evaluated independently. No cross-call accumulation ("agent has tried this three times", "already approved this pattern once"). Rules are pure constraints over a single `#Input`; there is no state backend. Revisit post-v0.3 if real use cases emerge.
+- **`modify` on Claude Code.** CC's `PreToolUse` hook has no payload-rewrite mechanism. The CC adapter rejects `modify` actions at rule-load time. Forward-compatible for Cursor / OpenCode.
+- **jq parser backend.** Deferred until a sandboxed execution path exists. `gojq` is reproducible but lacks fuel/memory bounds — unacceptable for a security-critical hot path. Parser backends in v0.3 are: builtin Go, regex, tree-sitter (Wasm grammars), Wasm.
