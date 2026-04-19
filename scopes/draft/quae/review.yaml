@@ -125,6 +125,47 @@ batch_reviews:
         recommendation: commit
     outcome: approved
 
+  - batch: 4
+    tasks: [T5, T6, T9]
+    bootstrap:
+      artifact: internal/envelope/{envelope.go,input.go,envelope_test.go}
+      note: "Shared adapter-agnostic types (OutputEnvelope, Category, Input, SignalResult) created upfront so T5/T6/T9 could run in parallel without cross-dependencies."
+    phases:
+      testers:
+        parallel: 3
+        artifacts:
+          T5: internal/synthesis/synthesis_test.go (24 tests)
+          T6: internal/adapter/claudecode_test.go (19 tests)
+          T9: internal/pipeline/pipeline_test.go (12 tests)
+        red_verified: true
+      test_reviews:
+        parallel: 3
+        outcomes:
+          T5: pass (2 mediums deferred)
+          T6: pass (3 mediums deferred)
+          T9: pass (3 mediums deferred)
+      implementers:
+        parallel: 3
+        files:
+          T5: [internal/synthesis/synthesis.go]
+          T6: [internal/adapter/adapter.go, internal/adapter/claudecode.go]
+          T9: [internal/pipeline/pipeline.go]
+        green_verified: true
+        notes:
+          - "T9 fixed 6 pipeline_test.go fixtures: channel: 'system_reminder' → 'agent' (schema enum is *agent|user)"
+          - "golangci-lint --fix auto-applied QF1001 De Morgan's law simplification to synthesis_test.go"
+      code_reviews:
+        parallel: 3
+        outcomes:
+          T5: approved (3 mediums deferred)
+          T6: approved (3 mediums — fix_pass addressed 2)
+          T9: approved (0 issues)
+      fix_pass:
+        T6:
+          - HIGH (security) — permissionDecisionFor default now returns "deny" (fail-closed on unknown Category)
+          - Added `var _ Adapter = ClaudeCode{}` compile-time interface assertion
+    outcome: approved
+
 deferred_issues:
   # Batch 1 — from test_review on scripts/verify-scaffolding.sh
   - batch: 1
@@ -196,3 +237,51 @@ deferred_issues:
     task: T8
     path: cue/flags/rm.cue
     note: "Zero comments on #rmShortClass. Add a one-line contract note explaining the single-source-of-truth intent, as cheap insurance against future reintroduction of the broken template-comprehension pattern."
+
+  # Batch 4 — T5 mediums
+  - batch: 4
+    severity: medium
+    from: code_review
+    task: T5
+    path: internal/synthesis/synthesis.go
+    note: "json.Marshal error on UpdatedInput is silently swallowed. For map[string]any this can't realistically fail, but a func/chan/cycle value would be lost without signal. Either document the invariant or return an error from Synthesize."
+  - batch: 4
+    severity: medium
+    from: code_review
+    task: T5
+    path: internal/synthesis/synthesis.go
+    note: "Budget newline accounting treats concatenated output as a single stream, but the envelope splits injects across agent/user channels. Cross-channel truncation behavior is not covered by a test — either split budgets per-channel or add a test that pins the current shared-budget semantics."
+  - batch: 4
+    severity: medium
+    from: code_review
+    task: T5
+    path: internal/synthesis/synthesis.go
+    note: "`deduped := sorted[:0]` aliases the backing array. Safe here but regression-prone. Prefer `make([]*config.Action, 0, len(sorted))`."
+
+  # Batch 4 — T6 medium (fail-closed + interface-assertion fixed inline)
+  - batch: 4
+    severity: medium
+    from: code_review
+    task: T6
+    path: internal/adapter/claudecode.go
+    note: "ccInput.TranscriptPath is decoded but never used. Remove the field or use `json:\"-\"` once documentation purpose is served elsewhere."
+
+  # Batch 4 — T9 mediums (test-quality)
+  - batch: 4
+    severity: medium
+    from: test_review
+    task: T9
+    path: internal/pipeline/pipeline_test.go
+    note: "TestEvaluatePhases_Phase1InjectOnly_NoGate_Phase2Runs uses a conditional fallback between ruleIDs and kind-based checks. Tighten by asserting kinds directly."
+  - batch: 4
+    severity: medium
+    from: test_review
+    task: T9
+    path: internal/pipeline/pipeline_test.go
+    note: "TestEvaluatePhases_MalformedPhase1_ErrorReturned has an orphan `_ = errors.Unwrap(err)` — drop it or strengthen the contract."
+  - batch: 4
+    severity: medium
+    from: test_review
+    task: T9
+    path: internal/pipeline/pipeline_test.go
+    note: "Error-path tests use substring checks on error messages. Consider a sentinel error + errors.Is once implementer lands a stable contract."
