@@ -46,6 +46,7 @@ tasks:
     title: Synthesizer & gate dispatch
     priority: P1
     estimate: M
+    status: completed
     description: >
       Produce OutputEnvelope from matched rule actions. Gate selection: pick
       winning gate (deny > ask > allow). Inject aggregation:
@@ -58,6 +59,7 @@ tasks:
     title: Claude Code adapter
     priority: P1
     estimate: M
+    status: completed
     description: >
       Implement Adapter interface: ParseInput() normalizes Claude Code hook
       event JSON (PreToolUse, PostToolUse, UserPromptSubmit, SubagentStart,
@@ -96,6 +98,7 @@ tasks:
     title: Two-phase evaluation & config resolution
     priority: P1
     estimate: M
+    status: completed
     description: >
       Global rules (~/.config/quae/rules/*.cue) evaluate first. Blocking
       gates short-circuit phase 2, but effects always accumulate across
