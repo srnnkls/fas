@@ -74,6 +74,7 @@ tasks:
     title: CLI eval command
     priority: P1
     estimate: M
+    status: completed
     description: >
       quae eval reads stdin JSON, runs full pipeline, writes stdout JSON.
       Flags: --harness, --config, --fail-closed. Exit code 0 on success,

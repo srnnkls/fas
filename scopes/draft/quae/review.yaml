@@ -166,6 +166,31 @@ batch_reviews:
           - Added `var _ Adapter = ClaudeCode{}` compile-time interface assertion
     outcome: approved
 
+  - batch: 5
+    tasks: [T7]
+    phases:
+      tester:
+        subagent: task-tester
+        artifact: cmd/quae/main_test.go
+        tests: 15
+        red_verified: true
+      test_review:
+        subagent: task-reviewer
+        status: pass
+        deferred_mediums: 4
+        recommendation: proceed_to_implementer
+      implementer:
+        subagent: task-implementer
+        files:
+          - cmd/quae/main.go
+        green_verified: true
+      code_review:
+        subagent: task-reviewer
+        status: approved
+        deferred_mediums: 3
+        recommendation: commit
+    outcome: approved
+
 deferred_issues:
   # Batch 1 — from test_review on scripts/verify-scaffolding.sh
   - batch: 1
@@ -285,3 +310,43 @@ deferred_issues:
     task: T9
     path: internal/pipeline/pipeline_test.go
     note: "Error-path tests use substring checks on error messages. Consider a sentinel error + errors.Is once implementer lands a stable contract."
+
+  # Batch 5 mediums — T7 CLI polish
+  - batch: 5
+    severity: medium
+    from: code_review
+    task: T7
+    path: cmd/quae/main.go
+    note: "Adapter registry is switch + parallel supportedHarnesses slice. Collapse to a package-level map[string]adapter.Adapter so adding a harness is a single edit."
+  - batch: 5
+    severity: medium
+    from: code_review
+    task: T7
+    path: cmd/quae/main.go
+    note: "printUsage is a one-line wrapper around writeUsage with no callers that couldn't target writeUsage directly. Inline and drop."
+  - batch: 5
+    severity: medium
+    from: code_review
+    task: T7
+    path: cmd/quae/main.go
+    note: "parseFlags accepts a stderr io.Writer parameter that's only used as the FlagSet output sink. Rename parameter to `out` to match its role."
+
+  # Batch 5 test-review mediums
+  - batch: 5
+    severity: medium
+    from: test_review
+    task: T7
+    path: cmd/quae/main_test.go
+    note: "TestRun_ConfigPathDoesNotExist_TreatedAsEmpty pins 'missing --config dir treated as empty, exit 0, allow' as contract. design.md/tasks.yaml don't explicitly specify this; worth confirming with spec owner."
+  - batch: 5
+    severity: medium
+    from: test_review
+    task: T7
+    path: cmd/quae/main_test.go
+    note: "TestRun_MissingHookEventName_FailClosed_EmitsBlocking only asserts reason != ''. Tighten to assert substring like 'parse'/'hook_event_name' for actionable messages."
+  - batch: 5
+    severity: medium
+    from: test_review
+    task: T7
+    path: cmd/quae/main_test.go
+    note: "TestRun_EffectsAccumulate_AcrossPhases only exercises channel=agent. Add a second case with channel=user to cover both routing paths."
