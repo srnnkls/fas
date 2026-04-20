@@ -7,6 +7,15 @@ require github.com/google/go-cmp v0.7.0
 require mvdan.cc/sh/v3 v3.13.1
 
 require (
+	cuelabs.dev/go/oci/ociregistry v0.0.0-20251212221603-3adeb8663819 // indirect
+	github.com/opencontainers/go-digest v1.0.0 // indirect
+	github.com/opencontainers/image-spec v1.1.1 // indirect
+	github.com/rogpeppe/go-internal v1.14.1 // indirect
+	golang.org/x/oauth2 v0.36.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
+)
+
+require (
 	cuelang.org/go v0.16.1
 	github.com/cockroachdb/apd/v3 v3.2.1 // indirect
 	github.com/emicklei/proto v1.14.3 // indirect
