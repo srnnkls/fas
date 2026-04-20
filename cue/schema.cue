@@ -1,7 +1,12 @@
 package quae
 
+// #HookEventName enumerates every hook event quae evaluates. Retyping
+// #Input.hook_event_name against this disjunction turns typos like
+// "PreToolUsex" into load-time failures instead of silent policy misses.
+#HookEventName: "PreToolUse" | "PostToolUse" | "UserPromptSubmit" | "Stop" | "SubagentStart" | "Notification"
+
 #Input: {
-	hook_event_name: string
+	hook_event_name: #HookEventName
 	tool_name?:      string
 	tool_input?: {
 		command?: string
@@ -14,10 +19,18 @@ package quae
 	...
 }
 
+// #Parsed is the canonical namespace for the preprocessor-enriched view of a
+// tool invocation. The list-shaped fields are intentionally typed as `_`
+// rather than `[...string]` because CUE's evaluator eagerly concretises an
+// open list's default to `[]` when a definition is referenced without a
+// value, and any downstream constraint like `list.MatchN(>0, ...)` (added by
+// stdlib composites such as `#hasSystemTarget`) would then fail against that
+// empty default at rule-load time — long before a real input arrives. Rule
+// authors or the stdlib tighten the type at the composition point.
 #Parsed: {
-	actions?:    [...string]
-	targets?:    [...string]
-	flags?:      [...string]
+	actions?:    _
+	targets?:    _
+	flags?:      _
 	attributes?: {...}
 	...
 }

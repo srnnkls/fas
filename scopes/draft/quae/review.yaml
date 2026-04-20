@@ -166,6 +166,42 @@ batch_reviews:
           - Added `var _ Adapter = ClaudeCode{}` compile-time interface assertion
     outcome: approved
 
+  - batch: 8
+    tasks: [T2-T8-typed-events]
+    note: "Typed hook events: #HookEventName literal union + per-event typed structs (#PreToolUse, #PostToolUse, #UserPromptSubmit, #Stop, #SubagentStart, #Notification). Rule authors can write `when: quae.#PreToolUse & quae.#isBash & quae.#hasSystemTarget` with CUE enforcing per-event required fields (tool_name for PreToolUse/PostToolUse, prompt for UserPromptSubmit). No `*` default markers."
+    phases:
+      tester:
+        subagent: task-tester
+        artifacts:
+          - cue/events_test.go (14 tests)
+          - internal/config/stdlib_import_test.go (2 added tests)
+        red_verified: true
+      test_review:
+        subagent: task-reviewer
+        status: pass
+        deferred_mediums: 2
+        recommendation: proceed_to_implementer
+      implementer:
+        subagent: task-implementer
+        files:
+          - cue/schema.cue (added #HookEventName, retyped hook_event_name)
+          - cue/events.cue (new — typed event structs)
+          - cue/embed.go (added events.cue to StdlibFS)
+          - internal/evaluator/evaluator.go (honor ? optional-field semantics in inputSatisfies)
+        green_verified: true
+        notes:
+          - "First implementer hit CUE Validate(Concrete) semantics issue and went beyond scope"
+          - "Fix pass resolved: two-step eventsUnifyFail helper, concrete composition inputs, evaluator ? semantics, #Parsed loosening, then restoration"
+          - "#Parsed list-field types relaxed from [...string] to _ to avoid eager empty-list validation against list.MatchN(>0, ...); canonical namespace still referenced via tool_input.parsed?: #Parsed"
+      code_review:
+        subagent: task-reviewer
+        status: changes_requested → fixed
+        issues_found:
+          - "#Parsed orphaned — addressed by restoring binding + relaxing list types"
+          - "False-positive scrut regression claim (reviewer ran stale state; verified actual 21/21)"
+          - "False-positive evaluator-change claim (inputSatisfies `?` skip is semantically correct)"
+    outcome: approved
+
   - batch: 7
     tasks: [T8-stdlib-import-closure]
     note: "Closes the T8 gap: rule files can now `import \"github.com/srnnkls/quae/cue:quae\"` and reference `quae.#hasSystemTarget`, `quae.#HasRmForce`, etc. without inlining. Loader uses `cuelang.org/go/cue/load` with an in-memory overlay that synthesizes a module hosting the embedded stdlib."
