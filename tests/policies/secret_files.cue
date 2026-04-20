@@ -11,7 +11,7 @@ import (
 // always a mistake. The target regex recognizes `.env[.suffix]`, any file
 // whose basename contains "credentials" with a recognized suffix, and the
 // canonical SSH private-key names (id_rsa, id_ed25519, id_dsa, id_ecdsa).
-rule: {
+secret_files: {
 	when: hook.#PreToolUse & tool.#isBash & {
 		tool_input: {
 			command: =~"^git\\s+add\\b"
