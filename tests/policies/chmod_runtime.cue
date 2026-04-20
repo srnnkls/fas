@@ -11,7 +11,7 @@ import (
 // (e.g. /run/docker.sock grants root-equivalent container control). The same
 // risk applies to other system directories, so the matcher extends the system
 // set with /run via #InCommandRe's #extra hook.
-rule: {
+chmod_runtime_blocklist: {
 	when: hook.#PreToolUse & tool.#isBash & tool.#isChmod & {
 		tool_input: command: (path.#InCommandRe & {
 			#prefixes: path.#SystemPrefixes

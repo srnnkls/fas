@@ -25,7 +25,7 @@ func writeRuleFile(t *testing.T, dir, name, body string) string {
 // ("HIGH") must apply.
 const denyRuleSrc = `package rules
 
-rule: {
+test_rule: {
 	when: {hook_event_name: "PreToolUse"}
 	then: deny: {
 		rule_id: "r1"
@@ -69,7 +69,7 @@ func TestLoadRules_UnknownGateRejected(t *testing.T) {
 	// #Halt/#Block into #Deny, so schema unification must fail.
 	const src = `package rules
 
-rule: {
+bad_halt: {
 	when: {hook_event_name: "PreToolUse"}
 	then: halt: {
 		rule_id: "r1"
@@ -151,7 +151,7 @@ func TestLoadRules_IgnoresNonCueFiles(t *testing.T) {
 func TestLoadRules_ModifyAction(t *testing.T) {
 	const src = `package rules
 
-rule: {
+fix_command: {
 	when: {hook_event_name: "PreToolUse", tool_name: "Bash"}
 	then: modify: {
 		rule_id: "r1"
@@ -196,7 +196,7 @@ rule: {
 func TestLoadRules_InjectAction(t *testing.T) {
 	const src = `package rules
 
-rule: {
+note_prompt: {
 	when: {hook_event_name: "UserPromptSubmit"}
 	then: inject: {
 		rule_id: "r1"
@@ -236,7 +236,7 @@ rule: {
 func TestLoadRules_MetaRequires(t *testing.T) {
 	const src = `package rules
 
-rule: {
+needs_signals: {
 	when: {hook_event_name: "PreToolUse"}
 	then: deny: {
 		rule_id: "r1"
@@ -322,7 +322,7 @@ func TestLoadRules_WhenExposedAsCueValue(t *testing.T) {
 func TestLoadRules_WhenAcceptsNonConcreteConstraints(t *testing.T) {
 	const src = `package rules
 
-rule: {
+system_path_regex: {
 	when: {
 		hook_event_name: "PreToolUse"
 		tool_input: command: =~"^(/etc|/sys)"
@@ -379,7 +379,7 @@ rule: {
 func ruleWithID(id string) string {
 	return `package rules
 
-rule: {
+test_rule: {
 	when: {hook_event_name: "PreToolUse"}
 	then: deny: {
 		rule_id: "` + id + `"

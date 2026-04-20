@@ -96,3 +96,9 @@ package quae
 	then?: #Action
 	meta?: #Meta
 }
+
+// #Rules is a `[string]: #Rule` shape for ad-hoc CUE-level validation
+// (schema tests, editor tooling, external checks). The loader never sees a
+// `Rules:` envelope — it iterates every top-level non-hidden field and
+// unifies each against #Rule directly.
+#Rules: [string]: #Rule

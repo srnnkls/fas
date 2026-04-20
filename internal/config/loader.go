@@ -78,16 +78,22 @@ const rulesModuleRoot = "/__quae_rules__"
 // rule file and the embedded stdlib via `cue.mod/pkg/...`.
 const rulesModulePath = "quae.local/rules@v0"
 
-// LoadRules reads `*.cue` files from dir, unifies each against the `#Rule`
-// schema, and returns decoded rules sorted deterministically by filename.
-// An empty directory returns an empty slice and a nil error. Non-.cue files
-// are ignored.
+// LoadRules reads `*.cue` files from dir, iterates every top-level non-hidden
+// field in each file, unifies each against the `#Rule` schema, and returns the
+// decoded rules. Files are visited in alphabetical order; inside a file, rules
+// are emitted in declaration order. An empty directory returns an empty slice
+// and a nil error. Non-.cue files are ignored.
+//
+// Hidden fields (`_foo`) and definitions (`#Foo`) are skipped — hidden fields
+// remain addressable as local helpers from sibling rules. A non-hidden
+// top-level field that does not unify with `#Rule` is a load-time error
+// naming both the file and the offending field.
 //
 // Each rule file is compiled inside a synthetic CUE module whose
 // `cue.mod/pkg/` tree hosts the embedded quae stdlib, so rule authors may
-// write `import "github.com/srnnkls/quae/cue:quae"` and reference
-// `quae.#hasSystemTarget`, `quae.#HasRmForce`, etc. Rule files that do not
-// import the stdlib are unaffected.
+// write `import "github.com/srnnkls/quae/cue/hook"` (etc.) and reference
+// `hook.#PreToolUse`, `path.#hasSystemTarget`, and friends. Rule files that
+// do not import the stdlib are unaffected.
 func LoadRules(dir string) ([]Rule, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -128,51 +134,69 @@ func LoadRules(dir string) ([]Rule, error) {
 			return nil, fmt.Errorf("read %s: %w", rulePath, err)
 		}
 
-		file, err := compileRuleFile(bundle.ctx, rulePath, src, stdlibOverlay)
+		fileVal, err := compileRuleFile(bundle.ctx, rulePath, src, stdlibOverlay)
 		if err != nil {
 			return nil, err
 		}
 
-		ruleVal := file.LookupPath(cue.ParsePath("rule"))
-		if err := ruleVal.Err(); err != nil {
-			return nil, fmt.Errorf("%s: missing top-level `rule`: %w", rulePath, err)
+		fileRules, err := extractFileRules(bundle.ruleDef, fileVal, rulePath)
+		if err != nil {
+			return nil, err
 		}
+		rules = append(rules, fileRules...)
+	}
+	return rules, nil
+}
 
-		unified := bundle.ruleDef.Unify(ruleVal)
+// extractFileRules walks every top-level regular field of fileVal (skipping
+// hidden fields and definitions), unifies each with #Rule, and returns the
+// decoded rules in declaration order.
+func extractFileRules(ruleDef cue.Value, fileVal cue.Value, rulePath string) ([]Rule, error) {
+	iter, err := fileVal.Fields(cue.Optional(false), cue.Definitions(false), cue.Hidden(false))
+	if err != nil {
+		return nil, wrapRuleLoadError(rulePath, err)
+	}
+
+	var out []Rule
+	for iter.Next() {
+		sel := iter.Selector()
+		fieldName := sel.String()
+		if sel.LabelType() == cue.StringLabel {
+			fieldName = sel.Unquoted()
+		}
+		fieldVal := iter.Value()
+
+		unified := ruleDef.Unify(fieldVal)
 		// Structural validation rejects unknown gates (closed-set #Action)
 		// and shape mismatches without forcing concreteness on `when` —
 		// regex/disjunction constraints there are legitimate and get
 		// resolved by the evaluator at runtime.
 		if err := unified.Validate(); err != nil {
-			return nil, fmt.Errorf("%s: does not satisfy #Rule: %w", rulePath, err)
+			return nil, wrapFieldLoadError(rulePath, fieldName, err)
 		}
-		// Unresolved references inside the `when` clause surface as a value
-		// error on the field itself rather than a validation failure on the
-		// rule as a whole — CUE tolerates non-concrete `when` bodies on
-		// purpose. An undefined identifier from the stdlib is not a
-		// non-concrete constraint, though; it's a hard mistake that must
-		// fail the load instead of being smuggled in as silent bottom.
+		// Unresolved references inside `when` surface as a value error on
+		// the field itself. An undefined identifier from the stdlib is not
+		// a legitimate non-concrete constraint; it must fail the load
+		// instead of being smuggled in as silent bottom.
 		if when := unified.LookupPath(cue.ParsePath("when")); when.Exists() {
 			if err := when.Err(); err != nil {
-				return nil, wrapRuleLoadError(rulePath, err)
+				return nil, wrapFieldLoadError(rulePath, fieldName, err)
 			}
 		}
-		// The action body, however, must be concrete so decodeAction can
-		// read every field without surprises.
 		if then := unified.LookupPath(cue.ParsePath("then")); then.Exists() {
 			if err := then.Validate(cue.Concrete(true)); err != nil {
-				return nil, fmt.Errorf("%s: action must be concrete: %w", rulePath, err)
+				return nil, wrapFieldLoadError(rulePath, fieldName, err)
 			}
 		}
 
 		rule, err := decodeRule(unified)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", rulePath, err)
+			return nil, fmt.Errorf("%s: field %q: %w", rulePath, fieldName, err)
 		}
-		rule.Source = rulePath
-		rules = append(rules, rule)
+		rule.Source = rulePath + ":" + fieldName
+		out = append(out, rule)
 	}
-	return rules, nil
+	return out, nil
 }
 
 // compileRuleFile evaluates a rule file with stdlib imports resolved.
@@ -230,20 +254,37 @@ func wrapRuleLoadError(rulePath string, err error) error {
 	return &ruleLoadError{path: rulePath, msg: msg, cause: err}
 }
 
-// ruleLoadError decorates a CUE diagnostic with the rule file path and
-// unwraps to the underlying cue/errors.Error so callers can type-assert for
-// position metadata.
+// wrapFieldLoadError wraps a CUE diagnostic for a specific top-level field so
+// the error names both the file and the offending field. The underlying
+// cue/errors.Error is preserved for callers that use errors.As.
+func wrapFieldLoadError(rulePath, field string, err error) error {
+	msg := cueerrors.Details(err, nil)
+	msg = strings.TrimRight(msg, "\n")
+	return &ruleLoadError{path: rulePath, field: field, msg: msg, cause: err}
+}
+
+// ruleLoadError decorates a CUE diagnostic with the rule file path (and,
+// when applicable, the offending top-level field name). It unwraps to the
+// underlying cue/errors.Error so callers can type-assert for position
+// metadata.
 type ruleLoadError struct {
 	path  string
+	field string
 	msg   string
 	cause error
 }
 
 func (e *ruleLoadError) Error() string {
-	if e.msg == "" {
+	switch {
+	case e.field != "" && e.msg != "":
+		return fmt.Sprintf("%s: field %q does not match #Rule: %s", e.path, e.field, e.msg)
+	case e.field != "":
+		return fmt.Sprintf("%s: field %q does not match #Rule: %v", e.path, e.field, e.cause)
+	case e.msg != "":
+		return fmt.Sprintf("compile %s: %s", e.path, e.msg)
+	default:
 		return fmt.Sprintf("compile %s: %v", e.path, e.cause)
 	}
-	return fmt.Sprintf("compile %s: %s", e.path, e.msg)
 }
 
 func (e *ruleLoadError) Unwrap() error { return e.cause }

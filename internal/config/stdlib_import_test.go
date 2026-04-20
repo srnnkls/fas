@@ -61,7 +61,7 @@ import (
 	"github.com/srnnkls/quae/cue/path"
 )
 
-rule: {
+system_path: {
 	when: hook.#PreToolUse & tool.#isBash & path.#hasSystemTarget
 	then: deny: {
 		rule_id: "sys-path"
@@ -119,7 +119,7 @@ import (
 	"github.com/srnnkls/quae/cue/flag"
 )
 
-rule: {
+rm_force: {
 	when: hook.#PreToolUse & tool.#isBash & flag.#HasRmForce
 	then: deny: {
 		rule_id: "rm-force"
@@ -167,7 +167,7 @@ func TestLoadRules_RuleWithoutStdlibImport_StillWorks(t *testing.T) {
 
 import "list"
 
-rule: {
+inline_etc: {
 	when: {
 		hook_event_name: "PreToolUse"
 		tool_name:       "Bash"
@@ -217,7 +217,7 @@ import (
 	"github.com/srnnkls/quae/cue/path"
 )
 
-rule: {
+typed_system_path: {
 	when: hook.#PreToolUse & tool.#isBash & path.#hasSystemTarget
 	then: deny: {
 		rule_id: "typed-pretooluse"
@@ -282,7 +282,7 @@ func TestLoadRules_TypedUserPromptSubmit_EnforcesPrompt(t *testing.T) {
 
 import "github.com/srnnkls/quae/cue/hook"
 
-rule: {
+typed_prompt: {
 	when: hook.#UserPromptSubmit
 	then: deny: {
 		rule_id: "typed-prompt"
@@ -331,7 +331,7 @@ func TestLoadRules_InvalidStdlibReference_ErrorsWithContext(t *testing.T) {
 
 import "github.com/srnnkls/quae/cue/path"
 
-rule: {
+bad_ref: {
 	when: path.#nonexistentDef
 	then: deny: {
 		rule_id: "bad"

@@ -214,7 +214,76 @@ CUE schema:
     priority:      *50 | int & >=1 & <=100
     mode:          *"confirm" | "silent"
 }
+
+// Author-facing helper for ad-hoc CUE-level validation (schema tests,
+// editor tooling). The loader never sees `Rules:` — it iterates every
+// top-level non-hidden field and unifies each against #Rule directly.
+#Rules: [string]: #Rule
 ```
+
+#### Multi-rule files
+
+A `.cue` file under `.quae/rules/` or `~/.config/quae/rules/` may declare
+any number of rules as top-level fields. The loader iterates every
+non-hidden, non-definition top-level field in declaration order and unifies
+each against `#Rule`. File-level ordering stays alphabetical by filename;
+within a file, rules emit in declaration order.
+
+```cue
+package rules
+
+import (
+    "github.com/srnnkls/quae/cue/hook"
+    "github.com/srnnkls/quae/cue/tool"
+    "github.com/srnnkls/quae/cue/path"
+)
+
+system_path_targets: {
+    when: hook.#PreToolUse & tool.#isBash & path.#hasSystemTarget
+    then: deny: {
+        rule_id:  "system-path"
+        reason:   "System path blocked"
+        severity: "HIGH"
+    }
+}
+
+system_path_for_loop: {
+    when: hook.#PreToolUse & tool.#isBash & {
+        tool_input: command: =~"(^|[^A-Za-z0-9_])/(etc|sys|proc|boot|dev)(/|$|[^A-Za-z0-9_])"
+    }
+    then: deny: {
+        rule_id:  "system-path-command"
+        reason:   "System path blocked"
+        severity: "HIGH"
+    }
+}
+```
+
+Hidden fields (`_foo`) are skipped by the loader but stay addressable from
+sibling rules as local helpers. This is the escape hatch for shared regex
+fragments or prefix lists a multi-rule file wants to name once:
+
+```cue
+_rm_rf: "^rm\\s+-rf"
+
+danger: {
+    when: {
+        hook_event_name: "PreToolUse"
+        tool_name:       "Bash"
+        tool_input: command: =~_rm_rf
+    }
+    then: deny: {
+        rule_id: "rm-rf"
+        reason:  "rm -rf blocked"
+    }
+}
+```
+
+Any top-level non-hidden field that does not unify with `#Rule` is a
+load-time error that names both the file and the offending field.
+
+`Rule.Source` is `<rule-file-path>:<field-name>` so a matched rule can be
+traced back to both the file and the specific named rule inside it.
 
 ---
 
@@ -322,7 +391,7 @@ import (
     "github.com/srnnkls/quae/cue/path"
 )
 
-rule: {
+system_path: {
     when: hook.#PreToolUse & tool.#isBash & path.#hasSystemTarget
     then: deny: {
         rule_id:  "sys-path"
@@ -506,6 +575,13 @@ quae validate-rules
 Rules:
   1. .quae/rules/*.cue                         (project)
   2. ~/.config/quae/rules/*.cue                (global)
+
+  Within each directory, files are visited alphabetically by filename.
+  Within each file, every top-level non-hidden, non-definition field is
+  unified against #Rule and emitted in declaration order. Hidden fields
+  (`_foo`) and definitions (`#Foo`) are skipped. Any non-hidden top-level
+  field that fails #Rule unification aborts the load with an error naming
+  both the file and the field. Rule.Source is `<file-path>:<field-name>`.
 
 Adapters:
   3. compiled into the binary                  (--harness)

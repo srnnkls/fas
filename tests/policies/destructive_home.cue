@@ -7,7 +7,7 @@ import (
 	"github.com/srnnkls/quae/cue/tool"
 )
 
-rule: {
+destructive_home: {
 	when: hook.#PreToolUse & tool.#isBash & {
 		tool_input: {
 			command: =~"^rm\\b"

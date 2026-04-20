@@ -9,7 +9,7 @@ import (
 // Moving or renaming files under /var/log destroys the audit trail that
 // incident response depends on. An attacker clearing /var/log/auth.log before
 // exfiltrating data is a classic cover-your-tracks step.
-rule: {
+mv_var_log: {
 	when: hook.#PreToolUse & tool.#isBash & tool.#isMv & {
 		tool_input: command: (path.#InCommandRe & {#prefixes: ["/var/log"]}).out
 	}
