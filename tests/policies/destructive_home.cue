@@ -1,11 +1,13 @@
 package rules
 
-import "list"
+import (
+	"list"
+
+	"github.com/srnnkls/quae/cue:quae"
+)
 
 rule: {
-	when: {
-		hook_event_name: "PreToolUse"
-		tool_name:       "Bash"
+	when: quae.#PreToolUse & quae.#isBash & {
 		tool_input: {
 			command: =~"^rm\\b"
 			parsed: {

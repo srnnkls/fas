@@ -1,5 +1,7 @@
 package rules
 
+import "github.com/srnnkls/quae/cue:quae"
+
 // Secondary match: the parser's AST walker extracts CallExpr args, so tokens
 // that only appear in control-flow clause heads — e.g. `for f in /etc/*.conf`
 // — never reach parsed.targets. A raw-command regex closes that gap without
@@ -9,12 +11,8 @@ package rules
 // substrings inside unrelated identifiers. `./build`, `./node_modules`, and
 // `src/main.py` never contain `/etc|/sys|/proc|/boot|/dev` after a boundary.
 rule: {
-	when: {
-		hook_event_name: "PreToolUse"
-		tool_name:       "Bash"
-		tool_input: {
-			command: =~"(^|[^A-Za-z0-9_])/(etc|sys|proc|boot|dev)(/|$|[^A-Za-z0-9_])"
-		}
+	when: quae.#PreToolUse & quae.#isBash & {
+		tool_input: command: =~"(^|[^A-Za-z0-9_])/(etc|sys|proc|boot|dev)(/|$|[^A-Za-z0-9_])"
 	}
 	then: deny: {
 		rule_id:  "system-path-command"
