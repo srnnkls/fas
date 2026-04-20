@@ -49,16 +49,20 @@ func ruleMatches(t *testing.T, rule config.Rule, input cue.Value) bool {
 	return len(matches) > 0
 }
 
-// TestLoadRules_RuleCanImportStdlibHasSystemTarget pins the core contract
-// of this feature: a rule file can import the shipped stdlib and compose
-// with `quae.#hasSystemTarget` instead of inlining the regex.
-func TestLoadRules_RuleCanImportStdlibHasSystemTarget(t *testing.T) {
+// TestLoadRules_RuleCanImportPathHasSystemTarget pins the core contract of
+// the sub-package layout: a rule file can import the shipped `path` package
+// and compose with `path.#hasSystemTarget` instead of inlining the regex.
+func TestLoadRules_RuleCanImportPathHasSystemTarget(t *testing.T) {
 	src := `package rules
 
-import "github.com/srnnkls/quae/cue:quae"
+import (
+	"github.com/srnnkls/quae/cue/hook"
+	"github.com/srnnkls/quae/cue/tool"
+	"github.com/srnnkls/quae/cue/path"
+)
 
 rule: {
-	when: quae.#isPreToolUse & quae.#isBash & quae.#hasSystemTarget
+	when: hook.#PreToolUse & tool.#isBash & path.#hasSystemTarget
 	then: deny: {
 		rule_id: "sys-path"
 		reason:  "System path blocked"
@@ -70,7 +74,7 @@ rule: {
 
 	rules, err := config.LoadRules(dir)
 	if err != nil {
-		t.Fatalf("LoadRules must resolve the stdlib import, got: %v", err)
+		t.Fatalf("LoadRules must resolve sub-package imports, got: %v", err)
 	}
 	if len(rules) != 1 {
 		t.Fatalf("expected 1 rule, got %d", len(rules))
@@ -90,7 +94,7 @@ rule: {
 		tool_input: parsed: targets: ["/etc/passwd"]
 	}`)
 	if !ruleMatches(t, r, match) {
-		t.Errorf("rule using quae.#hasSystemTarget should match targets=[/etc/passwd]")
+		t.Errorf("rule using path.#hasSystemTarget should match targets=[/etc/passwd]")
 	}
 
 	miss := compileInput(t, ctx, `{
@@ -99,20 +103,24 @@ rule: {
 		tool_input: parsed: targets: ["./etc/passwd"]
 	}`)
 	if ruleMatches(t, r, miss) {
-		t.Error("rule using quae.#hasSystemTarget must NOT match targets=[./etc/passwd] (relative, not a system prefix)")
+		t.Error("rule using path.#hasSystemTarget must NOT match targets=[./etc/passwd] (relative, not a system prefix)")
 	}
 }
 
-// TestLoadRules_RuleCanImportFlagConstraints covers the `cue/flags/rm.cue`
+// TestLoadRules_RuleCanImportFlagConstraints covers the `cue/flag/rm.cue`
 // slice of the stdlib so the feature doesn't regress to shipping only the
 // root file.
 func TestLoadRules_RuleCanImportFlagConstraints(t *testing.T) {
 	src := `package rules
 
-import "github.com/srnnkls/quae/cue:quae"
+import (
+	"github.com/srnnkls/quae/cue/hook"
+	"github.com/srnnkls/quae/cue/tool"
+	"github.com/srnnkls/quae/cue/flag"
+)
 
 rule: {
-	when: quae.#isPreToolUse & quae.#isBash & quae.#HasRmForce
+	when: hook.#PreToolUse & tool.#isBash & flag.#HasRmForce
 	then: deny: {
 		rule_id: "rm-force"
 		reason:  "rm -f blocked"
@@ -124,7 +132,7 @@ rule: {
 
 	rules, err := config.LoadRules(dir)
 	if err != nil {
-		t.Fatalf("LoadRules must resolve quae.#HasRmForce, got: %v", err)
+		t.Fatalf("LoadRules must resolve flag.#HasRmForce, got: %v", err)
 	}
 	if len(rules) != 1 {
 		t.Fatalf("expected 1 rule, got %d", len(rules))
@@ -138,7 +146,7 @@ rule: {
 		tool_input: parsed: flags: ["-rf"]
 	}`)
 	if !ruleMatches(t, r, match) {
-		t.Error("rule using quae.#HasRmForce should match flags=[-rf]")
+		t.Error("rule using flag.#HasRmForce should match flags=[-rf]")
 	}
 
 	miss := compileInput(t, ctx, `{
@@ -147,14 +155,13 @@ rule: {
 		tool_input: parsed: flags: ["-x"]
 	}`)
 	if ruleMatches(t, r, miss) {
-		t.Error("rule using quae.#HasRmForce must NOT match flags=[-x]")
+		t.Error("rule using flag.#HasRmForce must NOT match flags=[-x]")
 	}
 }
 
 // TestLoadRules_RuleWithoutStdlibImport_StillWorks is the backward-compat
-// guard. Every existing policy in tests/policies/ inlines its constraints
-// via `list.MatchN` — they must keep loading after the stdlib-import feature
-// lands.
+// guard. Rules that inline their constraints via `list.MatchN` must keep
+// loading after the sub-package layout lands.
 func TestLoadRules_RuleWithoutStdlibImport_StillWorks(t *testing.T) {
 	src := `package rules
 
@@ -177,7 +184,7 @@ rule: {
 
 	rules, err := config.LoadRules(dir)
 	if err != nil {
-		t.Fatalf("LoadRules must still accept rules without the stdlib import: %v", err)
+		t.Fatalf("LoadRules must still accept rules without sub-package imports: %v", err)
 	}
 	if len(rules) != 1 {
 		t.Fatalf("expected 1 rule, got %d", len(rules))
@@ -197,17 +204,21 @@ rule: {
 	}
 }
 
-// TestLoadRules_RuleCanUseTypedEvent pins the ergonomic win of the typed
-// hook-event feature: rule authors can write `when: quae.#PreToolUse & ...`
-// and have CUE enforce per-event required fields while the evaluator still
-// matches real inputs through the public surface.
+// TestLoadRules_RuleCanUseTypedEvent pins the ergonomic win of typed hook
+// events: rule authors can write `when: hook.#PreToolUse & ...` and have
+// CUE enforce per-event required fields while the evaluator still matches
+// real inputs through the public surface.
 func TestLoadRules_RuleCanUseTypedEvent(t *testing.T) {
 	src := `package rules
 
-import "github.com/srnnkls/quae/cue:quae"
+import (
+	"github.com/srnnkls/quae/cue/hook"
+	"github.com/srnnkls/quae/cue/tool"
+	"github.com/srnnkls/quae/cue/path"
+)
 
 rule: {
-	when: quae.#PreToolUse & quae.#isBash & quae.#hasSystemTarget
+	when: hook.#PreToolUse & tool.#isBash & path.#hasSystemTarget
 	then: deny: {
 		rule_id: "typed-pretooluse"
 		reason:  "typed #PreToolUse + system path"
@@ -219,7 +230,7 @@ rule: {
 
 	rules, err := config.LoadRules(dir)
 	if err != nil {
-		t.Fatalf("LoadRules must resolve quae.#PreToolUse, got: %v", err)
+		t.Fatalf("LoadRules must resolve hook.#PreToolUse, got: %v", err)
 	}
 	if len(rules) != 1 {
 		t.Fatalf("expected 1 rule, got %d", len(rules))
@@ -236,7 +247,7 @@ rule: {
 		tool_input: parsed: targets: ["/etc/passwd"]
 	}`)
 	if !ruleMatches(t, r, match) {
-		t.Errorf("rule using quae.#PreToolUse should match PreToolUse+Bash input with targets=[/etc/passwd]")
+		t.Errorf("rule using hook.#PreToolUse should match PreToolUse+Bash input with targets=[/etc/passwd]")
 	}
 
 	// Wrong event name — typed event pins hook_event_name: "PreToolUse" so
@@ -247,32 +258,32 @@ rule: {
 		tool_input: parsed: targets: ["/etc/passwd"]
 	}`)
 	if ruleMatches(t, r, wrongEvent) {
-		t.Error("rule using quae.#PreToolUse must NOT match a PostToolUse input")
+		t.Error("rule using hook.#PreToolUse must NOT match a PostToolUse input")
 	}
 
 	// Relative-path sdl-mcp false-positive guard still holds under a typed
-	// event — composed #hasSystemTarget enforces absolute prefix.
+	// event — composed path.#hasSystemTarget enforces absolute prefix.
 	miss := compileInput(t, ctx, `{
 		hook_event_name: "PreToolUse"
 		tool_name:       "Bash"
 		tool_input: parsed: targets: ["./etc/passwd"]
 	}`)
 	if ruleMatches(t, r, miss) {
-		t.Error("rule using quae.#PreToolUse must NOT match targets=[./etc/passwd]")
+		t.Error("rule using hook.#PreToolUse must NOT match targets=[./etc/passwd]")
 	}
 }
 
 // TestLoadRules_TypedUserPromptSubmit_EnforcesPrompt confirms CUE's
 // per-event required-field enforcement reaches the rule-loader layer:
-// a rule that composes quae.#UserPromptSubmit inherits the `prompt: !=""`
+// a rule that composes hook.#UserPromptSubmit inherits the `prompt: !=""`
 // constraint, so inputs without a non-empty prompt must not match.
 func TestLoadRules_TypedUserPromptSubmit_EnforcesPrompt(t *testing.T) {
 	src := `package rules
 
-import "github.com/srnnkls/quae/cue:quae"
+import "github.com/srnnkls/quae/cue/hook"
 
 rule: {
-	when: quae.#UserPromptSubmit
+	when: hook.#UserPromptSubmit
 	then: deny: {
 		rule_id: "typed-prompt"
 		reason:  "UserPromptSubmit typed event"
@@ -284,7 +295,7 @@ rule: {
 
 	rules, err := config.LoadRules(dir)
 	if err != nil {
-		t.Fatalf("LoadRules must resolve quae.#UserPromptSubmit, got: %v", err)
+		t.Fatalf("LoadRules must resolve hook.#UserPromptSubmit, got: %v", err)
 	}
 	if len(rules) != 1 {
 		t.Fatalf("expected 1 rule, got %d", len(rules))
@@ -297,7 +308,7 @@ rule: {
 		prompt:          "hello"
 	}`)
 	if !ruleMatches(t, r, match) {
-		t.Error("rule using quae.#UserPromptSubmit should match an input with non-empty prompt")
+		t.Error("rule using hook.#UserPromptSubmit should match an input with non-empty prompt")
 	}
 
 	// Empty prompt — the typed event's `prompt: string & !=""` constraint
@@ -307,7 +318,7 @@ rule: {
 		prompt:          ""
 	}`)
 	if ruleMatches(t, r, empty) {
-		t.Error("rule using quae.#UserPromptSubmit must NOT match an empty prompt")
+		t.Error("rule using hook.#UserPromptSubmit must NOT match an empty prompt")
 	}
 }
 
@@ -318,13 +329,13 @@ rule: {
 func TestLoadRules_InvalidStdlibReference_ErrorsWithContext(t *testing.T) {
 	src := `package rules
 
-import "github.com/srnnkls/quae/cue:quae"
+import "github.com/srnnkls/quae/cue/path"
 
 rule: {
-	when: quae.#nonexistentDef
+	when: path.#nonexistentDef
 	then: deny: {
 		rule_id: "bad"
-		reason:  "references a symbol that is not in the stdlib"
+		reason:  "references a symbol that is not in the sub-package"
 	}
 }
 `
@@ -333,15 +344,12 @@ rule: {
 
 	_, err := config.LoadRules(dir)
 	if err == nil {
-		t.Fatal("expected error for reference to quae.#nonexistentDef, got nil")
+		t.Fatal("expected error for reference to path.#nonexistentDef, got nil")
 	}
 	msg := err.Error()
 	if !strings.Contains(msg, "nonexistentDef") {
 		t.Errorf("error should mention the undefined symbol 'nonexistentDef', got: %s", msg)
 	}
-	// Use the file basename — `filepath.Join` on absolute paths preserves
-	// the full path, and CUE's diagnostics usually echo the filename with
-	// it intact. Either the full path or the basename is acceptable.
 	base := filepath.Base(path)
 	if !strings.Contains(msg, path) && !strings.Contains(msg, base) {
 		t.Errorf("error should mention the rule file path (%s) or basename (%s), got: %s", path, base, msg)

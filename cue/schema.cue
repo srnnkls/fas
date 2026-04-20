@@ -1,8 +1,21 @@
+// Package quae holds the core schema types rule loaders and signal
+// evaluators consume. Per-tool matchers, flag constraints, and hook-event
+// shapes live in sub-packages (cue/hook, cue/tool, cue/path, cue/flag, ...).
+//
+// Rule authors no longer import this package directly — they import each
+// sub-package they need. The file stays in the `quae` package so
+// ValidateInput and LoadRules can keep compiling it via `cue.CompileBytes`
+// without relying on the module loader.
 package quae
 
 // #HookEventName enumerates every hook event quae evaluates. Retyping
 // #Input.hook_event_name against this disjunction turns typos like
 // "PreToolUsex" into load-time failures instead of silent policy misses.
+//
+// The sub-package `cue/hook` re-declares the same set so rule authors can
+// reference it without pulling in the core-schema package. Keeping the copy
+// here standalone avoids a module-loader dependency for the in-process
+// schema cache.
 #HookEventName: "PreToolUse" | "PostToolUse" | "UserPromptSubmit" | "Stop" | "SubagentStart" | "Notification"
 
 #Input: {
@@ -24,9 +37,10 @@ package quae
 // rather than `[...string]` because CUE's evaluator eagerly concretises an
 // open list's default to `[]` when a definition is referenced without a
 // value, and any downstream constraint like `list.MatchN(>0, ...)` (added by
-// stdlib composites such as `#hasSystemTarget`) would then fail against that
-// empty default at rule-load time — long before a real input arrives. Rule
-// authors or the stdlib tighten the type at the composition point.
+// sub-package composites such as `path.#hasSystemTarget`) would then fail
+// against that empty default at rule-load time — long before a real input
+// arrives. Rule authors or the sub-packages tighten the type at the
+// composition point.
 #Parsed: {
 	actions?:    _
 	targets?:    _

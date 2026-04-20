@@ -1,14 +1,22 @@
 package rules
 
-import "github.com/srnnkls/quae/cue:quae"
+import (
+	"list"
 
-// `git add` of likely-secret paths is almost always a mistake. The regex
-// anchors on the `git add` verb and matches against the raw command string
-// so the intent stays obvious next to the verb for maintainers skimming the
-// rule, even though parsed.targets would also surface the filenames.
+	"github.com/srnnkls/quae/cue/hook"
+	"github.com/srnnkls/quae/cue/tool"
+)
+
+// Staging `.env`, credential JSON, or SSH private keys into git is almost
+// always a mistake. The target regex recognizes `.env[.suffix]`, any file
+// whose basename contains "credentials" with a recognized suffix, and the
+// canonical SSH private-key names (id_rsa, id_ed25519, id_dsa, id_ecdsa).
 rule: {
-	when: quae.#PreToolUse & quae.#isBash & {
-		tool_input: command: =~"^git\\s+add\\s+.*(\\.env\\b|credentials\\.json\\b|id_rsa\\b)"
+	when: hook.#PreToolUse & tool.#isBash & {
+		tool_input: {
+			command: =~"^git\\s+add\\b"
+			parsed: targets: list.MatchN(>0, =~"(^|/)(\\.env(\\..+)?|.*credentials\\.(json|ya?ml|toml|env)|id_(rsa|ed25519|dsa|ecdsa))$")
+		}
 	}
 	then: deny: {
 		rule_id:  "secret-files"

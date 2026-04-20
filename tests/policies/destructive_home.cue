@@ -3,11 +3,12 @@ package rules
 import (
 	"list"
 
-	"github.com/srnnkls/quae/cue:quae"
+	"github.com/srnnkls/quae/cue/hook"
+	"github.com/srnnkls/quae/cue/tool"
 )
 
 rule: {
-	when: quae.#PreToolUse & quae.#isBash & {
+	when: hook.#PreToolUse & tool.#isBash & {
 		tool_input: {
 			command: =~"^rm\\b"
 			parsed: {

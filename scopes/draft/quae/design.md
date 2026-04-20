@@ -291,22 +291,63 @@ Resolution:
 3. **Lists are the source of truth.** Derive `or()` and regexes from lists.
 4. **Three-layer pattern.** Value lists → derived constraints → structural constraints.
 
-### The Standard Library (`quae.cue`)
+### The Standard Library (sub-packages under `cue/`)
 
 The stdlib has two responsibilities:
 
 1. Ship **stable vocabulary** (paths, action names, flag specs).
 2. Provide **composable constraints** ("traits") that attach validators to canonical fields.
 
+It is organized as a set of sibling CUE sub-packages, each at its own import path. Rule authors pull in only the packages they use:
+
+```
+cue/
+├── schema.cue          # package quae — core #Input / #Parsed / #Rule / #Action schema
+├── hook/events.cue     # package hook — #HookEventName, #PreToolUse, #PostToolUse, #UserPromptSubmit, #Stop, #SubagentStart, #Notification
+├── tool/tool.cue       # package tool — #isBash (future: #isWrite, #isEdit, ...)
+├── path/path.cue       # package path — #SystemPrefixes, #systemTarget, #hasSystemTarget
+├── escalation/…        # package escalation — #EscalationCommands, #escalationCommand, #hasPrivilegeEscalation
+├── action/…            # package action — #DestructiveActions, #destructiveAction, #hasDestructiveAction
+└── flag/               # package flag — #HasFlagMatching + per-tool files (rm.cue, future: write.cue, edit.cue, ...)
+```
+
+Rule files import each sub-package by its canonical path and reference definitions through the package identifier:
+
+```cue
+package rules
+
+import (
+    "github.com/srnnkls/quae/cue/hook"
+    "github.com/srnnkls/quae/cue/tool"
+    "github.com/srnnkls/quae/cue/path"
+)
+
+rule: {
+    when: hook.#PreToolUse & tool.#isBash & path.#hasSystemTarget
+    then: deny: {
+        rule_id:  "sys-path"
+        reason:   "System path blocked"
+        severity: "HIGH"
+    }
+}
+```
+
+The rule loader materializes every sub-package under the synthetic module's `cue.mod/pkg/github.com/srnnkls/quae/cue/<sub>/` tree; CUE's loader then resolves each directory to the package declared in its files. There is no cycle between `hook` and `quae` because the typed events under `hook` are standalone open structs — they pin `hook_event_name` and add per-event required fields without referencing `quae.#Input`. Rule unification still produces the same composite constraint a single-package stdlib would.
+
 #### Layer 1 — Value Lists
 
 ```cue
-package quae
+// cue/path/path.cue
+package path
+#SystemPrefixes: ["/etc", "/sys", "/proc", "/boot", "/dev"]
 
-#SystemPrefixes:     ["/etc", "/sys", "/proc", "/boot", "/dev"]
+// cue/escalation/escalation.cue
+package escalation
 #EscalationCommands: ["sudo", "doas", "su"]
 
-// Cross-tool action vocabulary — semantic verbs only (normalized by parsers into parsed.actions).
+// cue/action/action.cue
+package action
+// Cross-tool semantic-verb vocabulary (normalized by parsers into parsed.actions).
 // Command names like "rm" stay on the raw input, not here.
 #DestructiveActions: ["delete", "drop", "remove", "destroy", "truncate"]
 ```
@@ -314,40 +355,52 @@ package quae
 #### Layer 2 — Derived Constraints (Regex / Disjunction)
 
 ```cue
+// cue/path/path.cue
 import "strings"
+#systemTarget: =~"^(\(strings.Join(#SystemPrefixes, "|")))"
 
-#systemTarget:      =~"^(\(strings.Join(#SystemPrefixes, "|")))"
+// cue/escalation/escalation.cue
 #escalationCommand: or(#EscalationCommands)
+
+// cue/action/action.cue
 #destructiveAction: or(#DestructiveActions)
 ```
 
 #### Layer 3 — Structural Constraints
 
 ```cue
+// cue/path/path.cue
 import "list"
-
 #hasSystemTarget: {
     tool_input: parsed: targets: list.MatchN(>0, #systemTarget)
+    ...
 }
 
+// cue/escalation/escalation.cue
 #hasPrivilegeEscalation: {
     tool_input: parsed: attributes: prefix_commands: list.MatchN(>0, #escalationCommand)
+    ...
 }
 
+// cue/action/action.cue
 #hasDestructiveAction: {
     tool_input: parsed: actions: list.MatchN(>0, #destructiveAction)
+    ...
 }
 
-#isPreToolUse: { hook_event_name: "PreToolUse" }
-#isUserPrompt: { hook_event_name: "UserPromptSubmit" }
-#isBash:       { tool_name: "Bash" }
+// cue/hook/events.cue
+#PreToolUse:      { hook_event_name: "PreToolUse",      tool_name: string & !="", ... }
+#UserPromptSubmit:{ hook_event_name: "UserPromptSubmit", prompt:   string & !="", ... }
+
+// cue/tool/tool.cue
+#isBash: { tool_name: "Bash", ... }
 ```
 
 > **`list.MatchN` argument shape.** The second argument is a **single schema**, not a list of matchers. CUE `list.MatchN(>0, S)` succeeds when more than N elements unify with `S`. Wrapping `S` in `[S]` would require each element to itself be a one-element list — which is almost never what you want.
 
 ### Flags: Per-Tool Constraint Files
 
-Flags are *tool-specific vocabulary*. Each tool's flag set lives in its own file as **inline per-flag constraints** — no template, no comprehension, no compose-via-building-block.
+Flags are *tool-specific vocabulary*. Each tool's flag set lives in its own file inside the `flag` sub-package as **inline per-flag constraints** — no template, no comprehension, no compose-via-building-block.
 
 Key properties:
 
@@ -355,16 +408,18 @@ Key properties:
 * Works with the canonical representation: a **list of flag tokens** (`parsed.flags`).
 * Handles **short-combos** safely by constraining combos to the *known short-letter set* for that tool (avoids false positives like `-force` matching `-r` just because it contains `r`).
 
-#### Building Block (standalone): `#HasFlagMatching`
+#### Building Block (standalone): `flag.#HasFlagMatching`
 
 ```cue
-package quae
+// cue/flag/flag.cue
+package flag
 
 import "list"
 
 #HasFlagMatching: {
     #re: string
     tool_input: parsed: flags: list.MatchN(>0, =~#re)
+    ...
 }
 ```
 
@@ -375,7 +430,8 @@ Use this **only in isolation** when parameterizing a regex from outside (e.g. te
 #### Per-Tool Example (`rm`)
 
 ```cue
-package quae
+// cue/flag/rm.cue
+package flag
 
 import "list"
 
@@ -389,18 +445,22 @@ import "list"
 
 #HasRmForce: {
     tool_input: parsed: flags: list.MatchN(>0, =~"^--force(=|$)|^-force(=|$)|^-[\(#rmShortClass)]*f[\(#rmShortClass)]*$")
+    ...
 }
 
 #HasRmRecursive: {
     tool_input: parsed: flags: list.MatchN(>0, =~"^--recursive(=|$)|^-recursive(=|$)|^-[\(#rmShortClass)]*r[\(#rmShortClass)]*$")
+    ...
 }
 
 #HasRmInteractive: {
     tool_input: parsed: flags: list.MatchN(>0, =~"^--interactive(=|$)|^-interactive(=|$)|^-[\(#rmShortClass)]*i[\(#rmShortClass)]*$")
+    ...
 }
 
 #HasRmVerbose: {
     tool_input: parsed: flags: list.MatchN(>0, =~"^--verbose(=|$)|^-verbose(=|$)|^-[\(#rmShortClass)]*v[\(#rmShortClass)]*$")
+    ...
 }
 ```
 
@@ -411,11 +471,17 @@ Each `#HasRm*` is a **pure constraint** with no exposed fields beyond `tool_inpu
 Because these are **pure constraints** (no generated fields), they compose cleanly:
 
 ```cue
+import (
+    "github.com/srnnkls/quae/cue/hook"
+    "github.com/srnnkls/quae/cue/tool"
+    "github.com/srnnkls/quae/cue/flag"
+)
+
 // AND: require both
-when: #isPreToolUse & #isBash & (#HasRmForce & #HasRmRecursive)
+when: hook.#PreToolUse & tool.#isBash & (flag.#HasRmForce & flag.#HasRmRecursive)
 
 // OR: require either
-when: #isPreToolUse & #isBash & (#HasRmForce | #HasRmRecursive)
+when: hook.#PreToolUse & tool.#isBash & (flag.#HasRmForce | flag.#HasRmRecursive)
 ```
 
 ---
