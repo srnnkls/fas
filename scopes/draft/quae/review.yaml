@@ -166,6 +166,34 @@ batch_reviews:
           - Added `var _ Adapter = ClaudeCode{}` compile-time interface assertion
     outcome: approved
 
+  - batch: 7
+    tasks: [T8-stdlib-import-closure]
+    note: "Closes the T8 gap: rule files can now `import \"github.com/srnnkls/quae/cue:quae\"` and reference `quae.#hasSystemTarget`, `quae.#HasRmForce`, etc. without inlining. Loader uses `cuelang.org/go/cue/load` with an in-memory overlay that synthesizes a module hosting the embedded stdlib."
+    phases:
+      tester:
+        subagent: task-tester
+        artifact: internal/config/stdlib_import_test.go (4 tests)
+        red_verified: true
+      test_review:
+        subagent: task-reviewer
+        status: changes_requested → fixed inline (oracle mirroring removed; premature policy refactor reverted; unused const dropped; errors.As against cue/errors.Error added)
+        recommendation: proceed_to_implementer (after fix)
+      implementer:
+        subagent: task-implementer
+        files:
+          - internal/config/loader.go (overlay compile path)
+          - cue/embed.go (StdlibFS, StdlibImportPath)
+          - cue/flags/rm.cue (import "list" now that files are standalone)
+          - cue/stdlib_test.go (harness strips imports when concatenating)
+          - tests/policies/system_paths.cue (refactored to use quae.#hasSystemTarget)
+        green_verified: true
+      code_review:
+        subagent: task-reviewer
+        status: approved
+        deferred_mediums: 3
+        recommendation: commit
+    outcome: approved
+
   - batch: 6
     tasks: [T21-claude-slice]
     note: "T21 partially landed for Claude harness only. Full T21 completion waits on T10/T11/T12 vendor adapters."
@@ -383,6 +411,26 @@ deferred_issues:
     task: T7
     path: cmd/quae/main_test.go
     note: "TestRun_EffectsAccumulate_AcrossPhases only exercises channel=agent. Add a second case with channel=user to cover both routing paths."
+
+  # Batch 7 — stdlib-import mediums
+  - batch: 7
+    severity: medium
+    from: code_review
+    task: T8
+    path: cue/embed.go
+    note: "`//go:embed quae.cue flags/*.cue` doesn't auto-pick up future non-flags directories like `cue/shell/`. Widen to `all:.` when a second helper directory lands."
+  - batch: 7
+    severity: medium
+    from: code_review
+    task: T8
+    path: internal/config/loader.go
+    note: "buildStdlibOverlay() is rebuilt on every LoadRules call. Cheap perf win: cache via sync.OnceValues alongside schema_cache.go. Symmetric with loadSchema()."
+  - batch: 7
+    severity: medium
+    from: code_review
+    task: T8
+    path: internal/config/loader.go
+    note: "sanitizeVirtualRuleName has an explain-what-not-why comment. Drop or compress to one line about why the ext check exists."
 
   # Batch 6 — T21 Claude slice mediums + T4 parser gap discovered during impl
   - batch: 6

@@ -1,5 +1,7 @@
 package quae
 
+import "list"
+
 #rmShortClass: "friv"
 
 #HasRmForce: {

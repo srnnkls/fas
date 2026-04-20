@@ -34,18 +34,38 @@ func stdlibSources(t *testing.T) string {
 
 	var b strings.Builder
 	b.WriteString("package quae\n\n")
-	b.WriteString(stripPackage(string(stdlib)))
+	b.WriteString("import (\n\t\"list\"\n\t\"strings\"\n)\n\n")
+	b.WriteString(stripHeaders(string(stdlib)))
 	b.WriteString("\n")
-	b.WriteString(stripPackage(string(flags)))
+	b.WriteString(stripHeaders(string(flags)))
 	return b.String()
 }
 
-func stripPackage(src string) string {
+// stripHeaders drops `package` and `import` lines so per-file headers can be
+// replaced with a single shared header when concatenating sources. Per-file
+// declarations of the same import (e.g. `list`) are legal CUE but collapsing
+// them keeps the concatenated test source parseable regardless of whether
+// an individual file declares an import block.
+func stripHeaders(src string) string {
 	lines := strings.Split(src, "\n")
 	out := make([]string, 0, len(lines))
+	skipBlock := false
 	for _, line := range lines {
 		trim := strings.TrimSpace(line)
+		if skipBlock {
+			if strings.HasPrefix(trim, ")") {
+				skipBlock = false
+			}
+			continue
+		}
 		if strings.HasPrefix(trim, "package ") {
+			continue
+		}
+		if strings.HasPrefix(trim, "import (") {
+			skipBlock = true
+			continue
+		}
+		if strings.HasPrefix(trim, "import ") {
 			continue
 		}
 		out = append(out, line)
