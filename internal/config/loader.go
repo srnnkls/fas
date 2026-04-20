@@ -250,15 +250,16 @@ func (e *ruleLoadError) Unwrap() error { return e.cause }
 
 // buildStdlibOverlay materializes the embedded quae stdlib inside the
 // synthetic module's `cue.mod/pkg/github.com/srnnkls/quae/cue/` tree so
-// `import "github.com/srnnkls/quae/cue:quae"` resolves from any rule file.
+// every sub-package import (`.../cue/hook`, `.../cue/tool`, `.../cue/path`,
+// `.../cue/escalation`, `.../cue/action`, `.../cue/flag`) resolves from any
+// rule file.
 //
-// Every `.cue` file in the embedded tree is flattened into the package root:
-// nested files like `flags/rm.cue` get placed next to `quae.cue` under a
-// disambiguated basename. A CUE package is defined by a single directory,
-// and the shipped files all declare `package quae`, so flattening unifies
-// them into one importable package while preserving their per-file bodies.
-// The returned map is keyed by absolute-looking overlay paths suitable for
-// passing straight to load.Config.Overlay.
+// Sub-directory structure is preserved: `hook/events.cue` lands at
+// `pkg/.../cue/hook/events.cue` so CUE's loader treats the directory as its
+// own package per the file's `package <name>` header. The core `schema.cue`
+// lives at the root of the tree under `pkg/.../cue/schema.cue` for the same
+// reason. The returned map is keyed by absolute-looking overlay paths
+// suitable for passing straight to load.Config.Overlay.
 func buildStdlibOverlay() (map[string]load.Source, error) {
 	pkgRoot := filepath.Join(
 		rulesModuleRoot, "cue.mod", "pkg",
@@ -280,10 +281,11 @@ func buildStdlibOverlay() (map[string]load.Source, error) {
 		if err != nil {
 			return fmt.Errorf("read embedded %s: %w", p, err)
 		}
-		// Replace slashes with underscores so nested files don't create
-		// sub-packages; `flags/rm.cue` → `flags__rm.cue`.
-		flatName := strings.ReplaceAll(p, "/", "__")
-		overlay[filepath.Join(pkgRoot, flatName)] = load.FromBytes(data)
+		// Preserve the directory layout so each sub-package lands at its
+		// own overlay path (`hook/events.cue`, `flag/rm.cue`, ...). CUE's
+		// loader resolves each directory to the package declared in its
+		// files via the `package <name>` header.
+		overlay[filepath.Join(pkgRoot, filepath.FromSlash(p))] = load.FromBytes(data)
 		return nil
 	})
 	if err != nil {
@@ -295,11 +297,11 @@ func buildStdlibOverlay() (map[string]load.Source, error) {
 	return overlay, nil
 }
 
-// stdlibOverlayImportPath is the module-qualified import path the stdlib is
-// reachable under. Must match the prefix rule authors type in their
-// `import` statements (`github.com/srnnkls/quae/cue:quae`), minus the package
-// qualifier — the qualifier is applied per-file by the package clause inside
-// each embedded source.
+// stdlibOverlayImportPath is the module-qualified import-path prefix each
+// sub-package is reachable under. Rule authors write
+// `import "github.com/srnnkls/quae/cue/hook"` (and so on); the overlay maps
+// every embedded file to a path under this prefix so CUE's loader resolves
+// the sub-directories as sibling packages.
 const stdlibOverlayImportPath = "github.com/srnnkls/quae/cue"
 
 // sanitizeVirtualRuleName rewrites a rule filename so it bypasses CUE's
