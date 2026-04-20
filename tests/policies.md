@@ -376,3 +376,167 @@ $ cat << 'EOF' |
 > quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```
+
+## Runtime Directory Permission Guard
+
+Socket files and PID files under `/run` are owned by system daemons. Widening
+their permissions can hand an unprivileged process root-equivalent control
+(e.g. `/run/docker.sock`). Policy denies all `chmod` invocations that name a
+path under `/run` or any standard system prefix.
+
+### Blocks chmod 777 /run/docker.sock
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "chmod 777 /run/docker.sock"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Changing permissions on runtime directories is blocked"}} (no-eol)
+```
+
+### Blocks chmod o+w /run/systemd/private
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "chmod o+w /run/systemd/private"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Changing permissions on runtime directories is blocked"}} (no-eol)
+```
+
+### Allows chmod +x ./scripts/deploy.sh
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "chmod +x ./scripts/deploy.sh"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
+```
+
+## Audit Log Protection
+
+Moving or renaming files under `/var/log` destroys the audit trail that
+incident response depends on. Policy denies `mv` invocations that reference
+a `/var/log` path.
+
+### Blocks mv /var/log/auth.log /tmp/hidden.log
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "mv /var/log/auth.log /tmp/hidden.log"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Moving system log files conceals audit evidence"}} (no-eol)
+```
+
+### Blocks mv /var/log/syslog /var/log/syslog.bak (rotation bypass)
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "mv /var/log/syslog /var/log/syslog.bak"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Moving system log files conceals audit evidence"}} (no-eol)
+```
+
+### Allows mv ./logs/debug.log ./archive/debug.log
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "mv ./logs/debug.log ./archive/debug.log"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
+```
+
+## tee to System Paths
+
+`tee` is the canonical vector for writing to privileged files without a shell
+redirect: `echo "..." | sudo tee /etc/sudoers.d/override` bypasses redirect
+restrictions entirely. Policy denies direct `tee` invocations targeting system
+prefixes at CRITICAL severity so this reason always surfaces.
+
+### Blocks tee /etc/sudoers.d/override
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "tee /etc/sudoers.d/override"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Writing to system paths via tee is blocked"}} (no-eol)
+```
+
+### Blocks tee -a /etc/cron.d/task
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "tee -a /etc/cron.d/task"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Writing to system paths via tee is blocked"}} (no-eol)
+```
+
+### Allows tee ./build.log
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "tee ./build.log"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
+```
