@@ -6,7 +6,7 @@ import "github.com/srnnkls/quae/cue:quae"
 // commands and compound forms whose AST walker surfaces the path in targets
 // (e.g. `echo start && rm -rf /etc/passwd` — both commands' args are walked).
 rule: {
-	when: quae.#isPreToolUse & quae.#isBash & quae.#hasSystemTarget
+	when: quae.#PreToolUse & quae.#isBash & quae.#hasSystemTarget
 	then: deny: {
 		rule_id:  "system-path"
 		reason:   "System path blocked"

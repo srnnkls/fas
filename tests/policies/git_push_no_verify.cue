@@ -1,13 +1,15 @@
 package rules
 
-import "list"
+import (
+	"list"
+
+	"github.com/srnnkls/quae/cue:quae"
+)
 
 // `git push` has no `-n` alias for `--no-verify` — there, `-n` means
 // `--dry-run`. Match the long form only.
 rule: {
-	when: {
-		hook_event_name: "PreToolUse"
-		tool_name:       "Bash"
+	when: quae.#PreToolUse & quae.#isBash & {
 		tool_input: {
 			command: =~"^git\\s+push\\b"
 			parsed: flags: list.MatchN(>0, =~"^--no-verify$")
