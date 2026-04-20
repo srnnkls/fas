@@ -10,7 +10,7 @@ import (
 //go:embed schema.cue
 var schemaSource []byte
 
-//go:embed quae.cue flags/*.cue
+//go:embed schema.cue quae.cue events.cue flags/*.cue
 var stdlibFS embed.FS
 
 // SchemaSource returns the bytes of the shipped `schema.cue` file.

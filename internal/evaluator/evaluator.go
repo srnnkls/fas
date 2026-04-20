@@ -63,6 +63,13 @@ func inputSatisfies(when, input cue.Value) bool {
 			sel := iter.Selector()
 			sub := input.LookupPath(cue.MakePath(sel))
 			if !sub.Exists() {
+				// Optional constraint fields carry the `?` semantic "if
+				// present, must satisfy", so an absent input field leaves
+				// the rule viable. Required fields missing from the input
+				// are genuine misses.
+				if iter.IsOptional() {
+					continue
+				}
 				return false
 			}
 			if !inputSatisfies(iter.Value(), sub) {

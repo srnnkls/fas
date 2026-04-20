@@ -197,6 +197,120 @@ rule: {
 	}
 }
 
+// TestLoadRules_RuleCanUseTypedEvent pins the ergonomic win of the typed
+// hook-event feature: rule authors can write `when: quae.#PreToolUse & ...`
+// and have CUE enforce per-event required fields while the evaluator still
+// matches real inputs through the public surface.
+func TestLoadRules_RuleCanUseTypedEvent(t *testing.T) {
+	src := `package rules
+
+import "github.com/srnnkls/quae/cue:quae"
+
+rule: {
+	when: quae.#PreToolUse & quae.#isBash & quae.#hasSystemTarget
+	then: deny: {
+		rule_id: "typed-pretooluse"
+		reason:  "typed #PreToolUse + system path"
+	}
+}
+`
+	dir := t.TempDir()
+	writeStdlibRuleFile(t, dir, "typed_pre.cue", src)
+
+	rules, err := config.LoadRules(dir)
+	if err != nil {
+		t.Fatalf("LoadRules must resolve quae.#PreToolUse, got: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(rules))
+	}
+	r := rules[0]
+	if r.Then == nil || r.Then.RuleID != "typed-pretooluse" {
+		t.Fatalf("expected rule_id=typed-pretooluse, got %+v", r.Then)
+	}
+
+	ctx := cuecontext.New()
+	match := compileInput(t, ctx, `{
+		hook_event_name: "PreToolUse"
+		tool_name:       "Bash"
+		tool_input: parsed: targets: ["/etc/passwd"]
+	}`)
+	if !ruleMatches(t, r, match) {
+		t.Errorf("rule using quae.#PreToolUse should match PreToolUse+Bash input with targets=[/etc/passwd]")
+	}
+
+	// Wrong event name — typed event pins hook_event_name: "PreToolUse" so
+	// a PostToolUse input must NOT match even when every other clause holds.
+	wrongEvent := compileInput(t, ctx, `{
+		hook_event_name: "PostToolUse"
+		tool_name:       "Bash"
+		tool_input: parsed: targets: ["/etc/passwd"]
+	}`)
+	if ruleMatches(t, r, wrongEvent) {
+		t.Error("rule using quae.#PreToolUse must NOT match a PostToolUse input")
+	}
+
+	// Relative-path sdl-mcp false-positive guard still holds under a typed
+	// event — composed #hasSystemTarget enforces absolute prefix.
+	miss := compileInput(t, ctx, `{
+		hook_event_name: "PreToolUse"
+		tool_name:       "Bash"
+		tool_input: parsed: targets: ["./etc/passwd"]
+	}`)
+	if ruleMatches(t, r, miss) {
+		t.Error("rule using quae.#PreToolUse must NOT match targets=[./etc/passwd]")
+	}
+}
+
+// TestLoadRules_TypedUserPromptSubmit_EnforcesPrompt confirms CUE's
+// per-event required-field enforcement reaches the rule-loader layer:
+// a rule that composes quae.#UserPromptSubmit inherits the `prompt: !=""`
+// constraint, so inputs without a non-empty prompt must not match.
+func TestLoadRules_TypedUserPromptSubmit_EnforcesPrompt(t *testing.T) {
+	src := `package rules
+
+import "github.com/srnnkls/quae/cue:quae"
+
+rule: {
+	when: quae.#UserPromptSubmit
+	then: deny: {
+		rule_id: "typed-prompt"
+		reason:  "UserPromptSubmit typed event"
+	}
+}
+`
+	dir := t.TempDir()
+	writeStdlibRuleFile(t, dir, "typed_prompt.cue", src)
+
+	rules, err := config.LoadRules(dir)
+	if err != nil {
+		t.Fatalf("LoadRules must resolve quae.#UserPromptSubmit, got: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(rules))
+	}
+	r := rules[0]
+
+	ctx := cuecontext.New()
+	match := compileInput(t, ctx, `{
+		hook_event_name: "UserPromptSubmit"
+		prompt:          "hello"
+	}`)
+	if !ruleMatches(t, r, match) {
+		t.Error("rule using quae.#UserPromptSubmit should match an input with non-empty prompt")
+	}
+
+	// Empty prompt — the typed event's `prompt: string & !=""` constraint
+	// must block the match.
+	empty := compileInput(t, ctx, `{
+		hook_event_name: "UserPromptSubmit"
+		prompt:          ""
+	}`)
+	if ruleMatches(t, r, empty) {
+		t.Error("rule using quae.#UserPromptSubmit must NOT match an empty prompt")
+	}
+}
+
 // TestLoadRules_InvalidStdlibReference_ErrorsWithContext confirms the loader
 // surfaces a useful diagnostic: the error must name the undefined symbol
 // AND the rule file path so the author can locate the bad reference. It must
