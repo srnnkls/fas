@@ -75,8 +75,8 @@ tasks:
     files:
       - internal/config/loader.go
       - internal/diag/cuebridge.go
-      - internal/config/loader_test.go
-    status: pending
+      - internal/config/loader_diag_test.go
+    status: completed
     depends_on: [T1, T2]
     test_hints:
       - Schema mismatch on a rule's `then` → E0101 diagnostic with caret on the `then` field.
@@ -95,8 +95,8 @@ tasks:
       from a stdlib package).
     files:
       - internal/config/lint.go
-      - internal/config/loader_test.go
-    status: pending
+      - internal/config/lint_diag_test.go
+    status: completed
     depends_on: [T1, T2, T3]
     test_hints:
       - Cross-rule ref → E0502 with caret on the SelectorExpr root.
