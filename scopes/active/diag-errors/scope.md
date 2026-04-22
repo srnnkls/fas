@@ -45,12 +45,12 @@ Plus `E01xx` for load errors (schema mismatch, unknown action kind) and `E05xx` 
 - **F1** — New package `internal/diag` defines `Diagnostic`, `Label`, `Severity` types and a compiler-style renderer (file, line:col, source snippet with caret, error code, Rust-ish format). Rendering is deterministic and stable across runs.
 - **F2** — Error code registry: constants file with `E01xx` (load), `E02xx` (path resolution), `E03xx` (leaf constraint), `E04xx` (disjunction), `E05xx` (scope/binding). Each code has a short help string; `quae explain --code E0201` prints the help.
 - **F3** — `config.Rule` retains an `ast.Expr` for `when` alongside the semantic `cue.Value`. Threaded through `compileRuleFile` / `extractFileRules` / `decodeRule`. Used by the debug-path localizer.
-- **F4** — Evaluator gains a debug path. Same subsumption verdict as the fast path; on failure, walks the rule AST + input pairwise to produce `[]Diagnostic`. Debug path activates only when debug mode is on (flag / env var / `explain` subcommand) — zero cost on production eval.
+- **F4** — Evaluator signature is `Evaluate(rules []Rule, input cue.Value) ([]Match, []Diagnostic, error)` — three orthogonal lanes: matches (the result), diagnostics (observations on rules that didn't fire), error (engine-level failures — invalid CUE, nil input, unreadable source). Engine failures never flow through `[]Diagnostic`. Debug activation is a package-level toggle (`explainEnabled()`) set from flag / env / subcommand at CLI startup — fast path leaves `[]Diagnostic` nil and never invokes localize. The AST walker is an `iter.Seq[Diagnostic]` (Go 1.23) so it yields lazily and supports early-stop.
 - **F5** — `localize` emits per-segment diagnostics:
   - Path-segment missing → `E0201` with caret on the segment.
   - Leaf constraint failure → `E0301` with caret on the constraint span, labels for `want` and `got`.
   - Disjunction-all-fail → `E0401` with each arm's span labeled and the closest-match arm noted.
-- **F6** — Existing `ruleLoadError` migrates to emit `Diagnostic` via `internal/diag`. Loader-level errors (schema mismatch, unknown action kind, lint rejections from `subsume-evaluator`) use the same output shape as evaluator-level errors. One visual language across the tool.
+- **F6** — Existing `ruleLoadError` migrates to emit `Diagnostic` via `internal/diag`. Loader-level errors (schema mismatch, unknown action kind, lint rejections from `subsume-evaluator`) use the same output shape as evaluator-level errors. One visual language across the tool. Multiple independent failures in one load pass are returned via `errors.Join` (Go 1.20+); callers unwrap with `errors.Is` / `errors.As`.
 - **F7** — CLI surface:
   - `--explain[=fired|missed|both]` flag on `quae eval`. Default filter: `missed`. Emits diagnostics to stderr after the normal response on stdout.
   - `QUAE_EXPLAIN=1` env var enables the same behavior without a flag (hook-debugging use case).
@@ -102,7 +102,7 @@ scrut test tests/diagnostics.md  # NEW — CLI surface tests
 | `internal/config/loader.go` | Thread `ast.Expr` for `when` through load |
 | `internal/config/loader.go` | `ruleLoadError` → `diag.Diagnostic` |
 | `internal/config/lint.go` | Lint rejections emit `diag.Diagnostic` |
-| `internal/evaluator/evaluator.go` | Debug-path `Explain` returns `(bool, []Diagnostic)` |
+| `internal/evaluator/evaluator.go` | `Evaluate` returns `([]Match, []Diagnostic, error)` — three lanes |
 | `internal/evaluator/localize.go` (NEW) | AST-paired walk; per-segment diagnostic emission |
 | `cmd/quae/main.go` | `--explain` flag; `QUAE_EXPLAIN` env; `explain` subcommand |
 | `tests/diagnostics.md` (NEW) | Scrut contract for CLI diagnostic output |
