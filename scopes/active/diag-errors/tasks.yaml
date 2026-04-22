@@ -63,11 +63,14 @@ tasks:
     subject: Migrate ruleLoadError to emit diag.Diagnostic
     description: >
       Replace `ruleLoadError`'s string-builder rendering with a
-      `diag.Diagnostic` emitted via the shared renderer. Add
+      `diag.Diagnostic` wrapped in a `DiagError` adapter at the loader
+      boundary (so stdlib callers continue to see `error`). Add
       `diag.FromCueError(err error) Diagnostic` that extracts positions from
-      CUE's error chain and assigns an E01xx code by failure class. Error()
-      calls Render() so the error-interface behavior is preserved for
-      existing callers.
+      CUE's error chain and assigns an E01xx code by failure class.
+      DiagError.Error() renders via the shared renderer. errors.As(err,
+      &dErr) recovers the structured diagnostic. When a single load pass
+      surfaces multiple independent failures, return errors.Join(errs...)
+      (Go 1.20+) instead of only the first.
     files:
       - internal/config/loader.go
       - internal/diag/cuebridge.go
@@ -78,6 +81,7 @@ tasks:
       - Schema mismatch on a rule's `then` → E0101 diagnostic with caret on the `then` field.
       - Unknown action kind → E0102 with caret on the action name.
       - All existing loader error tests assert the new output shape (snapshot).
+      - Two rules in one file each fail → errors.Join returns both; errors.As recovers each.
 
   - id: T5
     subject: Migrate lint rejections to diag.Diagnostic
@@ -100,22 +104,34 @@ tasks:
         the three resolvable scopes.
 
   - id: T6
-    subject: Implement debug-path localize in evaluator
+    subject: Unify evaluator into three-lane signature + localize walker
     description: >
-      Add `func Explain(rules []Rule, input cue.Value) ([]Match, []Diagnostic)`.
-      Uses the same Subsume verdict as `Evaluate`; on failure, invokes
-      `localize(rule, input)` which walks `rule.WhenSyntax` paired with the
-      input to produce a Diagnostic. Three localizers:
-        - Path-segment absent (E0201): walk the `when` struct top-down against
-          the input; at the first field whose key is missing in the input,
-          emit with caret on the field's label position.
-        - Leaf constraint failure (E0301): find the failing leaf field, emit
+      Change Evaluate signature to
+      `Evaluate(rules []Rule, input cue.Value) ([]Match, []Diagnostic, error)`.
+      Three orthogonal lanes: matches, diagnostics (observations on non-match),
+      error (engine-level failures — invalid CUE, nil input). Engine failures
+      never flow through the diagnostics lane; use package-level sentinel
+      errors (var ErrInvalidInput = errors.New(...)) checked via errors.Is.
+
+      Debug activation is a package-level toggle (`explainEnabled()`), set
+      once by the CLI from --explain / QUAE_EXPLAIN / explain subcommand at
+      startup. When disabled, Subsume non-match skips localize entirely —
+      `[]Diagnostic` stays nil, one Subsume call per rule (zero cost).
+
+      `localize(rule, input) iter.Seq[Diagnostic]` (Go 1.23 range-over-func)
+      yields lazily; callers can stop after the first failure. Three
+      localizers inside the walker:
+        - Path-segment absent (E0201): walk the `when` struct top-down; at
+          the first absent key yield with caret on the field label position,
+          help lists available keys at the parent.
+        - Leaf constraint failure (E0301): find the failing leaf field, yield
           with caret on the constraint expression, labels for want/got.
-        - Disjunction all-fail (E0401): find the BinaryExpr OR chain, emit
+        - Disjunction all-fail (E0401): find the BinaryExpr OR chain, yield
           with labels on each arm span.
     files:
       - internal/evaluator/localize.go
       - internal/evaluator/evaluator.go
+      - internal/evaluator/evaluator_test.go
       - internal/evaluator/localize_test.go
     status: pending
     depends_on: [T1, T2, T3]
@@ -124,14 +140,21 @@ tasks:
       - command: =~"^rm " vs "ls -la" → E0301 with want/got labels.
       - tool_name: "A" | "B" | "C" vs "D" → E0401 with 3 arm labels.
       - Absent path in an optional field → no diagnostic (rule "matches" via optional).
+      - Nil / invalid cue.Value input → err lane = ErrInvalidInput, diags lane nil.
+      - errors.Is(err, ErrInvalidInput) recognizes the engine-failure sentinel.
+      - explainEnabled() false + non-matching rule → diags lane nil, localize never called.
+      - Caller breaks out of `for d := range localize(...)` after first → walker halts cleanly.
 
   - id: T7
     subject: CLI --explain flag
     description: >
       Add `--explain[=fired|missed|both]` to `cmd/quae/main.go`. Default value
-      `missed` when flag present without argument. Wires to `evaluator.Explain`
-      instead of `Evaluate` when set. Emits diagnostics to stderr after the
-      normal vendor response on stdout. Zero cost when flag absent.
+      `missed` when flag present without argument. Flips the evaluator's
+      package-level explainEnabled toggle before calling Evaluate. Filter
+      (fired / missed / both) applied to the returned `[]Diagnostic` slice
+      on the caller side. Emits diagnostics to stderr after the normal
+      vendor response on stdout. Zero cost when flag absent (toggle off,
+      localize never invoked).
     files:
       - cmd/quae/main.go
       - cmd/quae/main_test.go
