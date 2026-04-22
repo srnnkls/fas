@@ -376,6 +376,283 @@ system_path_regex: {
 	}
 }
 
+// TestLoadRules_Lint_CrossRuleRef_WhenFromOtherWhen fails load when one rule's
+// `when` references another rule's `when` subtree. Cross-rule composition must
+// go through a shared hidden field or a stdlib import, never through a
+// selector expression that walks a sibling rule.
+func TestLoadRules_Lint_CrossRuleRef_WhenFromOtherWhen(t *testing.T) {
+	const src = `package rules
+
+rule_one: {
+	when: {tool_name: "Bash"}
+	then: deny: {
+		rule_id: "r1"
+		reason:  "nope"
+	}
+}
+
+rule_two: {
+	when: {tool_name: rule_one.when.tool_name}
+	then: deny: {
+		rule_id: "r2"
+		reason:  "nope"
+	}
+}
+`
+	dir := t.TempDir()
+	writeRuleFile(t, dir, "xrule.cue", src)
+
+	_, err := config.LoadRules(dir)
+	if err == nil {
+		t.Fatal("expected cross-rule ref to be rejected, got nil error")
+	}
+	detail := errDetailAfter(err, "xrule.cue:")
+	if !strings.Contains(detail, "rule_one") {
+		t.Errorf("error must name the referenced rule 'rule_one'; got: %s", err)
+	}
+	if !strings.Contains(detail, "rule_two") {
+		t.Errorf("error must name the referencing rule 'rule_two'; got: %s", err)
+	}
+	if !strings.Contains(detail, "cross") {
+		t.Errorf("error must signal a cross-rule violation (expected substring 'cross'); got: %s", err)
+	}
+}
+
+// TestLoadRules_Lint_CrossRuleRef_WhenFromOtherThen fails load when a rule's
+// `when` reaches into another rule's `then` subtree.
+func TestLoadRules_Lint_CrossRuleRef_WhenFromOtherThen(t *testing.T) {
+	const src = `package rules
+
+first_rule: {
+	when: {tool_name: "Bash"}
+	then: deny: {
+		rule_id: "first"
+		reason:  "nope"
+	}
+}
+
+second_rule: {
+	when: {rule_id_ref: first_rule.then.deny.rule_id, tool_name: "Bash"}
+	then: deny: {
+		rule_id: "second"
+		reason:  "nope"
+	}
+}
+`
+	dir := t.TempDir()
+	writeRuleFile(t, dir, "xthen.cue", src)
+
+	_, err := config.LoadRules(dir)
+	if err == nil {
+		t.Fatal("expected cross-rule then ref to be rejected, got nil error")
+	}
+	detail := errDetailAfter(err, "xthen.cue:")
+	if !strings.Contains(detail, "first_rule") {
+		t.Errorf("error must name the referenced rule 'first_rule'; got: %s", err)
+	}
+	if !strings.Contains(detail, "second_rule") {
+		t.Errorf("error must name the referencing rule 'second_rule'; got: %s", err)
+	}
+}
+
+// TestLoadRules_Lint_SelfRefIntoThen fails load when a rule's `when` references
+// its own `then` subtree. Even though CUE can resolve it, the semantics of
+// `then` aren't available at match time — a rule's `when` must be a pure
+// pattern over the input.
+func TestLoadRules_Lint_SelfRefIntoThen(t *testing.T) {
+	const src = `package rules
+
+self_ref: {
+	when: {tool_name: "Bash", marker: self_ref.then.deny.rule_id}
+	then: deny: {
+		rule_id: "sr"
+		reason:  "nope"
+	}
+}
+`
+	dir := t.TempDir()
+	writeRuleFile(t, dir, "sthen.cue", src)
+
+	_, err := config.LoadRules(dir)
+	if err == nil {
+		t.Fatal("expected self-ref into then to be rejected, got nil error")
+	}
+	detail := errDetailAfter(err, "sthen.cue:")
+	if !strings.Contains(detail, "self_ref") {
+		t.Errorf("error must name the offending rule 'self_ref'; got: %s", err)
+	}
+	if !strings.Contains(detail, "then") {
+		t.Errorf("error must signal a ref into 'then' (expected substring 'then'); got: %s", err)
+	}
+}
+
+// TestLoadRules_Lint_SelfRefIntoMeta fails load when a rule's `when` references
+// its own `meta` subtree. Same reasoning as the self→then case.
+func TestLoadRules_Lint_SelfRefIntoMeta(t *testing.T) {
+	const src = `package rules
+
+meta_ref: {
+	when: {tool_name: "Bash", tag: meta_ref.meta.requires[0]}
+	then: deny: {
+		rule_id: "mr"
+		reason:  "nope"
+	}
+	meta: {requires: ["signal_foo"]}
+}
+`
+	dir := t.TempDir()
+	writeRuleFile(t, dir, "smeta.cue", src)
+
+	_, err := config.LoadRules(dir)
+	if err == nil {
+		t.Fatal("expected self-ref into meta to be rejected, got nil error")
+	}
+	detail := errDetailAfter(err, "smeta.cue:")
+	if !strings.Contains(detail, "meta_ref") {
+		t.Errorf("error must name the offending rule 'meta_ref'; got: %s", err)
+	}
+	if !strings.Contains(detail, "meta") {
+		t.Errorf("error must signal a ref into 'meta' (expected substring 'meta'); got: %s", err)
+	}
+}
+
+// TestLoadRules_Lint_UnboundIdentifier fails load when `when` references an
+// identifier that is neither a stdlib import nor a local hidden sibling.
+// The error must name the offending identifier so authors can fix the typo.
+func TestLoadRules_Lint_UnboundIdentifier(t *testing.T) {
+	const src = `package rules
+
+rule_a: {
+	when: {tool_name: mystery_ident}
+	then: deny: {
+		rule_id: "a"
+		reason:  "nope"
+	}
+}
+`
+	dir := t.TempDir()
+	writeRuleFile(t, dir, "uid_case.cue", src)
+
+	_, err := config.LoadRules(dir)
+	if err == nil {
+		t.Fatal("expected unbound identifier to be rejected, got nil error")
+	}
+	detail := errDetailAfter(err, "uid_case.cue:")
+	if !strings.Contains(detail, "mystery_ident") {
+		t.Errorf("error must name the unbound identifier 'mystery_ident'; got: %s", err)
+	}
+	// The lint must classify the failure using its own taxonomy ("unbound")
+	// rather than leaking CUE's generic 'reference ... not found' phrasing.
+	// This asserts the lint actually ran and produced a classified diagnostic.
+	if !strings.Contains(detail, "unbound") {
+		t.Errorf("error must classify the failure as 'unbound' from the lint, not fall through to CUE's generic message; got: %s", err)
+	}
+	if !strings.Contains(detail, "rule_a") {
+		t.Errorf("error must name the rule 'rule_a'; got: %s", err)
+	}
+}
+
+// errDetailAfter returns the portion of err.Error() beginning at anchor.
+// Substring checks for lint taxonomy terms (e.g. "cross", "then", "meta",
+// "unbound") must not accidentally match fragments that live inside the
+// tempdir path or test-function name; anchoring at the rule filename scopes
+// assertions to the actual diagnostic body.
+func errDetailAfter(err error, anchor string) string {
+	msg := err.Error()
+	if i := strings.Index(msg, anchor); i >= 0 {
+		return msg[i:]
+	}
+	return msg
+}
+
+// TestLoadRules_Lint_AllowsLocalHiddenSibling loads a rule whose `when`
+// references a local hidden field declared on the same rule. Hidden fields
+// are the escape hatch for helper values and must pass the lint.
+func TestLoadRules_Lint_AllowsLocalHiddenSibling(t *testing.T) {
+	const src = `package rules
+
+uses_hidden: {
+	_local_tool: "Bash"
+	when: {tool_name: _local_tool}
+	then: deny: {
+		rule_id: "uh"
+		reason:  "nope"
+	}
+}
+`
+	dir := t.TempDir()
+	writeRuleFile(t, dir, "hidden_ok.cue", src)
+
+	rules, err := config.LoadRules(dir)
+	if err != nil {
+		t.Fatalf("rule with local hidden sibling ref must load cleanly, got: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(rules))
+	}
+}
+
+// TestLoadRules_Lint_AllowsStdlibImport loads a rule whose `when` references
+// an identifier bound by a stdlib import. The lint must recognize import
+// bindings as in-scope.
+func TestLoadRules_Lint_AllowsStdlibImport(t *testing.T) {
+	const src = `package rules
+
+import "list"
+
+uses_stdlib: {
+	when: {
+		tool_name: "Bash"
+		flags:     list.MatchN(>0, [!=""])
+	}
+	then: deny: {
+		rule_id: "us"
+		reason:  "nope"
+	}
+}
+`
+	dir := t.TempDir()
+	writeRuleFile(t, dir, "stdlib_ok.cue", src)
+
+	rules, err := config.LoadRules(dir)
+	if err != nil {
+		t.Fatalf("rule using stdlib import must load cleanly, got: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(rules))
+	}
+}
+
+// TestLoadRules_Lint_AllowsSiblingRefWithinWhen loads a rule whose `when`
+// references a sibling field inside the same `when` subtree. Sibling refs
+// are CUE-native and NOT a lint target.
+func TestLoadRules_Lint_AllowsSiblingRefWithinWhen(t *testing.T) {
+	const src = `package rules
+
+sibling_ref_ok: {
+	when: {
+		tool_name: "Bash"
+		targets:   ["/etc/passwd"]
+		command:   targets[0]
+	}
+	then: deny: {
+		rule_id: "sr"
+		reason:  "nope"
+	}
+}
+`
+	dir := t.TempDir()
+	writeRuleFile(t, dir, "sibling_ok.cue", src)
+
+	rules, err := config.LoadRules(dir)
+	if err != nil {
+		t.Fatalf("rule with sibling ref inside when must load cleanly, got: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(rules))
+	}
+}
+
 // ruleWithID constructs a minimal well-formed deny rule with a given rule_id,
 // used by the ordering test.
 func ruleWithID(id string) string {
