@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"cuelang.org/go/cue"
+	"cuelang.org/go/cue/ast"
 	cueerrors "cuelang.org/go/cue/errors"
 	"cuelang.org/go/cue/load"
 
@@ -60,11 +61,14 @@ type Meta struct {
 // logging only; it is nil when the when clause contains non-concrete
 // constraints.
 type Rule struct {
-	Source  string
-	When    cue.Value
-	WhenMap map[string]any `json:",omitempty"`
-	Then    *Action
-	Meta    *Meta
+	Source string
+	When   cue.Value
+	// WhenSyntax is the parsed CUE AST node for the when block, retained for
+	// diagnostic localization. Nil if the rule was not loaded from source.
+	WhenSyntax ast.Expr       `json:"-"`
+	WhenMap    map[string]any `json:",omitempty"`
+	Then       *Action
+	Meta       *Meta
 }
 
 // rulesModuleRoot is the synthetic module-root directory used by the loader.
@@ -196,7 +200,7 @@ func extractFileRules(ruleDef cue.Value, fileVal cue.Value, rulePath string) ([]
 			}
 		}
 
-		rule, err := decodeRule(unified)
+		rule, err := decodeRule(unified, fieldVal)
 		if err != nil {
 			return nil, fmt.Errorf("%s: field %q: %w", rulePath, fieldName, err)
 		}
@@ -373,12 +377,37 @@ func sanitizeVirtualRuleName(name string) string {
 	return stem + ext
 }
 
+// whenSyntax returns the parsed AST expression for a `when` value with source
+// positions preserved. cue.Value.Source returns the original *ast.Field for
+// the `when:` declaration; the field's Value is the struct literal we expose.
+// cue.Value.Syntax is unusable here because it re-synthesizes nodes without
+// positions.
+func whenSyntax(when cue.Value) (ast.Expr, bool) {
+	switch n := when.Source().(type) {
+	case *ast.Field:
+		return n.Value, true
+	case ast.Expr:
+		return n, true
+	}
+	return nil, false
+}
+
 // decodeRule extracts a Rule from a cue.Value already unified with #Rule.
-func decodeRule(v cue.Value) (Rule, error) {
+// fieldVal is the original (pre-unification) rule value so the `when` AST
+// retains its source positions — unification drops positional metadata.
+func decodeRule(v cue.Value, fieldVal cue.Value) (Rule, error) {
 	var out Rule
 
 	if when := v.LookupPath(cue.ParsePath("when")); when.Exists() {
 		out.When = when
+		// Retain the parsed `when` AST with source positions for diagnostic
+		// localization. The lookup goes on fieldVal, not the unified value,
+		// because Unify produces a fresh computed value whose Source() is nil.
+		if original := fieldVal.LookupPath(cue.ParsePath("when")); original.Exists() {
+			if expr, ok := whenSyntax(original); ok {
+				out.WhenSyntax = expr
+			}
+		}
 		// Best-effort debug map. Non-concrete constraints (e.g. regex
 		// matchers) legitimately fail Decode — swallow those errors and
 		// leave WhenMap nil.

@@ -38,7 +38,59 @@ batch_reviews:
       - resolved: [H1 gofmt, M1-M3 godoc on public API]
       - deferred: [4 × low render polish, 2 × low test helpers]
 
+  - batch: 2
+    tasks: [T3]
+    commit: pending
+    reviewers:
+      - id: general-claude
+        status: completed
+        outcome: approved
+        gates: { correctness: pass, security: pass, performance: pass }
+        issues: { critical: 0, high: 0, medium: 0, low: 0 }
+      - id: architecture-claude
+        status: completed
+        outcome: approved
+        gates: { architecture: pass }
+        issues: { critical: 0, high: 0, medium: 0, low: 2 }
+      - id: compliance-claude
+        status: completed
+        outcome: approved
+        gates: { style: pass }
+        issues: { critical: 0, high: 0, medium: 0, low: 3 }
+    synthesized:
+      gates:
+        correctness: pass
+        security: pass
+        performance: pass
+        architecture: pass
+        style: pass
+      critical_issues: 0
+      high_issues: 0
+      medium_issues: 0
+      low_issues: 5
+    outcome: approved
+    key_finding: |
+      cue.Value.Syntax() does NOT preserve positions (pretty-prints).
+      cue.Value.Source() on pre-Unify value is the correct idiom.
+      design.md updated; T4/T5/T6 descriptors reference the new pattern.
+
 deferred_issues:
+  - batch: 2
+    severity: low
+    file: internal/config/loader.go
+    description: decodeRule signature coupled to pre-Unify fieldVal; could be decoupled by extracting AST in extractFileRules and passing ast.Expr into decodeRule
+  - batch: 2
+    severity: low
+    file: internal/config/whensyntax_test.go
+    description: joinSegments wraps strings.Join in redundant fmt.Sprintf
+  - batch: 2
+    severity: low
+    file: internal/config/whensyntax_test.go
+    description: labelName manually strips quotes; strconv.Unquote is stdlib-idiomatic
+  - batch: 2
+    severity: low
+    file: internal/config/whensyntax_test.go
+    description: filename diverges from loader_*_test.go convention; consider loader_whensyntax_test.go
   - batch: 1
     severity: low
     file: internal/diag/render.go

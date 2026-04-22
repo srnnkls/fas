@@ -167,7 +167,22 @@ type Rule struct {
 }
 ```
 
-`WhenSyntax` is populated in `decodeRule` from `when.Syntax(cue.All(), cue.Docs(true))`, which returns the `ast.Expr` with preserved positions. No re-parsing; CUE already has this from `compileRuleFile`.
+`WhenSyntax` is populated from the pre-Unify field value's `Source()`, not from `Syntax()`. CUE's `Value.Syntax()` pretty-prints the evaluated value back into an AST with **no source positions** — useless for diagnostics. `Value.Source()` returns the parser-emitted node (typically `*ast.Field` whose `.Value` is the `ast.Expr` we retain). Unify drops Source, so the lookup runs on the original `fieldVal` threaded into `decodeRule`, not the unified value:
+
+```go
+// internal/config/loader.go
+func whenSyntax(v cue.Value) (ast.Expr, bool) {
+    switch n := v.Source().(type) {
+    case *ast.Field:
+        if e, ok := n.Value.(ast.Expr); ok { return e, true }
+    case ast.Expr:
+        return n, true
+    }
+    return nil, false
+}
+```
+
+Same pattern applies for T4/T5 when retaining `then:` / `meta:` / selector positions — always `Source()`, always on the pre-Unify value.
 
 ## The debug path: `localize`
 
