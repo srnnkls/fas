@@ -45,19 +45,20 @@ tasks:
     subject: Retain ast.Expr for when in config.Rule
     description: >
       Extend `config.Rule` with `WhenSyntax ast.Expr`. Populate in `decodeRule`
-      from `when.Syntax(cue.All(), cue.Docs(true))`. All existing callers keep
-      working — the field is additive. Thread it through `Evaluate` / `Match`
-      so the debug-path can consume it.
+      from the pre-Unify field value's `Source()` (NOT `Syntax()` — that
+      re-synthesizes nodes without positions). Thread the original fieldVal
+      through decodeRule so the Source() lookup runs on the un-unified value.
+      Field is additive — existing callers keep working.
     files:
       - internal/config/loader.go
-      - internal/config/loader_test.go
-      - internal/evaluator/evaluator.go
-    status: pending
+      - internal/config/whensyntax_test.go
+    status: completed
     depends_on: [T1]
     test_hints:
       - Loading a rule populates Rule.WhenSyntax with a non-nil ast.Expr.
       - Positions in WhenSyntax resolve to the correct source file + line.
-      - Existing 27 loader tests still pass.
+      - Existing 36 loader tests still pass.
+      - Multi-rule files produce per-rule distinct AST nodes (no aliasing).
 
   - id: T4
     subject: Migrate ruleLoadError to emit diag.Diagnostic
