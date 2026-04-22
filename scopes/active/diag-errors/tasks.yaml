@@ -126,7 +126,8 @@ tasks:
           the first absent key yield with caret on the field label position,
           help lists available keys at the parent.
         - Leaf constraint failure (E0301): find the failing leaf field, yield
-          with caret on the constraint expression, labels for want/got.
+          with caret on the constraint expression, notes "want: <rendered
+          constraint>" and "got: <rendered input value>" (exact tokens).
         - Disjunction all-fail (E0401): find the BinaryExpr OR chain, yield
           with labels on each arm span.
     files:
@@ -134,7 +135,7 @@ tasks:
       - internal/evaluator/evaluator.go
       - internal/evaluator/evaluator_test.go
       - internal/evaluator/localize_test.go
-    status: pending
+    status: completed
     depends_on: [T1, T2, T3]
     test_hints:
       - `when: {a: b: c: true}` + input missing `b` → E0201 at b's label position.

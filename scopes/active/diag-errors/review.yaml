@@ -107,7 +107,80 @@ batch_reviews:
       so existing errors.As(err, &cueErr) callers continue to work.
       E0503 help wording flipped to match lint direction.
 
+  - batch: 4
+    tasks: [T6]
+    commit: pending
+    reviewers:
+      - id: test-reviewer-claude
+        status: completed
+        phase: A.5
+        outcome: changes_requested
+        gates: { test_quality: fail }
+        issues: { critical: 0, high: 3, medium: 3, low: 4 }
+        fix:
+          - resolved: [H1 E0201 file:line:col resolution anchor, H2 NoBreak companion test, H3 codify want/got tokens in tasks.yaml]
+      - id: code-reviewer-claude
+        status: completed
+        phase: C
+        outcome: approved
+        gates:
+          correctness: pass
+          security: pass
+          performance: pass
+          architecture: pass
+          style: pass
+        issues: { critical: 0, high: 0, medium: 2, low: 4 }
+    synthesized:
+      gates:
+        correctness: pass
+        security: pass
+        performance: pass
+        architecture: pass
+        style: pass
+      critical_issues: 0
+      high_issues: 0
+      medium_issues: 2
+      low_issues: 4
+    outcome: approved_after_fix
+    notes: |
+      Phase A.5 test review caught 3 tautology/weak-assertion issues before
+      implementer started (position resolution anchor, break-contract
+      companion, prescriptive wording). Tightening pre-GREEN saved a rework
+      loop. Implementer deviated from design pseudocode by using
+      `f.Constraint == token.OPTION` — correct per current CUE ast API
+      (f.Optional is deprecated). Three-lane discipline clean; fast path
+      preserves pre-T6 cost (one Subsume per rule when explain off).
+      iter.Seq break semantics locked by paired CallerBreak + NoBreak tests.
+
 deferred_issues:
+  - batch: 4
+    severity: medium
+    file: internal/evaluator/localize.go
+    line: 62
+    description: walkStruct passes `append(path, name)` — safe today but slice-aliasing footgun; consider slices.Concat for future-proofing
+  - batch: 4
+    severity: medium
+    file: internal/evaluator/localize.go
+    line: 71-73
+    description: non-existent LookupPath silently skipped for leaf fields after outer Subsume failure — theoretical gap; monitor in T11 scrut
+  - batch: 4
+    severity: low
+    file: internal/evaluator/localize.go
+    description: listKeys eager on every E0201 emission; negligible but lazy Help is cheap future change
+  - batch: 4
+    severity: low
+    file: internal/evaluator/localize.go
+    description: format.Node in leafDiagnostic — acceptable cold path; revisit if T7 profiling shows hot
+  - batch: 4
+    severity: low
+    file: internal/evaluator/localize.go
+    description: fieldName silently returns "" for ast.Alias / ast.ListLit / TemplateLabel; add comment pointing forward to pattern-label coverage
+  - batch: 4
+    severity: low
+    file: internal/evaluator/evaluator.go
+    line: 80-82
+    description: diagnostics accumulated unbounded per rule; consider cap in T7 if --explain=missed grows hot
+
   - batch: 3
     severity: low
     file: internal/config/loader.go

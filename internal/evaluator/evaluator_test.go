@@ -76,7 +76,7 @@ func TestEvaluate_EmptyRules_NoMatches(t *testing.T) {
 	ctx := cuecontext.New()
 	input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
 
-	got, err := evaluator.Evaluate(nil, input)
+	got, _, err := evaluator.Evaluate(nil, input)
 	if err != nil {
 		t.Fatalf("Evaluate on empty rules returned error: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestEvaluate_SimpleEqualityMatches(t *testing.T) {
 
 	t.Run("matching tool_name", func(t *testing.T) {
 		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -111,7 +111,7 @@ func TestEvaluate_SimpleEqualityMatches(t *testing.T) {
 
 	t.Run("non-matching tool_name", func(t *testing.T) {
 		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Write"}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -142,7 +142,7 @@ func TestEvaluate_HookEventMatches(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := evaluator.Evaluate(rules, mustCompile(t, ctx, tt.input))
+			got, _, err := evaluator.Evaluate(rules, mustCompile(t, ctx, tt.input))
 			if err != nil {
 				t.Fatalf("Evaluate: %v", err)
 			}
@@ -180,7 +180,7 @@ func TestEvaluate_MultipleRules_PartialMatch(t *testing.T) {
 	ctx := cuecontext.New()
 	input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
 
-	got, err := evaluator.Evaluate(rules, input)
+	got, _, err := evaluator.Evaluate(rules, input)
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestEvaluate_MatchWithoutAction(t *testing.T) {
 	ctx := cuecontext.New()
 	input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse"}`)
 
-	got, err := evaluator.Evaluate(rules, input)
+	got, _, err := evaluator.Evaluate(rules, input)
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestEvaluate_MatchProducesAction(t *testing.T) {
 	ctx := cuecontext.New()
 	input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse"}`)
 
-	got, err := evaluator.Evaluate(rules, input)
+	got, _, err := evaluator.Evaluate(rules, input)
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -302,7 +302,7 @@ func TestEvaluate_HasSystemTarget_Matches(t *testing.T) {
 			tool_name:       "Bash"
 			tool_input: parsed: targets: ["/etc/passwd"]
 		}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -317,7 +317,7 @@ func TestEvaluate_HasSystemTarget_Matches(t *testing.T) {
 			tool_name:       "Bash"
 			tool_input: parsed: targets: ["./etc/passwd"]
 		}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -352,7 +352,7 @@ func TestEvaluate_HasRmForce_Matches(t *testing.T) {
 			tool_name:       "Bash"
 			tool_input: parsed: flags: ["-rf"]
 		}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -367,7 +367,7 @@ func TestEvaluate_HasRmForce_Matches(t *testing.T) {
 			tool_name:       "Bash"
 			tool_input: parsed: flags: ["-x"]
 		}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -400,7 +400,7 @@ func TestEvaluate_HasDestructiveAction_RejectsRawRm(t *testing.T) {
 		input := mustCompile(t, ctx, `{
 			tool_input: parsed: actions: ["remove"]
 		}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -413,7 +413,7 @@ func TestEvaluate_HasDestructiveAction_RejectsRawRm(t *testing.T) {
 		input := mustCompile(t, ctx, `{
 			tool_input: parsed: actions: ["rm"]
 		}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -446,7 +446,7 @@ func TestEvaluate_ANDComposition(t *testing.T) {
 		input := mustCompile(t, ctx, `{
 			tool_input: parsed: flags: ["-rf"]
 		}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -459,7 +459,7 @@ func TestEvaluate_ANDComposition(t *testing.T) {
 		input := mustCompile(t, ctx, `{
 			tool_input: parsed: flags: ["-f"]
 		}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -506,7 +506,7 @@ func TestEvaluate_BashInput_EndToEnd(t *testing.T) {
 		t.Fatalf("compile enriched: %v", err)
 	}
 
-	got, err := evaluator.Evaluate(rules, input)
+	got, _, err := evaluator.Evaluate(rules, input)
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -541,11 +541,11 @@ func TestEvaluate_DeterministicOrder(t *testing.T) {
 	ctx := cuecontext.New()
 	input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
 
-	first, err := evaluator.Evaluate(rules, input)
+	first, _, err := evaluator.Evaluate(rules, input)
 	if err != nil {
 		t.Fatalf("first Evaluate: %v", err)
 	}
-	second, err := evaluator.Evaluate(rules, input)
+	second, _, err := evaluator.Evaluate(rules, input)
 	if err != nil {
 		t.Fatalf("second Evaluate: %v", err)
 	}
@@ -597,7 +597,7 @@ func TestEvaluate_MalformedWhen_Errors(t *testing.T) {
 
 	input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse"}`)
 
-	_, err := evaluator.Evaluate(rules, input)
+	_, _, err := evaluator.Evaluate(rules, input)
 	if err == nil {
 		t.Fatal("expected error from Evaluate on scalar `when` clause, got nil")
 	}
@@ -637,7 +637,7 @@ func TestEvaluate_InputMissingRequiredField_StillRunsRules(t *testing.T) {
 	ctx := cuecontext.New()
 	input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse"}`) // no tool_name
 
-	got, err := evaluator.Evaluate(rules, input)
+	got, _, err := evaluator.Evaluate(rules, input)
 	if err != nil {
 		t.Fatalf("Evaluate must not error on missing optional input fields: %v", err)
 	}
@@ -674,7 +674,7 @@ func TestEvaluate_SubsumeSemantics_AbsentRequiredField_NoMatchNoError(t *testing
 	// non-match, not as an evaluation error.
 	input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse"}`)
 
-	got, err := evaluator.Evaluate(rules, input)
+	got, _, err := evaluator.Evaluate(rules, input)
 	if err != nil {
 		t.Fatalf("Evaluate must not error on absent required field: %v", err)
 	}
@@ -699,7 +699,7 @@ func TestEvaluate_SubsumeSemantics_RegexScalar_Matches(t *testing.T) {
 
 	t.Run("command matching ^rm subsumes", func(t *testing.T) {
 		input := mustCompile(t, ctx, `{tool_input: command: "rm -rf /"}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -713,7 +713,7 @@ func TestEvaluate_SubsumeSemantics_RegexScalar_Matches(t *testing.T) {
 
 	t.Run("command not matching ^rm does not subsume", func(t *testing.T) {
 		input := mustCompile(t, ctx, `{tool_input: command: "ls -la"}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -740,7 +740,7 @@ func TestEvaluate_SubsumeSemantics_OptionalField_PreservesSemantics(t *testing.T
 
 	t.Run("flags absent still matches", func(t *testing.T) {
 		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse"}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -751,7 +751,7 @@ func TestEvaluate_SubsumeSemantics_OptionalField_PreservesSemantics(t *testing.T
 
 	t.Run("flags.force=false matches", func(t *testing.T) {
 		input := mustCompile(t, ctx, `{flags: {force: false}}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -762,7 +762,7 @@ func TestEvaluate_SubsumeSemantics_OptionalField_PreservesSemantics(t *testing.T
 
 	t.Run("flags.force=true does not match", func(t *testing.T) {
 		input := mustCompile(t, ctx, `{flags: {force: true}}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -794,7 +794,7 @@ func TestEvaluate_StructDisjunction_TopLevelAlternatives(t *testing.T) {
 
 	t.Run("Bash input matches first disjunct", func(t *testing.T) {
 		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -808,7 +808,7 @@ func TestEvaluate_StructDisjunction_TopLevelAlternatives(t *testing.T) {
 
 	t.Run("Write input matches second disjunct", func(t *testing.T) {
 		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Write"}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -822,7 +822,7 @@ func TestEvaluate_StructDisjunction_TopLevelAlternatives(t *testing.T) {
 
 	t.Run("Read input matches neither disjunct", func(t *testing.T) {
 		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Read"}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -854,7 +854,7 @@ func TestEvaluate_StructDisjunction_NestedAlternatives(t *testing.T) {
 			tool_name: "Bash"
 			tool_input: {command: "rm -rf /tmp/x"}
 		}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -871,7 +871,7 @@ func TestEvaluate_StructDisjunction_NestedAlternatives(t *testing.T) {
 			tool_name: "Bash"
 			tool_input: {command: "dd if=/dev/zero of=/dev/sda"}
 		}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -888,7 +888,7 @@ func TestEvaluate_StructDisjunction_NestedAlternatives(t *testing.T) {
 			tool_name: "Bash"
 			tool_input: {command: "ls -la"}
 		}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -902,7 +902,7 @@ func TestEvaluate_StructDisjunction_NestedAlternatives(t *testing.T) {
 			tool_name: "Write"
 			tool_input: {command: "rm -rf /tmp/x"}
 		}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -945,7 +945,7 @@ func TestEvaluate_CueNative_ListPattern(t *testing.T) {
 		input := mustCompile(t, ctx, `{
 			tool_input: parsed: targets: ["/etc/passwd", "/etc/shadow", "/etc/hosts"]
 		}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -958,7 +958,7 @@ func TestEvaluate_CueNative_ListPattern(t *testing.T) {
 		input := mustCompile(t, ctx, `{
 			tool_input: parsed: targets: ["/etc/passwd", "/tmp/x"]
 		}`)
-		got, err := evaluator.Evaluate(rules, input)
+		got, _, err := evaluator.Evaluate(rules, input)
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
@@ -966,4 +966,147 @@ func TestEvaluate_CueNative_ListPattern(t *testing.T) {
 			t.Fatalf("expected 0 matches when list mixed, got %d: %+v", len(got), got)
 		}
 	})
+}
+
+// -----------------------------------------------------------------------------
+// Three-lane signature (T6) — matches, diagnostics, error lanes are orthogonal.
+// Engine-level failures flow through the error lane only; diagnostics stay nil.
+// Diagnostics populate only when explain is enabled.
+// -----------------------------------------------------------------------------
+
+// TestEvaluate_ThreeLanes_ErrInvalidInput pins the engine-failure contract:
+// handing Evaluate a cue.Value that does not exist (zero value) yields
+// ErrInvalidInput on the error lane, with both matches and diagnostics nil.
+// Callers must trust err before consulting the other lanes.
+func TestEvaluate_ThreeLanes_ErrInvalidInput(t *testing.T) {
+	var invalid cue.Value // zero value — .Exists() reports false
+
+	matches, diags, err := evaluator.Evaluate(nil, invalid)
+	if err == nil {
+		t.Fatal("expected ErrInvalidInput for zero cue.Value, got nil")
+	}
+	if !errors.Is(err, evaluator.ErrInvalidInput) {
+		t.Fatalf("err should satisfy errors.Is(err, ErrInvalidInput); got %v (%T)", err, err)
+	}
+	if matches != nil {
+		t.Fatalf("matches must be nil when engine errors; got %+v", matches)
+	}
+	if diags != nil {
+		t.Fatalf("diagnostics must be nil when engine errors; got %+v", diags)
+	}
+}
+
+// TestEvaluate_ThreeLanes_CompileErrorInput ensures that a cue.Value whose
+// Err() is non-nil (e.g. a failed CompileString) also routes to the error
+// lane via ErrInvalidInput, never to the diagnostics lane. Engine failures
+// and rule observations are strictly separate.
+func TestEvaluate_ThreeLanes_CompileErrorInput(t *testing.T) {
+	ctx := cuecontext.New()
+	// Syntactic bottom — CompileString yields a non-nil Err().
+	broken := ctx.CompileString(`{{{`, cue.Filename("broken.cue"))
+	if broken.Err() == nil {
+		t.Fatal("test precondition: expected broken.Err() to be non-nil")
+	}
+
+	_, diags, err := evaluator.Evaluate(nil, broken)
+	if err == nil {
+		t.Fatal("expected error for cue.Value with non-nil Err(), got nil")
+	}
+	if !errors.Is(err, evaluator.ErrInvalidInput) {
+		t.Fatalf("compile-error input must surface via ErrInvalidInput; got %v", err)
+	}
+	if diags != nil {
+		t.Fatalf("engine failures must not populate diagnostics; got %+v", diags)
+	}
+}
+
+// TestEvaluate_ExplainDisabled_NoDiagnostics pins the fast-path contract:
+// when explain is off (the default), non-matching rules skip localize and the
+// diagnostics slice stays nil — one Subsume call per rule, zero cost.
+func TestEvaluate_ExplainDisabled_NoDiagnostics(t *testing.T) {
+	// Ensure explain is off regardless of previous test ordering.
+	evaluator.SetExplainEnabled(false)
+	t.Cleanup(func() { evaluator.SetExplainEnabled(false) })
+
+	dir := t.TempDir()
+	mustWriteRule(t, dir, "wants_bash.cue", `{
+		when: {tool_name: "Bash"}
+		then: deny: {rule_id: "r", reason: "nope"}
+	}`)
+	rules := loadRules(t, dir)
+
+	ctx := cuecontext.New()
+	// Input that will NOT match — evaluator must take the non-match branch.
+	input := mustCompile(t, ctx, `{tool_name: "Write"}`)
+
+	got, diags, err := evaluator.Evaluate(rules, input)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected 0 matches for tool_name=Write, got %d", len(got))
+	}
+	if diags != nil {
+		t.Fatalf("explain disabled: diagnostics must stay nil on non-match, got %+v", diags)
+	}
+}
+
+// TestEvaluate_ExplainEnabled_EmitsDiagnosticsOnNonMatch pins the opposite
+// contract: once explain is on, a non-matching rule produces at least one
+// diagnostic. The localize walker runs and yields structured observations.
+func TestEvaluate_ExplainEnabled_EmitsDiagnosticsOnNonMatch(t *testing.T) {
+	evaluator.SetExplainEnabled(true)
+	t.Cleanup(func() { evaluator.SetExplainEnabled(false) })
+
+	dir := t.TempDir()
+	// Require a path the input omits — E0201 territory.
+	mustWriteRule(t, dir, "needs_flags.cue", `{
+		when: {tool_input: flags: force: true}
+		then: deny: {rule_id: "r", reason: "nope"}
+	}`)
+	rules := loadRules(t, dir)
+
+	ctx := cuecontext.New()
+	input := mustCompile(t, ctx, `{tool_input: command: "ls"}`) // flags absent
+
+	got, diags, err := evaluator.Evaluate(rules, input)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected 0 matches, got %d: %+v", len(got), got)
+	}
+	if len(diags) == 0 {
+		t.Fatal("explain enabled: expected at least one diagnostic on non-match, got none")
+	}
+}
+
+// TestEvaluate_ExplainEnabled_MatchProducesNoDiagnostic locks in that the
+// explain toggle only surfaces diagnostics for rules that did NOT fire. A
+// rule that matches yields a Match and zero diagnostics — the lanes remain
+// orthogonal even with explain on.
+func TestEvaluate_ExplainEnabled_MatchProducesNoDiagnostic(t *testing.T) {
+	evaluator.SetExplainEnabled(true)
+	t.Cleanup(func() { evaluator.SetExplainEnabled(false) })
+
+	dir := t.TempDir()
+	mustWriteRule(t, dir, "wants_bash.cue", `{
+		when: {tool_name: "Bash"}
+		then: deny: {rule_id: "r", reason: "nope"}
+	}`)
+	rules := loadRules(t, dir)
+
+	ctx := cuecontext.New()
+	input := mustCompile(t, ctx, `{tool_name: "Bash"}`)
+
+	got, diags, err := evaluator.Evaluate(rules, input)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(got))
+	}
+	if len(diags) != 0 {
+		t.Fatalf("matching rule must emit zero diagnostics even with explain on, got %+v", diags)
+	}
 }

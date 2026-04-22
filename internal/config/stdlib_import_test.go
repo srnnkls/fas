@@ -42,7 +42,7 @@ func compileInput(t *testing.T, ctx *cue.Context, src string) cue.Value {
 // when clause was satisfied by input.
 func ruleMatches(t *testing.T, rule config.Rule, input cue.Value) bool {
 	t.Helper()
-	matches, err := evaluator.Evaluate([]config.Rule{rule}, input)
+	matches, _, err := evaluator.Evaluate([]config.Rule{rule}, input)
 	if err != nil {
 		t.Fatalf("evaluator.Evaluate: %v", err)
 	}

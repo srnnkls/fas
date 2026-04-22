@@ -80,7 +80,7 @@ func TestEvaluatePhases_EmptyBothPhases_NoMatches(t *testing.T) {
 	ctx := cuecontext.New()
 	input := compileInput(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
 
-	got, err := pipeline.EvaluatePhases(nil, nil, input)
+	got, _, err := pipeline.EvaluatePhases(nil, nil, input)
 	if err != nil {
 		t.Fatalf("EvaluatePhases: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestEvaluatePhases_OnlyGlobal_Matches_Returned(t *testing.T) {
 	ctx := cuecontext.New()
 	input := compileInput(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
 
-	got, err := pipeline.EvaluatePhases(global, nil, input)
+	got, _, err := pipeline.EvaluatePhases(global, nil, input)
 	if err != nil {
 		t.Fatalf("EvaluatePhases: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestEvaluatePhases_OnlyProject_Matches_Returned(t *testing.T) {
 	ctx := cuecontext.New()
 	input := compileInput(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
 
-	got, err := pipeline.EvaluatePhases(nil, project, input)
+	got, _, err := pipeline.EvaluatePhases(nil, project, input)
 	if err != nil {
 		t.Fatalf("EvaluatePhases: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestEvaluatePhases_BothPhases_NoBlocking_Combined(t *testing.T) {
 	ctx := cuecontext.New()
 	input := compileInput(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
 
-	got, err := pipeline.EvaluatePhases(global, project, input)
+	got, _, err := pipeline.EvaluatePhases(global, project, input)
 	if err != nil {
 		t.Fatalf("EvaluatePhases: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestEvaluatePhases_Phase1NonBlocking_Phase2Runs(t *testing.T) {
 	ctx := cuecontext.New()
 	input := compileInput(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
 
-	got, err := pipeline.EvaluatePhases(global, project, input)
+	got, _, err := pipeline.EvaluatePhases(global, project, input)
 	if err != nil {
 		t.Fatalf("EvaluatePhases: %v", err)
 	}
@@ -240,7 +240,7 @@ func TestEvaluatePhases_Phase1InjectOnly_NoGate_Phase2Runs(t *testing.T) {
 	ctx := cuecontext.New()
 	input := compileInput(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
 
-	got, err := pipeline.EvaluatePhases(global, project, input)
+	got, _, err := pipeline.EvaluatePhases(global, project, input)
 	if err != nil {
 		t.Fatalf("EvaluatePhases: %v", err)
 	}
@@ -285,7 +285,7 @@ func TestEvaluatePhases_Phase1Blocks_Phase2Skipped(t *testing.T) {
 	ctx := cuecontext.New()
 	input := compileInput(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
 
-	got, err := pipeline.EvaluatePhases(global, project, input)
+	got, _, err := pipeline.EvaluatePhases(global, project, input)
 	if err != nil {
 		t.Fatalf("EvaluatePhases: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestEvaluatePhases_Phase1DenyPlusInject_BothReturned_Phase2Skipped(t *testi
 	ctx := cuecontext.New()
 	input := compileInput(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
 
-	got, err := pipeline.EvaluatePhases(global, project, input)
+	got, _, err := pipeline.EvaluatePhases(global, project, input)
 	if err != nil {
 		t.Fatalf("EvaluatePhases: %v", err)
 	}
@@ -382,7 +382,7 @@ func TestEvaluatePhases_OrderPreserved_PhasesThenSource(t *testing.T) {
 	ctx := cuecontext.New()
 	input := compileInput(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
 
-	got, err := pipeline.EvaluatePhases(global, project, input)
+	got, _, err := pipeline.EvaluatePhases(global, project, input)
 	if err != nil {
 		t.Fatalf("EvaluatePhases: %v", err)
 	}
@@ -435,7 +435,7 @@ func TestEvaluatePhases_MalformedPhase1_ErrorReturned(t *testing.T) {
 	ctx := cuecontext.New()
 	input := compileInput(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
 
-	got, err := pipeline.EvaluatePhases(global, project, input)
+	got, _, err := pipeline.EvaluatePhases(global, project, input)
 	if err == nil {
 		t.Fatal("expected error from malformed phase-1 rule, got nil")
 	}
@@ -468,7 +468,7 @@ func TestEvaluatePhases_MalformedPhase2_ErrorReturned(t *testing.T) {
 	ctx := cuecontext.New()
 	input := compileInput(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
 
-	got, err := pipeline.EvaluatePhases(global, project, input)
+	got, _, err := pipeline.EvaluatePhases(global, project, input)
 	if err == nil {
 		t.Fatal("expected error from malformed phase-2 rule, got nil")
 	}
@@ -510,11 +510,11 @@ func TestEvaluatePhases_Deterministic(t *testing.T) {
 	ctx := cuecontext.New()
 	input := compileInput(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
 
-	first, err := pipeline.EvaluatePhases(global, project, input)
+	first, _, err := pipeline.EvaluatePhases(global, project, input)
 	if err != nil {
 		t.Fatalf("first EvaluatePhases: %v", err)
 	}
-	second, err := pipeline.EvaluatePhases(global, project, input)
+	second, _, err := pipeline.EvaluatePhases(global, project, input)
 	if err != nil {
 		t.Fatalf("second EvaluatePhases: %v", err)
 	}

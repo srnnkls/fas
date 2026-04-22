@@ -225,7 +225,7 @@ danger: {
 	if err := hit.Err(); err != nil {
 		t.Fatalf("compile matching input: %v", err)
 	}
-	matches, err := evaluator.Evaluate([]config.Rule{r}, hit)
+	matches, _, err := evaluator.Evaluate([]config.Rule{r}, hit)
 	if err != nil {
 		t.Fatalf("evaluator.Evaluate: %v", err)
 	}
@@ -241,7 +241,7 @@ danger: {
 	if err := miss.Err(); err != nil {
 		t.Fatalf("compile non-matching input: %v", err)
 	}
-	matches, err = evaluator.Evaluate([]config.Rule{r}, miss)
+	matches, _, err = evaluator.Evaluate([]config.Rule{r}, miss)
 	if err != nil {
 		t.Fatalf("evaluator.Evaluate: %v", err)
 	}
@@ -366,7 +366,7 @@ prompt_ask: {
 	if err := sysHit.Err(); err != nil {
 		t.Fatalf("compile system-path input: %v", err)
 	}
-	matches, err := evaluator.Evaluate([]config.Rule{*denyR}, sysHit)
+	matches, _, err := evaluator.Evaluate([]config.Rule{*denyR}, sysHit)
 	if err != nil {
 		t.Fatalf("evaluator.Evaluate deny: %v", err)
 	}
@@ -381,7 +381,7 @@ prompt_ask: {
 	if err := promptHit.Err(); err != nil {
 		t.Fatalf("compile prompt input: %v", err)
 	}
-	matches, err = evaluator.Evaluate([]config.Rule{*askR}, promptHit)
+	matches, _, err = evaluator.Evaluate([]config.Rule{*askR}, promptHit)
 	if err != nil {
 		t.Fatalf("evaluator.Evaluate ask: %v", err)
 	}
