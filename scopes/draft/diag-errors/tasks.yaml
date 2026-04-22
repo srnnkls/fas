@@ -86,7 +86,8 @@ tasks:
       to emit `diag.Diagnostic` with E0501 (unresolved identifier), E0502
       (cross-rule ref), E0503 (self-ref into then/meta). Caret on the specific
       AST node (Ident / SelectorExpr) that triggered the rejection. Help lines
-      suggest remediation (local hidden, stdlib, $input.*).
+      suggest remediation (declare as a local hidden sibling `_foo` or import
+      from a stdlib package).
     files:
       - internal/config/lint.go
       - internal/config/loader_test.go
@@ -105,8 +106,9 @@ tasks:
       Uses the same Subsume verdict as `Evaluate`; on failure, invokes
       `localize(rule, input)` which walks `rule.WhenSyntax` paired with the
       input to produce a Diagnostic. Three localizers:
-        - Path-segment absent (E0201): flatten SelectorExpr chain, find first
-          missing segment, emit with caret on the segment.
+        - Path-segment absent (E0201): walk the `when` struct top-down against
+          the input; at the first field whose key is missing in the input,
+          emit with caret on the field's label position.
         - Leaf constraint failure (E0301): find the failing leaf field, emit
           with caret on the constraint expression, labels for want/got.
         - Disjunction all-fail (E0401): find the BinaryExpr OR chain, emit
@@ -118,7 +120,7 @@ tasks:
     status: pending
     depends_on: [T1, T2, T3]
     test_hints:
-      - $input.a.b.c with absent b → E0201 at b's position.
+      - `when: {a: b: c: true}` + input missing `b` → E0201 at b's label position.
       - command: =~"^rm " vs "ls -la" → E0301 with want/got labels.
       - tool_name: "A" | "B" | "C" vs "D" → E0401 with 3 arm labels.
       - Absent path in an optional field → no diagnostic (rule "matches" via optional).

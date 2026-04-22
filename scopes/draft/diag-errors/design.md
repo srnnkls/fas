@@ -9,6 +9,8 @@ status: draft
 
 **Errors are source code, not strings.** Every diagnostic carries positions at the finest granularity that matters (path segment, constraint leaf, disjunction arm). Rendering is a view over structured data, not a formatted string constructed at the error site.
 
+> **Note on path references.** Rules are patterns — the `when` block describes the shape the input must have. There is no `$input` binding; the rule's nested struct IS the reference to the input. Diagnostics describe mismatches as "path X in the input does not satisfy rule constraint Y" — the path is derived from walking the `when` AST, not from a user-facing sigil.
+
 ## The `Diagnostic` type
 
 ```go
@@ -78,9 +80,9 @@ error[E0201]: key not found
   --> tests/policies/git.cue:12:24
    |
 12 |     tool_input: flags: force: true
-   |                 ^^^^^ key "flags" not found in $input.tool_input
+   |                 ^^^^^ key "flags" not found in input at path tool_input
    |
-   = help: $input.tool_input has keys: command, file_path
+   = help: input.tool_input has keys: command, file_path
 ```
 
 Implementation:
@@ -145,8 +147,7 @@ func Explain(rules []Rule, input cue.Value) ([]Match, []Diagnostic) {
     matches := make([]Match, 0, len(rules))
     var diags []Diagnostic
     for _, rule := range rules {
-        bound := rule.When.FillPath(cue.ParsePath("$input"), input)
-        if err := bound.Subsume(input); err == nil {
+        if err := rule.When.Subsume(input); err == nil {
             matches = append(matches, Match{Rule: rule, Action: rule.Then})
             continue
         }
@@ -162,35 +163,52 @@ func Explain(rules []Rule, input cue.Value) ([]Match, []Diagnostic) {
 
 ### Path-segment localization (E0201)
 
-When `when` references `$input.a.b.c` and the chain breaks at `b`:
+When `when` declares a nested struct whose path `a.b.c` is missing in the input:
 
-1. Flatten the `ast.SelectorExpr` chain to `["$input", "a", "b", "c"]` with per-segment positions.
-2. Walk input segment-by-segment.
-3. At the first absent segment, emit `E0201` with the segment's position and a help listing available keys at the parent.
+1. Walk the `when` AST top-down, carrying an accumulated input path alongside the current AST node.
+2. At each struct field, check whether the input has the corresponding key via `current.LookupPath(cue.MakePath(cue.Str(fieldName)))`.
+3. At the first absent key, emit `E0201` with the field's source position and a help listing available keys at the parent.
 
 ```go
-func localizeSelector(sel ast.Expr, input cue.Value) *Diagnostic {
-    segments := flattenSelector(sel)  // [(name, pos), ...]
-    current := input
-    for i, seg := range segments[1:] {  // skip $input root
-        next := current.LookupPath(cue.ParsePath(seg.Name))
+func localizeMissing(when ast.Expr, input cue.Value) *Diagnostic {
+    // walkStruct returns the first absent (path, pos) pair it finds.
+    return walkStruct(when, input, nil)
+}
+
+func walkStruct(node ast.Expr, current cue.Value, path []string) *Diagnostic {
+    st, ok := node.(*ast.StructLit)
+    if !ok {
+        return nil
+    }
+    for _, decl := range st.Elts {
+        f, ok := decl.(*ast.Field)
+        if !ok {
+            continue
+        }
+        name := fieldName(f.Label)
+        next := current.LookupPath(cue.MakePath(cue.Str(name)))
         if !next.Exists() {
-            available := listKeys(current)
+            parentPath := joinPath(path)
             return &Diagnostic{
                 Code:     "E0201",
                 Severity: SeverityError,
                 Title:    "key not found",
                 Primary: Label{
-                    Pos: seg.Pos,
-                    Len: len(seg.Name),
-                    Msg: fmt.Sprintf("key %q not found in %s",
-                        seg.Name, joinPath(segments[:i+1])),
+                    Pos: f.Label.Pos(),
+                    Len: len(name),
+                    Msg: fmt.Sprintf("key %q not found in input at path %s",
+                        name, parentPath),
                 },
-                Help: fmt.Sprintf("%s has keys: %s",
-                    joinPath(segments[:i+1]), strings.Join(available, ", ")),
+                Help: fmt.Sprintf("input.%s has keys: %s",
+                    parentPath, strings.Join(listKeys(current), ", ")),
             }
         }
-        current = next
+        // Recurse into nested struct fields.
+        if inner, ok := f.Value.(*ast.StructLit); ok {
+            if d := walkStruct(inner, next, append(path, name)); d != nil {
+                return d
+            }
+        }
     }
     return nil
 }

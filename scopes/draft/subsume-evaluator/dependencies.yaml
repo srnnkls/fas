@@ -8,8 +8,8 @@ created: 2026-04-22
 phases:
   - name: core-evaluator
     description: >
-      Subsumption replaces the walker (T1), then $input binding lands on top (T2).
-      T3 is test-only and depends only on T1 — can run in parallel with T2.
+      Subsumption replaces the walker (T1). T2 and T3 are test-only and
+      depend only on T1 — both can run in parallel after T1 lands.
     tasks:
       - id: T1
         parallel: false
@@ -21,24 +21,23 @@ phases:
         depends_on: [T1]
 
   - name: lint
-    description: Load-time lint depends on both evaluator changes being in place.
+    description: Load-time lint lands after the evaluator change.
     tasks:
       - id: T4
         parallel: false
-        depends_on: [T1, T2]
+        depends_on: [T1]
 
   - name: contract-and-docs
-    description: Scrut migration and docs can land in parallel after T4.
+    description: Scrut migration and docs can land in parallel after their deps.
     tasks:
       - id: T5
         parallel: true  # [P]
         depends_on: [T2, T3]
       - id: T6
         parallel: true  # [P]
-        depends_on: [T1, T2, T4]
+        depends_on: [T1, T4]
 
 # Execution order summary:
 # 1. T1 (solo)
-# 2. T2 ‖ T3 (parallel after T1)
-# 3. T4 (after T1+T2)
-# 4. T5 ‖ T6 (parallel after their deps)
+# 2. T2 ‖ T3 ‖ T4 (all parallel after T1)
+# 3. T5 ‖ T6 (parallel after their deps)

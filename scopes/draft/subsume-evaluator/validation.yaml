@@ -8,23 +8,27 @@ taxonomy:
   scope:
     status: clear
     rationale: >
-      Replace walker with Subsume, bind $input, allow struct-level |, lint three
-      reject patterns, migrate scrut fixtures, document. Excluded: diagnostic
-      UX (separate scope), custom operators (rejected), CUE replacement.
+      Replace walker with Subsume, allow struct-level |, lint three reject
+      patterns, migrate scrut fixtures, document. Excluded: diagnostic UX
+      (separate scope), custom operators (rejected), any input-binding name
+      like $input (rejected — the pattern is self-describing), CUE replacement.
 
   behavior:
     status: clear
     rationale: >
-      Match primitive is `when.Subsume(input) == nil`. $input binds via FillPath
-      before subsumption. Structural negation via De Morgan + CUE leaves.
-      Absent $input paths → non-match, never error. Lint rejects cross-rule
-      refs, self-ref into then/meta, unbound identifiers.
+      Match primitive is `when.Subsume(input) == nil`. No input binding —
+      rules are patterns the input must fit; CUE sibling refs, let, if, and
+      list patterns reference the pattern's own structure. Structural
+      negation via De Morgan + CUE leaves. Absent input paths → non-match,
+      never error. Lint rejects cross-rule refs, self-ref into then/meta,
+      unbound identifiers (not stdlib, not local hidden).
 
   data_model:
     status: clear
     rationale: >
-      No new types in this scope. `config.Rule` unchanged (AST retention lives
-      in diag-errors). Evaluator returns the same `[]Match`. Walker deleted.
+      No new types in this scope. `config.Rule` unchanged (AST retention
+      lives in diag-errors). Evaluator returns the same `[]Match`. Walker
+      deleted.
 
   constraints:
     status: clear
@@ -37,19 +41,20 @@ taxonomy:
     status: clear
     rationale: >
       Touches: internal/evaluator/ (core), internal/config/ (lint entry),
-      tests/policies/*.cue (migration), tests/policies.md (new blocks).
-      Does NOT touch: cmd/quae, internal/adapter, internal/parser,
-      internal/pipeline, internal/synthesis, internal/envelope, cue/schema.cue
-      (schema unchanged — #Rule.when stays typed as {...}).
+      tests/policies/*.cue (migration), tests/policies.md (new blocks),
+      AGENTS.md (convention docs). Does NOT touch: cmd/quae, internal/adapter,
+      internal/parser, internal/pipeline, internal/synthesis, internal/envelope,
+      cue/schema.cue (schema unchanged — #Rule.when stays typed as {...}).
 
   terminology:
     status: clear
     rationale: >
-      "Subsumption" = CUE's `Subsume` operation; answers "is X an instance of
-      Y?". "$input binding" = injecting the concrete event payload into when's
-      CUE scope under name $input. "Closed-world" = required fields must exist;
-      absent → non-match. "De Morgan" = rewriting structural negation as
-      disjunction of negated leaves.
+      "Subsumption" = CUE's `Subsume` operation; answers "is X an instance
+      of Y?". "Pattern" = a `when` block describing the shape the input must
+      fit. "Closed-world" = required fields must exist; absent → non-match.
+      "De Morgan" = rewriting structural negation as disjunction of negated
+      leaves. "Sibling reference" = CUE's native intra-struct ref that lets
+      one field constrain another without an external binding name.
 
 gates:
   - name: go_tests
@@ -65,12 +70,19 @@ gates:
   - name: walker_deleted
     description: >
       inputSatisfies no longer exists in internal/evaluator/evaluator.go.
+      Evaluator match function body is one Subsume call.
     must_pass: true
 
   - name: lint_coverage
     description: >
       Loader tests cover all three reject rules (cross-rule, self-ref,
-      unbound) plus the allowlist (stdlib, local hidden, $input).
+      unbound) plus the allowlist (stdlib, local hidden).
+    must_pass: true
+
+  - name: model_documented
+    description: >
+      AGENTS.md has an "Authoring rules" section explaining the rule-as-
+      pattern model and subsumption as the primitive.
     must_pass: true
 
 review_config:
@@ -92,3 +104,13 @@ audit:
       replaces the hand-rolled walker, handles struct-level | natively, makes
       every custom operator unnecessary. Diagnostic UX work split into the
       separate `diag-errors` scope.
+
+  - timestamp: 2026-04-22
+    action: input_binding_dropped
+    note: >
+      An earlier draft included a `$input` binding so authors could reference
+      the input by name inside `when`. Dropped — that was Rego-shaped
+      thinking. Under subsumption, rules are patterns: the `when` block
+      itself describes the shape of the input. CUE sibling refs, let, if,
+      and list patterns cover every case where an input binding seemed
+      necessary, without introducing a quae-specific convention.
