@@ -25,14 +25,14 @@ error[E0201]: key not found
   --> policy.fas:12:24
    |
 12 |     tool_input: flags: force: true
-   |                 ^^^^^ key "flags" not found in $input.tool_input
+   |                 ^^^^^ key "flags" not found in input at path tool_input
    |
-   = help: $input.tool_input has keys: command, file_path
+   = help: tool_input has keys: command, file_path
 ```
 
 Three failure classes, three error shapes:
 
-- **Path resolution** (`E02xx`) — `$input.a.b.c` references a path where a segment is absent. Caret points at the first missing segment.
+- **Path resolution** (`E02xx`) — a rule references a path `a.b.c` where a segment is absent from the input. Caret points at the first missing segment.
 - **Leaf constraint** (`E03xx`) — regex / range / type mismatch at a leaf. Caret on the constraint, labels show `want` / `got`.
 - **Disjunction** (`E04xx`) — all arms of a `|` failed. Caret highlights each arm's span with a per-arm reason.
 
@@ -74,7 +74,7 @@ Plus `E01xx` for load errors (schema mismatch, unknown action kind) and `E05xx` 
 
 ### Acceptance tests
 
-- **Given** a rule referencing `$input.tool_input.flags.force` where input lacks `flags`, **when** `quae explain` runs, **then** output shows `E0201` with caret under `flags` and a help listing actual keys at `$input.tool_input`.
+- **Given** a rule whose `when` requires `tool_input.flags.force` and input lacks `flags`, **when** `quae explain` runs, **then** output shows `E0201` with caret under `flags` and a help listing actual keys at `tool_input`.
 - **Given** a rule with `tool_input: command: =~"^rm "` and input `command: "ls -la"`, **when** `quae explain` runs, **then** output shows `E0301` with caret under the regex, `want:` and `got:` labels.
 - **Given** a rule with `tool_name: "Bash" | "Write" | "Edit"` and input `tool_name: "Read"`, **when** `quae explain` runs, **then** output shows `E0401` with each arm's span highlighted and an arm-by-arm "not equal Read" label.
 - **Given** a rule whose `when` has a cross-rule ref, **when** loader runs, **then** error prints `E0502` with caret on the cross-rule selector expression and help suggesting a hidden sibling.
