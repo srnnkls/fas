@@ -1,0 +1,44 @@
+---
+scope: subsume-evaluator
+created: 2026-04-22
+---
+
+# Phase-based DAG. [P] = parallelizable within phase.
+
+phases:
+  - name: core-evaluator
+    description: >
+      Subsumption replaces the walker (T1), then $input binding lands on top (T2).
+      T3 is test-only and depends only on T1 — can run in parallel with T2.
+    tasks:
+      - id: T1
+        parallel: false
+      - id: T2
+        parallel: true  # [P]
+        depends_on: [T1]
+      - id: T3
+        parallel: true  # [P]
+        depends_on: [T1]
+
+  - name: lint
+    description: Load-time lint depends on both evaluator changes being in place.
+    tasks:
+      - id: T4
+        parallel: false
+        depends_on: [T1, T2]
+
+  - name: contract-and-docs
+    description: Scrut migration and docs can land in parallel after T4.
+    tasks:
+      - id: T5
+        parallel: true  # [P]
+        depends_on: [T2, T3]
+      - id: T6
+        parallel: true  # [P]
+        depends_on: [T1, T2, T4]
+
+# Execution order summary:
+# 1. T1 (solo)
+# 2. T2 ‖ T3 (parallel after T1)
+# 3. T4 (after T1+T2)
+# 4. T5 ‖ T6 (parallel after their deps)

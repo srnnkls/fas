@@ -1,0 +1,118 @@
+---
+scope: subsume-evaluator
+created: 2026-04-22
+status: draft
+---
+
+tasks:
+  - id: T1
+    subject: Replace inputSatisfies with Subsume
+    description: >
+      Delete `inputSatisfies` in `internal/evaluator/evaluator.go:56-87`. Replace
+      the match call in `Evaluate` with `rule.When.Subsume(input) == nil`. Keep
+      `checkWhen` (structural validation of the rule's `when` clause). All
+      existing behavior preserved — subsumption is a drop-in for the walker.
+    files:
+      - internal/evaluator/evaluator.go
+      - internal/evaluator/evaluator_test.go
+    status: pending
+    test_hints:
+      - All 14 existing evaluator tests pass unchanged.
+      - New test: `when: {tool_name: "Bash"}` + input missing tool_name → no match.
+      - New test: `when: {command: =~"^rm "}` + input with matching command → match.
+      - New test: optional field `when: {flags?: force?: !=true}` semantics preserved.
+
+  - id: T2
+    subject: Bind $input into when's CUE scope
+    description: >
+      Before subsumption, inject the concrete input into `when`'s scope as
+      `$input`. Use `cue.Value.FillPath(cue.ParsePath("$input"), input)` — verify
+      against the CUE version in `go.mod`. The bound value is what goes into
+      `Subsume`. Enables `let`, `for`, `if`, and refs to `$input.*` natively
+      via CUE's evaluator.
+    files:
+      - internal/evaluator/evaluator.go
+      - internal/evaluator/evaluator_test.go
+    status: pending
+    depends_on: [T1]
+    test_hints:
+      - `let _cmd = $input.tool_input.command` resolves; rule uses _cmd at leaf.
+      - `if list.Contains($input.tool_input.parsed.flags, "--force") {...}` gates.
+      - `for t in $input.tool_input.parsed.targets {...}` iterates concrete list.
+      - Absent `$input.foo.bar` in a leaf reference → rule does not match, no error.
+
+  - id: T3
+    subject: Confirm struct-level | via subsumption
+    description: >
+      No code change — subsumption already handles struct-level disjunction
+      correctly. Add test coverage confirming the behavior and document that
+      raw `|` is the idiomatic shape disjunction (no custom operator required).
+    files:
+      - internal/evaluator/evaluator_test.go
+    status: pending
+    depends_on: [T1]
+    test_hints:
+      - `when: {tool_name: "Bash"} | {tool_name: "Write"}` + Bash input → match.
+      - Same `when` + Write input → match.
+      - Same `when` + Read input → no match.
+      - Nested: `{tool_name: "Bash", tool_input: {command: =~"^rm"} | {command: =~"^dd"}}` works.
+
+  - id: T4
+    subject: Load-time lint for rejected constructs in when
+    description: >
+      New file `internal/config/lint.go`. At load time (after compileRuleFile,
+      before rule extraction), AST-walk each rule's `when` subtree. Three
+      rejections:
+        - Cross-rule refs: any SelectorExpr whose root is another top-level rule
+          field's `when`/`then`/`meta`.
+        - Self-refs into then/meta: SelectorExpr touching the same rule's
+          `then` or `meta` from within `when`.
+        - Unbound identifiers: any Ident not resolvable as stdlib import,
+          local hidden sibling (_foo), or `$input`.
+      Emit plain Go errors (wrapped via ruleLoadError) for now; the `diag-errors`
+      scope migrates these to the unified diagnostic renderer.
+    files:
+      - internal/config/lint.go
+      - internal/config/loader.go
+      - internal/config/loader_test.go
+    status: pending
+    depends_on: [T1, T2]
+    test_hints:
+      - Rule with `when: other_rule.when.tool_name` → load error names both rules.
+      - Rule with `when: {x: self.then.rule_id}` → load error "ref to then/meta".
+      - Rule with `when: {x: foo}` where foo is unbound → load error names foo.
+      - Rule with `when: {x: _local}` where `_local` exists → loads fine.
+      - Rule with `when: {x: bash.#SafeCommand}` with stdlib import → loads fine.
+      - Rule with `when: {x: $input.tool_name}` with T2 binding → loads fine.
+
+  - id: T5
+    subject: Scrut coverage for new evaluator vocabulary
+    description: >
+      Audit `tests/policies/*.cue`. Where a fixture can be expressed more
+      clearly using $input refs, let, for, or struct-level |, migrate. Keep
+      rule IDs and observable behavior unchanged. Add 2-3 scrut blocks
+      exercising $input comprehensions and struct-level disjunction.
+    files:
+      - tests/policies/*.cue
+      - tests/policies.md
+    status: pending
+    depends_on: [T2, T3]
+    test_hints:
+      - `scrut test tests/policies.md` succeeds for all blocks (existing + new).
+      - Go test suite remains green.
+
+  - id: T6
+    subject: Update AGENTS.md / design doc with subsumption model
+    description: >
+      Add a "when evaluation model" section to `scopes/draft/quae/design.md` (if
+      kept) or a new `docs/when.md` documenting: subsumption is the primitive,
+      $input binding, what lint rejects, De Morgan patterns for structural
+      negation. Short — one page. Link from AGENTS.md under "authoring rules".
+    files:
+      - scopes/draft/quae/design.md
+      - AGENTS.md
+    status: pending
+    depends_on: [T1, T2, T4]
+    test_hints:
+      - Section titled "When evaluation" exists with the core principle.
+      - De Morgan example table present (not (a=1 AND b=2) → {a: !=1} | {b: !=2}).

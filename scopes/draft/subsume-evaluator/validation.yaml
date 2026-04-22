@@ -1,0 +1,94 @@
+---
+scope: subsume-evaluator
+created: 2026-04-22
+status: draft
+---
+
+taxonomy:
+  scope:
+    status: clear
+    rationale: >
+      Replace walker with Subsume, bind $input, allow struct-level |, lint three
+      reject patterns, migrate scrut fixtures, document. Excluded: diagnostic
+      UX (separate scope), custom operators (rejected), CUE replacement.
+
+  behavior:
+    status: clear
+    rationale: >
+      Match primitive is `when.Subsume(input) == nil`. $input binds via FillPath
+      before subsumption. Structural negation via De Morgan + CUE leaves.
+      Absent $input paths → non-match, never error. Lint rejects cross-rule
+      refs, self-ref into then/meta, unbound identifiers.
+
+  data_model:
+    status: clear
+    rationale: >
+      No new types in this scope. `config.Rule` unchanged (AST retention lives
+      in diag-errors). Evaluator returns the same `[]Match`. Walker deleted.
+
+  constraints:
+    status: clear
+    rationale: >
+      All Go tests must pass. Scrut contract must pass. No perf regression
+      beyond constant factor. Breaking rule-syntax changes OK (no external
+      users on working branch).
+
+  integration:
+    status: clear
+    rationale: >
+      Touches: internal/evaluator/ (core), internal/config/ (lint entry),
+      tests/policies/*.cue (migration), tests/policies.md (new blocks).
+      Does NOT touch: cmd/quae, internal/adapter, internal/parser,
+      internal/pipeline, internal/synthesis, internal/envelope, cue/schema.cue
+      (schema unchanged — #Rule.when stays typed as {...}).
+
+  terminology:
+    status: clear
+    rationale: >
+      "Subsumption" = CUE's `Subsume` operation; answers "is X an instance of
+      Y?". "$input binding" = injecting the concrete event payload into when's
+      CUE scope under name $input. "Closed-world" = required fields must exist;
+      absent → non-match. "De Morgan" = rewriting structural negation as
+      disjunction of negated leaves.
+
+gates:
+  - name: go_tests
+    description: All Go tests pass after all T* complete.
+    command: go test ./...
+    must_pass: true
+
+  - name: scrut_contract
+    description: tests/policies.md all blocks pass.
+    command: scrut test tests/policies.md
+    must_pass: true
+
+  - name: walker_deleted
+    description: >
+      inputSatisfies no longer exists in internal/evaluator/evaluator.go.
+    must_pass: true
+
+  - name: lint_coverage
+    description: >
+      Loader tests cover all three reject rules (cross-rule, self-ref,
+      unbound) plus the allowlist (stdlib, local hidden, $input).
+    must_pass: true
+
+review_config:
+  roles:
+    - general
+    - architecture
+  harnesses:
+    - claude
+  opencode:
+    enabled: false
+
+audit:
+  - timestamp: 2026-04-22
+    action: created
+    actor: scope skill
+    note: >
+      Split from the superseded `when-sublanguage` scope. Design pivoted when
+      cue.Value.Subsume was identified as the correct evaluation primitive —
+      replaces the hand-rolled walker, handles struct-level | natively, makes
+      every custom operator unnecessary. Diagnostic UX work split into the
+      separate `diag-errors` scope.
