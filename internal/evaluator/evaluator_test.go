@@ -648,3 +648,126 @@ func TestEvaluate_InputMissingRequiredField_StillRunsRules(t *testing.T) {
 		t.Fatalf("expected rule_id=hook, got %+v", got[0].Action)
 	}
 }
+
+// -----------------------------------------------------------------------------
+// Subsume semantics (T1) — behavioural contract the Subsume-based evaluator
+// must honour. These lock in the primitive `rule.When.Subsume(input) == nil`
+// as the sole match check, so absent paths yield non-match (never error),
+// regex scalar constraints subsume concrete strings that satisfy them, and
+// optional field semantics flow through unchanged.
+// -----------------------------------------------------------------------------
+
+// TestEvaluate_SubsumeSemantics_AbsentRequiredField_NoMatchNoError covers F6:
+// when the rule requires a field the input omits, the evaluator yields no
+// match and no error. Subsume on a more-general `when` against an input that
+// lacks the field returns a non-nil error, which translates to non-match.
+func TestEvaluate_SubsumeSemantics_AbsentRequiredField_NoMatchNoError(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteRule(t, dir, "needs_tool_name.cue", `{
+		when: {tool_name: "Bash"}
+		then: deny: {rule_id: "needs-tool-name", reason: "bash"}
+	}`)
+	rules := loadRules(t, dir)
+
+	ctx := cuecontext.New()
+	// Input deliberately omits tool_name. Subsume must treat this as
+	// non-match, not as an evaluation error.
+	input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse"}`)
+
+	got, err := evaluator.Evaluate(rules, input)
+	if err != nil {
+		t.Fatalf("Evaluate must not error on absent required field: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected 0 matches when required tool_name is absent, got %d: %+v", len(got), got)
+	}
+}
+
+// TestEvaluate_SubsumeSemantics_RegexScalar_Matches verifies that a regex
+// constraint on a leaf scalar (`command: =~"^rm "`) subsumes a concrete
+// string satisfying the pattern. This is the headline win of swapping to
+// Subsume — no special-cased walker logic, just native CUE subsumption.
+func TestEvaluate_SubsumeSemantics_RegexScalar_Matches(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteRule(t, dir, "rm_prefix.cue", `{
+		when: {tool_input: command: =~"^rm "}
+		then: deny: {rule_id: "rm-prefix", reason: "rm command"}
+	}`)
+	rules := loadRules(t, dir)
+
+	ctx := cuecontext.New()
+
+	t.Run("command matching ^rm subsumes", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{tool_input: command: "rm -rf /"}`)
+		got, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("expected 1 match for `rm -rf /`, got %d: %+v", len(got), got)
+		}
+		if got[0].Action == nil || got[0].Action.RuleID != "rm-prefix" {
+			t.Fatalf("expected rule_id=rm-prefix, got %+v", got[0].Action)
+		}
+	})
+
+	t.Run("command not matching ^rm does not subsume", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{tool_input: command: "ls -la"}`)
+		got, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("expected 0 matches for `ls -la`, got %d: %+v", len(got), got)
+		}
+	})
+}
+
+// TestEvaluate_SubsumeSemantics_OptionalField_PreservesSemantics locks in
+// CUE's optional-field semantics under Subsume: an optional constraint
+// `flags?: {force?: !=true}` admits inputs that omit the field entirely,
+// admits inputs where the field is present with a non-true value, and
+// rejects inputs where the field is present and equal to true.
+func TestEvaluate_SubsumeSemantics_OptionalField_PreservesSemantics(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteRule(t, dir, "optional_force.cue", `{
+		when: {flags?: {force?: !=true}}
+		then: deny: {rule_id: "optional-force", reason: "non-forced"}
+	}`)
+	rules := loadRules(t, dir)
+
+	ctx := cuecontext.New()
+
+	t.Run("flags absent still matches", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse"}`)
+		got, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("expected 1 match when optional flags absent, got %d: %+v", len(got), got)
+		}
+	})
+
+	t.Run("flags.force=false matches", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{flags: {force: false}}`)
+		got, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("expected 1 match when flags.force=false, got %d: %+v", len(got), got)
+		}
+	})
+
+	t.Run("flags.force=true does not match", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{flags: {force: true}}`)
+		got, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("expected 0 matches when flags.force=true, got %d: %+v", len(got), got)
+		}
+	})
+}
