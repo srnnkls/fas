@@ -1,0 +1,205 @@
+---
+scope: diag-errors
+created: 2026-04-22
+status: draft
+---
+
+tasks:
+  - id: T1
+    subject: Create internal/diag package (types + renderer)
+    description: >
+      New package `internal/diag` with `Diagnostic`, `Label`, `Severity` types
+      and a compiler-style renderer (`Render(d Diagnostic, src SourceCache)
+      string`). Source cache interface loads files lazily. Output shape:
+      `error[Exxxx]: title`, `  --> file:line:col`, `   | N | <source>`,
+      `   |   ^^^^ label`, optional `   = help: ...`. Deterministic across runs.
+    files:
+      - internal/diag/diagnostic.go
+      - internal/diag/render.go
+      - internal/diag/source.go
+      - internal/diag/render_test.go
+    status: pending
+    test_hints:
+      - Render a fixture Diagnostic → byte-identical output on every run.
+      - Multi-label diagnostic renders all labels in source order.
+      - Missing source file → degraded "position unknown" label, no crash.
+      - Label with Len=0 → single-column caret (^).
+
+  - id: T2
+    subject: Error code registry
+    description: >
+      File `internal/diag/codes.go` with typed code constants + help strings
+      for E01xx (load), E02xx (path resolution), E03xx (leaf constraint),
+      E04xx (disjunction), E05xx (scope/binding). Each code entry has a short
+      `Help` string (3-5 lines) explaining the failure class.
+    files:
+      - internal/diag/codes.go
+      - internal/diag/codes_test.go
+    status: pending
+    test_hints:
+      - All declared codes have non-empty help.
+      - Codes in each range follow the documented convention.
+      - Duplicate codes fail compilation (use iota or explicit constants).
+
+  - id: T3
+    subject: Retain ast.Expr for when in config.Rule
+    description: >
+      Extend `config.Rule` with `WhenSyntax ast.Expr`. Populate in `decodeRule`
+      from `when.Syntax(cue.All(), cue.Docs(true))`. All existing callers keep
+      working — the field is additive. Thread it through `Evaluate` / `Match`
+      so the debug-path can consume it.
+    files:
+      - internal/config/loader.go
+      - internal/config/loader_test.go
+      - internal/evaluator/evaluator.go
+    status: pending
+    depends_on: [T1]
+    test_hints:
+      - Loading a rule populates Rule.WhenSyntax with a non-nil ast.Expr.
+      - Positions in WhenSyntax resolve to the correct source file + line.
+      - Existing 27 loader tests still pass.
+
+  - id: T4
+    subject: Migrate ruleLoadError to emit diag.Diagnostic
+    description: >
+      Replace `ruleLoadError`'s string-builder rendering with a
+      `diag.Diagnostic` emitted via the shared renderer. Add
+      `diag.FromCueError(err error) Diagnostic` that extracts positions from
+      CUE's error chain and assigns an E01xx code by failure class. Error()
+      calls Render() so the error-interface behavior is preserved for
+      existing callers.
+    files:
+      - internal/config/loader.go
+      - internal/diag/cuebridge.go
+      - internal/config/loader_test.go
+    status: pending
+    depends_on: [T1, T2]
+    test_hints:
+      - Schema mismatch on a rule's `then` → E0101 diagnostic with caret on the `then` field.
+      - Unknown action kind → E0102 with caret on the action name.
+      - All existing loader error tests assert the new output shape (snapshot).
+
+  - id: T5
+    subject: Migrate lint rejections to diag.Diagnostic
+    description: >
+      Rewrite the lint pass from `subsume-evaluator` (`internal/config/lint.go`)
+      to emit `diag.Diagnostic` with E0501 (unresolved identifier), E0502
+      (cross-rule ref), E0503 (self-ref into then/meta). Caret on the specific
+      AST node (Ident / SelectorExpr) that triggered the rejection. Help lines
+      suggest remediation (local hidden, stdlib, $input.*).
+    files:
+      - internal/config/lint.go
+      - internal/config/loader_test.go
+    status: pending
+    depends_on: [T1, T2, T3]
+    test_hints:
+      - Cross-rule ref → E0502 with caret on the SelectorExpr root.
+      - Self-ref into then → E0503 with caret on the SelectorExpr.
+      - Unbound identifier → E0501 with caret on the Ident and help listing
+        the three resolvable scopes.
+
+  - id: T6
+    subject: Implement debug-path localize in evaluator
+    description: >
+      Add `func Explain(rules []Rule, input cue.Value) ([]Match, []Diagnostic)`.
+      Uses the same Subsume verdict as `Evaluate`; on failure, invokes
+      `localize(rule, input)` which walks `rule.WhenSyntax` paired with the
+      input to produce a Diagnostic. Three localizers:
+        - Path-segment absent (E0201): flatten SelectorExpr chain, find first
+          missing segment, emit with caret on the segment.
+        - Leaf constraint failure (E0301): find the failing leaf field, emit
+          with caret on the constraint expression, labels for want/got.
+        - Disjunction all-fail (E0401): find the BinaryExpr OR chain, emit
+          with labels on each arm span.
+    files:
+      - internal/evaluator/localize.go
+      - internal/evaluator/evaluator.go
+      - internal/evaluator/localize_test.go
+    status: pending
+    depends_on: [T1, T2, T3]
+    test_hints:
+      - $input.a.b.c with absent b → E0201 at b's position.
+      - command: =~"^rm " vs "ls -la" → E0301 with want/got labels.
+      - tool_name: "A" | "B" | "C" vs "D" → E0401 with 3 arm labels.
+      - Absent path in an optional field → no diagnostic (rule "matches" via optional).
+
+  - id: T7
+    subject: CLI --explain flag
+    description: >
+      Add `--explain[=fired|missed|both]` to `cmd/quae/main.go`. Default value
+      `missed` when flag present without argument. Wires to `evaluator.Explain`
+      instead of `Evaluate` when set. Emits diagnostics to stderr after the
+      normal vendor response on stdout. Zero cost when flag absent.
+    files:
+      - cmd/quae/main.go
+      - cmd/quae/main_test.go
+    status: pending
+    depends_on: [T6]
+    test_hints:
+      - `--explain` with one non-firing rule → one diagnostic on stderr.
+      - `--explain=fired` → only firing rules produce trace.
+      - `--explain=both` → trace for all rules.
+      - Without flag → stderr empty (unchanged behavior).
+
+  - id: T8
+    subject: QUAE_EXPLAIN env var
+    description: >
+      Read `QUAE_EXPLAIN` env var in `cmd/quae/main.go`. Any truthy value
+      (`1`, `true`, `yes`) enables `--explain=missed`. Flag takes precedence
+      over env var when both set.
+    files:
+      - cmd/quae/main.go
+      - cmd/quae/main_test.go
+    status: pending
+    depends_on: [T7]
+    test_hints:
+      - QUAE_EXPLAIN=1 without flag → same as --explain=missed.
+      - --explain=both + QUAE_EXPLAIN=1 → flag wins (both).
+      - QUAE_EXPLAIN=0 → disabled (unchanged behavior).
+
+  - id: T9
+    subject: quae explain subcommand
+    description: >
+      New subcommand: `quae explain <rule_id> < input.json`. Runs only the
+      named rule against stdin input. Prints diagnostic to stderr if no match.
+      Exit codes: 0 match, 1 no-match, 2 engine error. Dispatch at the top of
+      `run` alongside the existing optional `eval` handling.
+    files:
+      - cmd/quae/main.go
+      - cmd/quae/main_test.go
+    status: pending
+    depends_on: [T6]
+    test_hints:
+      - `quae explain known_rule < matching_input.json` → exit 0, stderr empty.
+      - `quae explain known_rule < non_matching_input.json` → exit 1, diagnostic on stderr.
+      - `quae explain missing_rule < input.json` → exit 2, error on stderr.
+
+  - id: T10
+    subject: quae explain --code Exxxx help
+    description: >
+      Extend the `explain` subcommand with a `--code <code>` flag that prints
+      the help string for the given error code and exits 0. No stdin required.
+    files:
+      - cmd/quae/main.go
+      - cmd/quae/main_test.go
+    status: pending
+    depends_on: [T2, T9]
+    test_hints:
+      - `quae explain --code E0201` → prints help, exit 0.
+      - Unknown code → exit 2, error on stderr.
+
+  - id: T11
+    subject: Scrut contract for CLI diagnostics
+    description: >
+      New file `tests/diagnostics.md` with ~8 scrut blocks exercising:
+      missing-path error, leaf constraint error, disjunction error, cross-rule
+      ref rejection, unbound identifier rejection, --explain filters, `quae
+      explain` subcommand exit codes, --code help. Byte-level snapshot of
+      renderer output for stability.
+    files:
+      - tests/diagnostics.md
+    status: pending
+    depends_on: [T7, T8, T9, T10]
+    test_hints:
+      - `scrut test tests/diagnostics.md` all blocks pass.
+      - Renderer snapshots remain stable across runs (determinism check).
