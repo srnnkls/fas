@@ -1,7 +1,22 @@
 ---
 scope: subsume-evaluator
 created: 2026-04-22
-status: draft
+status: completed
+completed: 2026-04-22
+notes: >
+  T3 scope narrowed during implementation. Subsume checks the pattern as a
+  static shape; it does not substitute input values into `when`, so sibling
+  refs, let bindings, input-dependent `if` clauses, and computed hidden
+  count fields do not work as the scope originally claimed. List element
+  patterns do. The load-time lint (T4) rejects unbound identifiers that
+  would silently misbehave; the AGENTS.md Authoring Rules section (T6)
+  documents the supported vocabulary and the alternatives.
+
+  Two upstream CUE bugs surfaced and were fixed on a local fork
+  (../cue, branch fix/subsume-validator-env-and-bool-bounds) pinned via
+  go.mod replace:
+    - BuiltinValidator nil-deref when args carry lazy refs (let, hidden).
+    - BoundExpr.evaluate rejecting != / == bounds on BoolKind.
 ---
 
 tasks:
@@ -17,7 +32,7 @@ tasks:
     files:
       - internal/evaluator/evaluator.go
       - internal/evaluator/evaluator_test.go
-    status: pending
+    status: completed
     test_hints:
       - All 14 existing evaluator tests pass unchanged.
       - New test: `when: {tool_name: "Bash"}` + input missing tool_name → no match.
@@ -33,7 +48,7 @@ tasks:
       raw `|` is the idiomatic shape disjunction (no custom operator required).
     files:
       - internal/evaluator/evaluator_test.go
-    status: pending
+    status: completed
     depends_on: [T1]
     test_hints:
       - `when: {tool_name: "Bash"} | {tool_name: "Write"}` + Bash input → match.
@@ -52,7 +67,7 @@ tasks:
       subsumption + CUE native grammar covers the author vocabulary.
     files:
       - internal/evaluator/evaluator_test.go
-    status: pending
+    status: completed
     depends_on: [T1]
     test_hints:
       - `if` inside struct gates fields based on sibling value.
@@ -78,7 +93,7 @@ tasks:
       - internal/config/lint.go
       - internal/config/loader.go
       - internal/config/loader_test.go
-    status: pending
+    status: completed
     depends_on: [T1]
     test_hints:
       - Rule with `when: other_rule.when.tool_name` → load error names both rules.
@@ -98,7 +113,7 @@ tasks:
     files:
       - tests/policies/*.cue
       - tests/policies.md
-    status: pending
+    status: completed
     depends_on: [T2, T3]
     test_hints:
       - `scrut test tests/policies.md` succeeds for all blocks (existing + new).
@@ -115,7 +130,7 @@ tasks:
     files:
       - AGENTS.md
       - scopes/draft/quae/design.md
-    status: pending
+    status: completed
     depends_on: [T1, T4]
     test_hints:
       - AGENTS.md has a section titled "Authoring rules".
