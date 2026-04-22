@@ -18,7 +18,7 @@ tasks:
       - internal/diag/render.go
       - internal/diag/source.go
       - internal/diag/render_test.go
-    status: pending
+    status: completed
     test_hints:
       - Render a fixture Diagnostic → byte-identical output on every run.
       - Multi-label diagnostic renders all labels in source order.
@@ -35,7 +35,7 @@ tasks:
     files:
       - internal/diag/codes.go
       - internal/diag/codes_test.go
-    status: pending
+    status: completed
     test_hints:
       - All declared codes have non-empty help.
       - Codes in each range follow the documented convention.

@@ -1,0 +1,69 @@
+---
+scope: diag-errors
+---
+
+batch_reviews:
+  - batch: 1
+    tasks: [T1, T2]
+    commit: pending
+    reviewers:
+      - id: general-claude
+        status: completed
+        outcome: approved
+        gates: { correctness: pass, security: pass, performance: pass }
+        issues: { critical: 0, high: 0, medium: 0, low: 4 }
+      - id: architecture-claude
+        status: completed
+        outcome: approved
+        gates: { architecture: pass }
+        issues: { critical: 0, high: 0, medium: 0, low: 2 }
+      - id: compliance-claude
+        status: completed
+        outcome: changes_requested
+        gates: { style: fail }
+        issues: { critical: 0, high: 1, medium: 3, low: 2 }
+    synthesized:
+      gates:
+        correctness: pass
+        security: pass
+        performance: pass
+        architecture: pass
+        style: pass  # after fix
+      critical_issues: 0
+      high_issues: 1   # resolved
+      medium_issues: 3 # resolved
+      low_issues: 8    # deferred
+    outcome: approved_after_fix
+    fix:
+      - resolved: [H1 gofmt, M1-M3 godoc on public API]
+      - deferred: [4 × low render polish, 2 × low test helpers]
+
+deferred_issues:
+  - batch: 1
+    severity: low
+    file: internal/diag/render.go
+    description: orderedLabels sorts degraded labels (lineNum=0) ahead of valid ones; not triggered by current tests
+  - batch: 1
+    severity: low
+    file: internal/diag/render.go
+    description: primary label resolved twice per Render call (writeLocation + orderedLabels)
+  - batch: 1
+    severity: low
+    file: internal/diag/render.go
+    description: nil SourceCache panics rather than degrading per NF3
+  - batch: 1
+    severity: low
+    file: internal/diag/render.go
+    description: writeLocation drops filename when ok=false
+  - batch: 1
+    severity: low
+    file: internal/diag/source.go
+    description: FileCache.load holds mutex across os.ReadFile (serializes I/O)
+  - batch: 1
+    severity: low
+    file: internal/diag/render_test.go
+    description: section divider comment at line 451
+  - batch: 1
+    severity: low
+    file: internal/diag/render_test.go
+    description: hand-rolled itoa/hex/quoteByte duplicates stdlib
