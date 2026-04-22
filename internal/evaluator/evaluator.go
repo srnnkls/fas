@@ -23,6 +23,13 @@ type Match struct {
 // schema so inputs may carry fields the rule does not constrain (e.g. the
 // Bash parser's sibling `actions`/`targets` next to a rule that only checks
 // `flags`).
+//
+// Subsumption does not substitute input values into the pattern, so sibling
+// references (`command: targets[0]`), `let` bindings, and `if` clauses
+// whose conditions reference input-bound siblings do not resolve inside
+// `when`. Rule authors express those intents via list patterns or multiple
+// conjuncts instead. The load-time lint rejects the constructs that would
+// silently misbehave.
 func Evaluate(rules []config.Rule, input cue.Value) ([]Match, error) {
 	matches := make([]Match, 0, len(rules))
 	for i, rule := range rules {

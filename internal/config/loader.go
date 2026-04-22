@@ -134,6 +134,13 @@ func LoadRules(dir string) ([]Rule, error) {
 			return nil, fmt.Errorf("read %s: %w", rulePath, err)
 		}
 
+		// Structural lint runs before compileRuleFile so its taxonomy
+		// (cross-rule / self-ref / unbound) shadows CUE's generic "reference
+		// not found" diagnostic on the same offense.
+		if err := lintRuleFile(rulePath, src); err != nil {
+			return nil, err
+		}
+
 		fileVal, err := compileRuleFile(bundle.ctx, rulePath, src, stdlibOverlay)
 		if err != nil {
 			return nil, err

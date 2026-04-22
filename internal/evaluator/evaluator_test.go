@@ -771,3 +771,199 @@ func TestEvaluate_SubsumeSemantics_OptionalField_PreservesSemantics(t *testing.T
 		}
 	})
 }
+
+// -----------------------------------------------------------------------------
+// Struct-level disjunction (T2) — raw `|` at the struct level is the idiomatic
+// shape disjunction under Subsume. No custom operator is needed: the evaluator
+// inherits CUE's native behavior, so `when: A | B` admits an input that fits
+// either A or B, and rejects inputs that fit neither.
+// -----------------------------------------------------------------------------
+
+// TestEvaluate_StructDisjunction_TopLevelAlternatives locks in that a
+// top-level `when: {tool_name: "Bash"} | {tool_name: "Write"}` matches inputs
+// that satisfy either disjunct and rejects inputs that satisfy neither.
+func TestEvaluate_StructDisjunction_TopLevelAlternatives(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteRule(t, dir, "bash_or_write.cue", `{
+		when: {tool_name: "Bash"} | {tool_name: "Write"}
+		then: deny: {rule_id: "bash-or-write", reason: "bash or write"}
+	}`)
+	rules := loadRules(t, dir)
+
+	ctx := cuecontext.New()
+
+	t.Run("Bash input matches first disjunct", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
+		got, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("expected 1 match for tool_name=Bash, got %d: %+v", len(got), got)
+		}
+		if got[0].Action == nil || got[0].Action.RuleID != "bash-or-write" {
+			t.Fatalf("expected rule_id=bash-or-write, got %+v", got[0].Action)
+		}
+	})
+
+	t.Run("Write input matches second disjunct", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Write"}`)
+		got, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("expected 1 match for tool_name=Write, got %d: %+v", len(got), got)
+		}
+		if got[0].Action == nil || got[0].Action.RuleID != "bash-or-write" {
+			t.Fatalf("expected rule_id=bash-or-write, got %+v", got[0].Action)
+		}
+	})
+
+	t.Run("Read input matches neither disjunct", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Read"}`)
+		got, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("expected 0 matches for tool_name=Read, got %d: %+v", len(got), got)
+		}
+	})
+}
+
+// TestEvaluate_StructDisjunction_NestedAlternatives confirms disjunction works
+// inside a nested struct: the outer fields (`tool_name: "Bash"`) are fixed,
+// while `tool_input` offers alternative shapes. An input that fits one shape
+// must match; an input that fits neither must not match.
+func TestEvaluate_StructDisjunction_NestedAlternatives(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteRule(t, dir, "rm_or_dd.cue", `{
+		when: {
+			tool_name: "Bash"
+			tool_input: {command: =~"^rm"} | {command: =~"^dd"}
+		}
+		then: deny: {rule_id: "rm-or-dd", reason: "rm or dd"}
+	}`)
+	rules := loadRules(t, dir)
+
+	ctx := cuecontext.New()
+
+	t.Run("rm command matches first nested disjunct", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{
+			tool_name: "Bash"
+			tool_input: {command: "rm -rf /tmp/x"}
+		}`)
+		got, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("expected 1 match for `rm -rf /tmp/x`, got %d: %+v", len(got), got)
+		}
+		if got[0].Action == nil || got[0].Action.RuleID != "rm-or-dd" {
+			t.Fatalf("expected rule_id=rm-or-dd, got %+v", got[0].Action)
+		}
+	})
+
+	t.Run("dd command matches second nested disjunct", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{
+			tool_name: "Bash"
+			tool_input: {command: "dd if=/dev/zero of=/dev/sda"}
+		}`)
+		got, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("expected 1 match for `dd ...`, got %d: %+v", len(got), got)
+		}
+		if got[0].Action == nil || got[0].Action.RuleID != "rm-or-dd" {
+			t.Fatalf("expected rule_id=rm-or-dd, got %+v", got[0].Action)
+		}
+	})
+
+	t.Run("ls command matches neither nested disjunct", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{
+			tool_name: "Bash"
+			tool_input: {command: "ls -la"}
+		}`)
+		got, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("expected 0 matches for `ls -la`, got %d: %+v", len(got), got)
+		}
+	})
+
+	t.Run("wrong tool_name fails outer conjunct even with matching command", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{
+			tool_name: "Write"
+			tool_input: {command: "rm -rf /tmp/x"}
+		}`)
+		got, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("expected 0 matches when tool_name=Write, got %d: %+v", len(got), got)
+		}
+	})
+}
+
+// -----------------------------------------------------------------------------
+// CUE-native authorial features inside `when` (T3). Subsumption checks the
+// pattern as a static shape: it does not substitute input values into the
+// pattern, so sibling references, `let` bindings, and input-dependent `if`
+// clauses inside `when` do not behave as authors used to expect. Authors
+// express those intents via list patterns and direct leaf constraints; the
+// load-time lint (T4) rejects unbound identifiers that would otherwise
+// silently misbehave.
+//
+// The one authorial construct that works cleanly under subsumption is the
+// list-element pattern `[...=~"..."]`, because every element is checked
+// against the element constraint independently.
+// -----------------------------------------------------------------------------
+
+// TestEvaluate_CueNative_ListPattern verifies that a list-element pattern
+// `[...=~"^/etc/"]` requires every element of the input list to satisfy the
+// regex — a single off-prefix element causes non-match.
+func TestEvaluate_CueNative_ListPattern(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteRule(t, dir, "list_pattern.cue", `{
+		when: {
+			tool_input: parsed: targets: [...=~"^/etc/"]
+		}
+		then: deny: {rule_id: "list-pattern", reason: "all targets under /etc/"}
+	}`)
+	rules := loadRules(t, dir)
+
+	ctx := cuecontext.New()
+
+	t.Run("all elements under /etc/ matches", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{
+			tool_input: parsed: targets: ["/etc/passwd", "/etc/shadow", "/etc/hosts"]
+		}`)
+		got, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("expected 1 match when all /etc/, got %d: %+v", len(got), got)
+		}
+	})
+
+	t.Run("mixed list does not match", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{
+			tool_input: parsed: targets: ["/etc/passwd", "/tmp/x"]
+		}`)
+		got, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("expected 0 matches when list mixed, got %d: %+v", len(got), got)
+		}
+	})
+}
