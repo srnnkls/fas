@@ -266,7 +266,7 @@ func evaluate(
 		return ad.RenderOutput(out, hookEventName)
 	}
 
-	matches, err := pipeline.EvaluatePhases(globalRules, projectRules, cueInput)
+	matches, _, err := pipeline.EvaluatePhases(globalRules, projectRules, cueInput)
 	if err != nil {
 		out := fallbackEnvelope(err, failClosed)
 		return ad.RenderOutput(out, hookEventName)
