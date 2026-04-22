@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"cuelang.org/go/cue"
+	"cuelang.org/go/cue/cuecontext"
 
 	"github.com/srnnkls/quae/internal/config"
 )
@@ -349,8 +350,9 @@ system_path_regex: {
 	}
 
 	// The regex constraint must survive unification: applying it to a
-	// matching command passes, a non-matching command fails.
-	ctx := when.Context()
+	// matching command passes, a non-matching command fails. Use a fresh
+	// context — CUE's Unify/FillPath now accept values from different contexts.
+	ctx := cuecontext.New()
 	match := ctx.CompileString(`{
 		hook_event_name: "PreToolUse"
 		tool_input: command: "/etc/passwd"

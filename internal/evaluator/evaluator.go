@@ -16,8 +16,13 @@ type Match struct {
 	Action *config.Action
 }
 
-// Evaluate unifies each rule's `when` clause against input and returns the
-// matched rules in source order.
+// Evaluate checks each rule's `when` clause against input via CUE subsumption
+// and returns the matched rules in source order. `cue.Final()` treats input
+// as finalized data so the rule's hidden helper fields (`_foo`) are not
+// required to appear in the input; `cue.Schema()` treats `when` as an open
+// schema so inputs may carry fields the rule does not constrain (e.g. the
+// Bash parser's sibling `actions`/`targets` next to a rule that only checks
+// `flags`).
 func Evaluate(rules []config.Rule, input cue.Value) ([]Match, error) {
 	matches := make([]Match, 0, len(rules))
 	for i, rule := range rules {
@@ -25,7 +30,7 @@ func Evaluate(rules []config.Rule, input cue.Value) ([]Match, error) {
 			return nil, err
 		}
 
-		if !inputSatisfies(rule.When, input) {
+		if rule.When.Subsume(input, cue.Final(), cue.Schema()) != nil {
 			continue
 		}
 
@@ -47,41 +52,4 @@ func checkWhen(rule config.Rule, index int) error {
 		return fmt.Errorf("rule %q (index %d): when clause must be a struct, got %s", rule.Source, index, k)
 	}
 	return nil
-}
-
-// inputSatisfies reports whether input meets every constraint in when. A
-// struct when requires every field to be satisfied at the matching input path;
-// unification alone is insufficient because CUE happily fills missing input
-// fields with the constraint's concrete value, masking unsatisfied rules.
-func inputSatisfies(when, input cue.Value) bool {
-	if when.IncompleteKind()&cue.StructKind != 0 {
-		iter, err := when.Fields(cue.All())
-		if err != nil {
-			return false
-		}
-		for iter.Next() {
-			sel := iter.Selector()
-			sub := input.LookupPath(cue.MakePath(sel))
-			if !sub.Exists() {
-				// Optional constraint fields carry the `?` semantic "if
-				// present, must satisfy", so an absent input field leaves
-				// the rule viable. Required fields missing from the input
-				// are genuine misses.
-				if iter.IsOptional() {
-					continue
-				}
-				return false
-			}
-			if !inputSatisfies(iter.Value(), sub) {
-				return false
-			}
-		}
-		return true
-	}
-
-	unified := when.Unify(input)
-	if unified.Err() != nil {
-		return false
-	}
-	return unified.Validate(cue.Concrete(false)) == nil
 }
