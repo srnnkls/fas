@@ -325,6 +325,62 @@ $ cat << 'EOF' |
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```
 
+## Init Process Protection (struct-level disjunction)
+
+A single rule denies either `kill` naming PID 1 directly OR `killall` naming
+`systemd`/`init` — the two process-supervisor targets whose termination halts
+the whole system. The two shapes are expressed with a top-level `when: {...}
+| {...}` instead of two separate rules so the policy intent reads as one
+idea. Ordinary signal delivery to other PIDs remains allowed.
+
+### Blocks kill -9 1 (PID 1 / first disjunct)
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "kill -9 1"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Refusing to signal the init process"}} (no-eol)
+```
+
+### Blocks killall -9 systemd (second disjunct)
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "killall -9 systemd"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Refusing to signal the init process"}} (no-eol)
+```
+
+### Allows kill 1234 (ordinary PID, matches neither disjunct)
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "kill 1234"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
+```
+
 ## Safe Commands
 
 Plain, non-destructive invocations that every policy set must allow.
