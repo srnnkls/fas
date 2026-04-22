@@ -74,7 +74,52 @@ batch_reviews:
       cue.Value.Source() on pre-Unify value is the correct idiom.
       design.md updated; T4/T5/T6 descriptors reference the new pattern.
 
+  - batch: 3
+    tasks: [T4, T5]
+    commit: pending
+    reviewers:
+      - id: consolidated-claude
+        status: completed
+        outcome: approved
+        gates:
+          correctness: pass
+          security: pass
+          performance: pass
+          architecture: pass
+          style: pass
+        issues: { critical: 0, high: 0, medium: 0, low: 4 }
+    synthesized:
+      gates:
+        correctness: pass
+        security: pass
+        performance: pass
+        architecture: pass
+        style: pass
+      critical_issues: 0
+      high_issues: 0
+      medium_issues: 0
+      low_issues: 4
+    outcome: approved
+    notes: |
+      Consolidated single-reviewer pass (context budget). FromCueError
+      distinguishes E0101 (schema shape) / E0102 (unknown action kind) via
+      path-shape + message-shape. DiagError.Unwrap preserves CUE error chain
+      so existing errors.As(err, &cueErr) callers continue to work.
+      E0503 help wording flipped to match lint direction.
+
 deferred_issues:
+  - batch: 3
+    severity: low
+    file: internal/config/loader.go
+    description: decodeRule failure path in extractFileRules still uses fmt.Errorf rather than constructing a DiagError — one remaining non-structured error path
+  - batch: 3
+    severity: low
+    file: internal/diag/cuebridge.go
+    description: NewDiagError accepts Diagnostic with empty Code; optional defensive assertion would catch regressions
+  - batch: 3
+    severity: low
+    file: internal/config/lint.go
+    description: quote() helper bypasses strconv.Quote assuming identifier inputs; rename to quoteIdent or use strconv.Quote to narrow intent
   - batch: 2
     severity: low
     file: internal/config/loader.go

@@ -13,10 +13,10 @@ import (
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/ast"
-	cueerrors "cuelang.org/go/cue/errors"
 	"cuelang.org/go/cue/load"
 
 	quaecue "github.com/srnnkls/quae/cue"
+	"github.com/srnnkls/quae/internal/diag"
 )
 
 // ActionKind identifies which gate or effect an action represents.
@@ -162,6 +162,11 @@ func LoadRules(dir string) ([]Rule, error) {
 // extractFileRules walks every top-level regular field of fileVal (skipping
 // hidden fields and definitions), unifies each with #Rule, and returns the
 // decoded rules in declaration order.
+//
+// Per-rule failures are accumulated rather than short-circuited: authors fixing
+// a file with several broken rules should see all of them in a single pass.
+// errors.Join keeps each failure individually recoverable via errors.As so
+// callers can iterate through every structured diagnostic the loader produced.
 func extractFileRules(ruleDef cue.Value, fileVal cue.Value, rulePath string) ([]Rule, error) {
 	iter, err := fileVal.Fields(cue.Optional(false), cue.Definitions(false), cue.Hidden(false))
 	if err != nil {
@@ -169,6 +174,7 @@ func extractFileRules(ruleDef cue.Value, fileVal cue.Value, rulePath string) ([]
 	}
 
 	var out []Rule
+	var loadErrs []error
 	for iter.Next() {
 		sel := iter.Selector()
 		fieldName := sel.String()
@@ -183,7 +189,8 @@ func extractFileRules(ruleDef cue.Value, fileVal cue.Value, rulePath string) ([]
 		// regex/disjunction constraints there are legitimate and get
 		// resolved by the evaluator at runtime.
 		if err := unified.Validate(); err != nil {
-			return nil, wrapFieldLoadError(rulePath, fieldName, err)
+			loadErrs = append(loadErrs, wrapFieldLoadError(rulePath, fieldName, err))
+			continue
 		}
 		// Unresolved references inside `when` surface as a value error on
 		// the field itself. An undefined identifier from the stdlib is not
@@ -191,21 +198,27 @@ func extractFileRules(ruleDef cue.Value, fileVal cue.Value, rulePath string) ([]
 		// instead of being smuggled in as silent bottom.
 		if when := unified.LookupPath(cue.ParsePath("when")); when.Exists() {
 			if err := when.Err(); err != nil {
-				return nil, wrapFieldLoadError(rulePath, fieldName, err)
+				loadErrs = append(loadErrs, wrapFieldLoadError(rulePath, fieldName, err))
+				continue
 			}
 		}
 		if then := unified.LookupPath(cue.ParsePath("then")); then.Exists() {
 			if err := then.Validate(cue.Concrete(true)); err != nil {
-				return nil, wrapFieldLoadError(rulePath, fieldName, err)
+				loadErrs = append(loadErrs, wrapFieldLoadError(rulePath, fieldName, err))
+				continue
 			}
 		}
 
 		rule, err := decodeRule(unified, fieldVal)
 		if err != nil {
-			return nil, fmt.Errorf("%s: field %q: %w", rulePath, fieldName, err)
+			loadErrs = append(loadErrs, fmt.Errorf("%s: field %q: %w", rulePath, fieldName, err))
+			continue
 		}
 		rule.Source = rulePath + ":" + fieldName
 		out = append(out, rule)
+	}
+	if len(loadErrs) > 0 {
+		return nil, errors.Join(loadErrs...)
 	}
 	return out, nil
 }
@@ -253,52 +266,29 @@ func compileRuleFile(ctx *cue.Context, rulePath string, src []byte, stdlib map[s
 	return val, nil
 }
 
-// wrapRuleLoadError wraps a CUE diagnostic with the offending rule file path
-// while preserving the original cue/errors.Error so callers can retrieve
-// structured position information via errors.As.
+// wrapRuleLoadError converts a CUE diagnostic at file scope into a structured
+// *diag.DiagError. The rule file path is prepended to the Diagnostic's Title
+// so rendered output carries the path even when FromCueError could not resolve
+// a primary source position (e.g. errors promoted without location metadata).
+//
+// The original CUE error stays reachable via Unwrap / errors.As so callers
+// that predate the diagnostic migration — the multi-rule loader tests, the
+// stdlib-import test — keep their `errors.As(err, &cueErr)` paths working.
 func wrapRuleLoadError(rulePath string, err error) error {
-	// Flatten CUE's error chain so each diagnostic is visible in the
-	// rendered message; cue/errors.Error values format as a single line
-	// unless walked with Details.
-	msg := cueerrors.Details(err, nil)
-	msg = strings.TrimRight(msg, "\n")
-	return &ruleLoadError{path: rulePath, msg: msg, cause: err}
+	d := diag.FromCueError(err)
+	d.Title = fmt.Sprintf("%s: %s", rulePath, d.Title)
+	return diag.NewDiagError(d, nil, err)
 }
 
-// wrapFieldLoadError wraps a CUE diagnostic for a specific top-level field so
-// the error names both the file and the offending field. The underlying
-// cue/errors.Error is preserved for callers that use errors.As.
+// wrapFieldLoadError converts a CUE diagnostic for a specific top-level field
+// into a structured *diag.DiagError. The file path and the offending field
+// name both appear in the rendered Title so existing substring assertions
+// ("halt" / "#Action" / "helpers" / "nonexistentDef") continue to match.
 func wrapFieldLoadError(rulePath, field string, err error) error {
-	msg := cueerrors.Details(err, nil)
-	msg = strings.TrimRight(msg, "\n")
-	return &ruleLoadError{path: rulePath, field: field, msg: msg, cause: err}
+	d := diag.FromCueError(err)
+	d.Title = fmt.Sprintf("%s: field %q does not match #Rule: %s", rulePath, field, d.Title)
+	return diag.NewDiagError(d, nil, err)
 }
-
-// ruleLoadError decorates a CUE diagnostic with the rule file path (and,
-// when applicable, the offending top-level field name). It unwraps to the
-// underlying cue/errors.Error so callers can type-assert for position
-// metadata.
-type ruleLoadError struct {
-	path  string
-	field string
-	msg   string
-	cause error
-}
-
-func (e *ruleLoadError) Error() string {
-	switch {
-	case e.field != "" && e.msg != "":
-		return fmt.Sprintf("%s: field %q does not match #Rule: %s", e.path, e.field, e.msg)
-	case e.field != "":
-		return fmt.Sprintf("%s: field %q does not match #Rule: %v", e.path, e.field, e.cause)
-	case e.msg != "":
-		return fmt.Sprintf("compile %s: %s", e.path, e.msg)
-	default:
-		return fmt.Sprintf("compile %s: %v", e.path, e.cause)
-	}
-}
-
-func (e *ruleLoadError) Unwrap() error { return e.cause }
 
 // buildStdlibOverlay materializes the embedded quae stdlib inside the
 // synthetic module's `cue.mod/pkg/github.com/srnnkls/quae/cue/` tree so

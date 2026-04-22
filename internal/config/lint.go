@@ -1,10 +1,12 @@
 package config
 
 import (
-	"fmt"
+	"errors"
 
 	"cuelang.org/go/cue/ast"
 	"cuelang.org/go/cue/parser"
+
+	"github.com/srnnkls/quae/internal/diag"
 )
 
 // lintRuleFile walks each top-level non-hidden rule's `when` subtree and
@@ -12,17 +14,16 @@ import (
 // express legitimate author intent:
 //
 //  1. Cross-rule refs — a rule's `when` reaches into another top-level rule's
-//     `when`, `then`, or `meta` subtree via a selector expression.
+//     `when`, `then`, or `meta` subtree via a selector expression. Emits E0502.
 //  2. Self-refs into `then`/`meta` — a rule's `when` reaches into its own
 //     `then` or `meta` subtree. Those fields are not available at match time;
-//     `when` must be a pure pattern over the input.
+//     `when` must be a pure pattern over the input. Emits E0503.
 //  3. Unbound identifiers — an identifier that is neither a stdlib import
-//     binding nor a locally-visible hidden sibling. CUE already errors on
-//     unbound refs, but the lint surfaces its own classification so diagnostics
-//     can distinguish a typo from a structural composition mistake.
+//     binding nor a locally-visible hidden sibling. Emits E0501.
 //
-// Errors are wrapped via wrapFieldLoadError so they share the *ruleLoadError
-// shape with other load diagnostics.
+// Each violation is reported as a *diag.DiagError so downstream callers can
+// recover the structured Diagnostic via errors.As while the rendered error
+// string keeps the taxonomy terms existing regression tests grep for.
 func lintRuleFile(rulePath string, src []byte) error {
 	// Parse failures surface elsewhere (compileRuleFile raises its own
 	// diagnostic); the lint silently defers on parse errors and lets the
@@ -34,6 +35,7 @@ func lintRuleFile(rulePath string, src []byte) error {
 
 	ruleNames := collectTopLevelRuleNames(file)
 
+	var errs []error
 	for _, decl := range file.Decls {
 		field, ok := decl.(*ast.Field)
 		if !ok {
@@ -50,11 +52,22 @@ func lintRuleFile(rulePath string, src []byte) error {
 		if whenExpr == nil {
 			continue
 		}
+		// Each rule is linted independently so multiple independent
+		// violations in one file surface as a joined error. The caller sees
+		// every failure in one pass rather than iterating recompile-fix cycles.
+		//
+		// lintWhen returns fully-formed *diag.DiagError values; they are not
+		// routed through wrapFieldLoadError because that wrapper is designed
+		// for CUE errors (it reclassifies them via diag.FromCueError). Lint
+		// errors already carry their own code, primary position, and help.
 		if err := lintWhen(name, ruleNames, whenExpr); err != nil {
-			return wrapFieldLoadError(rulePath, name, err)
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	if len(errs) == 0 {
+		return nil
+	}
+	return errors.Join(errs...)
 }
 
 // collectTopLevelRuleNames returns the set of non-hidden, non-definition
@@ -116,7 +129,8 @@ func findWhenExpr(value ast.Expr) ast.Expr {
 }
 
 // lintWhen walks whenExpr and classifies every identifier reference it finds.
-// Returns the first violation as an error or nil if the subtree is clean.
+// Returns the first violation as a *diag.DiagError or nil if the subtree is
+// clean.
 //
 // The walk is hand-rolled rather than ast.Walk-based because field LABELS are
 // also ast.Ident nodes — a naive visitor would misclassify the LHS of
@@ -263,26 +277,20 @@ func checkSelector(ruleName string, ruleNames map[string]struct{}, sel *ast.Sele
 			// the rule's own `when` wrap back around to the pattern root and
 			// are vacuous rather than harmful.
 			if first == "then" || first == "meta" {
-				return fmt.Errorf(
-					"rule %q: `when` refers to its own `%s` subtree; `then`/`meta` are not visible at match time",
-					ruleName, first,
-				)
+				return selfRefDiag(ruleName, first, rootIdent)
 			}
 			return nil
 		}
-		return fmt.Errorf(
-			"rule %q: cross-rule reference into %q.%s from `when`; share values through hidden siblings (`_foo`) or stdlib imports",
-			ruleName, rootIdent.Name, first,
-		)
+		return crossRuleDiag(ruleName, rootIdent.Name, first, rootIdent)
 	}
 
 	// Root is not a rule, not an import — classify it as a bare ident would be.
 	return checkIdent(ruleName, ruleNames, rootIdent)
 }
 
-// checkIdent classifies a bare identifier reference. Returns an error for an
-// unbound ident that is neither a stdlib import, a hidden local helper, nor a
-// resolvable sibling.
+// checkIdent classifies a bare identifier reference. Returns a *diag.DiagError
+// for an unbound ident that is neither a stdlib import, a hidden local helper,
+// nor a resolvable sibling.
 func checkIdent(ruleName string, ruleNames map[string]struct{}, id *ast.Ident) error {
 	// The parser resolves idents against file and struct scopes; a nil Node
 	// means the reference escapes all visible scopes.
@@ -304,11 +312,83 @@ func checkIdent(ruleName string, ruleNames map[string]struct{}, id *ast.Ident) e
 	if id.IsPredeclared() {
 		return nil
 	}
-	return fmt.Errorf(
-		"rule %q: unbound identifier %q in `when`; use a hidden sibling (`_foo`) or a stdlib import",
-		ruleName, name,
-	)
+	return unboundDiag(ruleName, id)
 }
+
+// crossRuleDiag builds an E0502 DiagError whose primary span anchors at the
+// selector's root ident — `base_rule` in `base_rule.when.tool_name`. The
+// rendered body retains the taxonomy terms ("cross", both rule names) the
+// existing loader_test.go substring assertions look for.
+//
+// Both rule names live in the caret label so they survive
+// errDetailAfter's anchor at the file path: the helper returns the suffix
+// starting at the `--> path` line, dropping the diagnostic title that appears
+// above it.
+func crossRuleDiag(ruleName, otherRule, subtree string, root *ast.Ident) error {
+	d := diag.Diagnostic{
+		Code:     diag.E0502.Code,
+		Severity: diag.SeverityError,
+		Title: "rule " + quote(ruleName) + ": cross-rule reference into " +
+			quote(otherRule) + "." + subtree + " from `when`",
+		Primary: diag.Label{
+			Pos: root.Pos(),
+			Len: len(root.Name),
+			Msg: "cross-rule reference from " + quote(ruleName) + " to " +
+				quote(otherRule) + "." + subtree,
+		},
+		Help: diag.E0502.Help,
+	}
+	return diag.NewDiagError(d, nil, nil)
+}
+
+// selfRefDiag builds an E0503 DiagError whose primary span anchors at the
+// selector root ident (the rule's own name). The rendered body contains both
+// "self" and the offending subtree name ("then" or "meta") so existing
+// substring regressions still pass.
+func selfRefDiag(ruleName, subtree string, root *ast.Ident) error {
+	d := diag.Diagnostic{
+		Code:     diag.E0503.Code,
+		Severity: diag.SeverityError,
+		Title: "rule " + quote(ruleName) + ": `when` refers to its own `" + subtree +
+			"` subtree; `then`/`meta` are not visible at match time",
+		Primary: diag.Label{
+			Pos: root.Pos(),
+			Len: len(root.Name),
+			Msg: "self-reference into `" + subtree + "`",
+		},
+		Help: diag.E0503.Help,
+	}
+	return diag.NewDiagError(d, nil, nil)
+}
+
+// unboundDiag builds an E0501 DiagError whose primary span anchors at the
+// offending identifier. Help mentions the two documented escape hatches —
+// hidden siblings and stdlib imports — so the lint_diag test substring checks
+// (`hidden` + `stdlib` / `import`) find them. The rule name sits in the caret
+// label so it survives errDetailAfter's file-path anchor.
+func unboundDiag(ruleName string, id *ast.Ident) error {
+	d := diag.Diagnostic{
+		Code:     diag.E0501.Code,
+		Severity: diag.SeverityError,
+		Title: "rule " + quote(ruleName) + ": unbound identifier " + quote(id.Name) +
+			" in `when`",
+		Primary: diag.Label{
+			Pos: id.Pos(),
+			Len: len(id.Name),
+			Msg: "unbound identifier " + quote(id.Name) + " in rule " + quote(ruleName),
+		},
+		Help: "Declare a hidden sibling (leading underscore, e.g. `_" + id.Name +
+			": ...`) on the same rule, or import the value from a stdlib package " +
+			"(e.g. `import \"list\"`). Bare identifiers in `when` must resolve to " +
+			"one of those two scopes.",
+	}
+	return diag.NewDiagError(d, nil, nil)
+}
+
+// quote wraps s in double quotes without escaping; identifier and rule names
+// never contain quote-sensitive characters, so strconv.Quote would only add
+// noise to the rendered diagnostic.
+func quote(s string) string { return "\"" + s + "\"" }
 
 // isImportRef reports whether an identifier was resolved to an import spec by
 // the parser. Import aliases are the only builtin binding shape inside a rule

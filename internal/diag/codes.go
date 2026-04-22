@@ -160,12 +160,12 @@ underscore) at the file top level where both rules can see it.`,
 
 var E0503 = CodeInfo{
 	Code: "E0503",
-	Help: `A ` + "`then`" + ` or ` + "`meta`" + ` block references the rule's own ` + "`when`" + ` fields.
+	Help: `A ` + "`when`" + ` block references the rule's own ` + "`then`" + ` or ` + "`meta`" + ` fields.
 
-The action and metadata phases run after matching and must not
-depend on the pattern structure; such self-references conflate the
-match phase with the reaction phase. Rewrite the action to use
-constants or values from the resolved input rather than ` + "`when`" + `.`,
+The match phase sees only the input; fields declared in ` + "`then`" + ` or
+` + "`meta`" + ` are not yet in scope when ` + "`when`" + ` evaluates. Rewrite the
+pattern so it depends only on the input and, if a constant is
+needed, lift it to a hidden sibling (leading underscore).`,
 }
 
 // codeRegistry maps each stable code string to its CodeInfo.
