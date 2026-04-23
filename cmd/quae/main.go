@@ -35,7 +35,9 @@ import (
 
 	"github.com/srnnkls/quae/internal/adapter"
 	"github.com/srnnkls/quae/internal/config"
+	"github.com/srnnkls/quae/internal/diag"
 	"github.com/srnnkls/quae/internal/envelope"
+	"github.com/srnnkls/quae/internal/evaluator"
 	"github.com/srnnkls/quae/internal/parser"
 	"github.com/srnnkls/quae/internal/pipeline"
 	"github.com/srnnkls/quae/internal/synthesis"
@@ -108,7 +110,12 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 		return 1
 	}
 
-	response, err := evaluate(ad, raw, globalRules, projectRules, opts.failClosed)
+	// The evaluator's explain toggle is a process-wide atomic. Reset it on
+	// every run so an in-process test harness cannot leak the previous run's
+	// state into the next invocation.
+	evaluator.SetExplainEnabled(opts.explain.set)
+
+	response, matches, diags, err := evaluate(ad, raw, globalRules, projectRules, opts.failClosed)
 	if err != nil {
 		errorf(stderr, "render response: %v\n", err)
 		return 1
@@ -117,6 +124,10 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 	if _, err := stdout.Write(response); err != nil {
 		errorf(stderr, "write stdout: %v\n", err)
 		return 1
+	}
+
+	if opts.explain.set {
+		renderExplain(stderr, opts.explain.value, matches, diags, globalRules, projectRules)
 	}
 	return 0
 }
@@ -134,12 +145,70 @@ func errorln(w io.Writer, a ...any) {
 	_, _ = fmt.Fprintln(w, a...)
 }
 
+// explainFilter selects which diagnostics --explain emits to stderr.
+type explainFilter int
+
+const (
+	explainOff explainFilter = iota
+	explainMissed
+	explainFired
+	explainBoth
+)
+
+// explainFlag is a flag.Value backing --explain. Bare `--explain` (no =value)
+// defaults to `missed`; `--explain=fired|missed|both` picks a mode; invalid
+// values surface a listing of accepted values.
+type explainFlag struct {
+	set   bool
+	value explainFilter
+}
+
+// IsBoolFlag reports that --explain may appear without an =value. When the
+// flag package encounters bare --explain it calls Set("true") as a sentinel;
+// we translate that into the `missed` default.
+func (f *explainFlag) IsBoolFlag() bool { return true }
+
+func (f *explainFlag) String() string {
+	if f == nil {
+		return ""
+	}
+	switch f.value {
+	case explainMissed:
+		return "missed"
+	case explainFired:
+		return "fired"
+	case explainBoth:
+		return "both"
+	default:
+		return ""
+	}
+}
+
+func (f *explainFlag) Set(raw string) error {
+	f.set = true
+	switch raw {
+	// "true" is the sentinel flag.Parse uses for bool-style bare flags.
+	case "true", "", "missed":
+		f.value = explainMissed
+		return nil
+	case "fired":
+		f.value = explainFired
+		return nil
+	case "both":
+		f.value = explainBoth
+		return nil
+	default:
+		return fmt.Errorf("invalid --explain value %q: must be one of fired, missed, both", raw)
+	}
+}
+
 // cliOptions bundles the parsed flag state so run stays flat.
 type cliOptions struct {
 	harness       string
 	projectConfig string
 	globalConfig  string
 	failClosed    bool
+	explain       explainFlag
 }
 
 // parseFlags reads args into a cliOptions. The returned bool is true when the
@@ -169,6 +238,8 @@ func parseFlags(args []string, stderr io.Writer) (cliOptions, bool, error) {
 		"path to the user-global rules directory")
 	fs.BoolVar(&opts.failClosed, "fail-closed", false,
 		"on engine error, emit a Blocking envelope instead of Allowing")
+	fs.Var(&opts.explain, "explain",
+		"emit diagnostics to stderr: fired|missed|both (default missed when bare)")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -245,35 +316,42 @@ func checkAdapterCapabilities(ad adapter.Adapter, ruleSets ...[]config.Rule) err
 	return nil
 }
 
-// evaluate runs the full pipeline and returns the rendered response bytes.
-// Engine-level errors (parse, preprocess) are folded into a fail-open/closed
-// envelope here; only adapter render failures bubble up as real errors.
+// evaluate runs the full pipeline and returns the rendered response bytes
+// plus the matches and diagnostics observed on the happy path. Engine-level
+// errors (parse, preprocess) are folded into a fail-open/closed envelope
+// here; only adapter render failures bubble up as real errors. Matches and
+// diagnostics are nil on the error-folded paths because they are only
+// meaningful when evaluation reached phase results.
 func evaluate(
 	ad adapter.Adapter,
 	raw []byte,
 	globalRules, projectRules []config.Rule,
 	failClosed bool,
-) ([]byte, error) {
+) ([]byte, []evaluator.Match, []diag.Diagnostic, error) {
 	input, hookEventName, engineErr := prepareInput(ad, raw)
 	if engineErr != nil {
 		out := fallbackEnvelope(engineErr, failClosed)
-		return ad.RenderOutput(out, hookEventName)
+		resp, err := ad.RenderOutput(out, hookEventName)
+		return resp, nil, nil, err
 	}
 
 	cueInput, err := encodeInput(input)
 	if err != nil {
 		out := fallbackEnvelope(err, failClosed)
-		return ad.RenderOutput(out, hookEventName)
+		resp, rerr := ad.RenderOutput(out, hookEventName)
+		return resp, nil, nil, rerr
 	}
 
-	matches, _, err := pipeline.EvaluatePhases(globalRules, projectRules, cueInput)
+	matches, diags, err := pipeline.EvaluatePhases(globalRules, projectRules, cueInput)
 	if err != nil {
 		out := fallbackEnvelope(err, failClosed)
-		return ad.RenderOutput(out, hookEventName)
+		resp, rerr := ad.RenderOutput(out, hookEventName)
+		return resp, nil, nil, rerr
 	}
 
 	out := synthesis.Synthesize(matches, defaultSizeBudget)
-	return ad.RenderOutput(out, hookEventName)
+	resp, err := ad.RenderOutput(out, hookEventName)
+	return resp, matches, diags, err
 }
 
 // prepareInput runs the adapter parse and preprocessor. It returns the
@@ -375,6 +453,115 @@ func fallbackEnvelope(cause error, failClosed bool) envelope.OutputEnvelope {
 	return envelope.OutputEnvelope{Category: envelope.Allowing}
 }
 
+// renderExplain emits the filtered explain output to stderr. Fired traces
+// come first (one line per match, carrying the rule_id and source file); miss
+// diagnostics render afterwards through the shared renderer. The filter is
+// applied here so the evaluator's diagnostic lane stays filter-agnostic.
+//
+// ruleSets supplies the sources the FileCache must be primed from. The CUE
+// loader compiles rules inside a synthetic module overlay, so
+// token.Pos.Filename() on a diagnostic resolves to that virtual path rather
+// than the on-disk absolute path. primeFileCache seeds every spelling the
+// renderer may see.
+func renderExplain(w io.Writer, filter explainFilter, matches []evaluator.Match, diags []diag.Diagnostic, ruleSets ...[]config.Rule) {
+	if filter == explainFired || filter == explainBoth {
+		for _, m := range matches {
+			ruleID := ""
+			if m.Action != nil {
+				ruleID = m.Action.RuleID
+			}
+			errorf(w, "fired: %s (%s)\n", ruleID, m.Rule.Source)
+		}
+	}
+	if filter == explainMissed || filter == explainBoth {
+		src := primeFileCache(ruleSets...)
+		for _, d := range diags {
+			ruleID := ruleIDForDiag(d, ruleSets...)
+			errorf(w, "rule_id: %s\n", ruleID)
+			_, _ = io.WriteString(w, diag.Render(d, src))
+		}
+	}
+}
+
+// primeFileCache reads every unique rule source file off disk and seeds a
+// FileCache under every spelling token.Pos.Filename() may carry for that
+// rule: the on-disk absolute path, the bare basename, and the synthetic
+// module-root path the CUE loader synthesizes inside its overlay.
+func primeFileCache(ruleSets ...[]config.Rule) *diag.FileCache {
+	cache := diag.NewFileCache()
+	seen := map[string]struct{}{}
+	for _, rules := range ruleSets {
+		for _, r := range rules {
+			path := ruleSourcePath(r.Source)
+			if path == "" {
+				continue
+			}
+			if _, ok := seen[path]; ok {
+				continue
+			}
+			seen[path] = struct{}{}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			base := filepath.Base(path)
+			cache.Set(path, data)
+			cache.Set(base, data)
+			cache.Set(filepath.Join(config.RulesModuleRoot, base), data)
+		}
+	}
+	return cache
+}
+
+// ruleSourcePath strips the `:<fieldname>` suffix LoadRules appends to
+// Rule.Source so the remainder is a plain filesystem path.
+func ruleSourcePath(source string) string {
+	if i := strings.LastIndex(source, ":"); i > 0 {
+		return source[:i]
+	}
+	return source
+}
+
+// ruleIDForDiag resolves the rule_id the diagnostic pertains to by matching
+// the diagnostic's primary-position filename against the rule's source path.
+// Prefers full-path matches so a global and project rule with the same
+// basename (deny.cue in both trees) never attributes a diagnostic to the
+// wrong rule. Falls back to basename only when no absolute match lands.
+// Returns an empty string when no match is found.
+func ruleIDForDiag(d diag.Diagnostic, ruleSets ...[]config.Rule) string {
+	filename := d.Primary.Pos.Filename()
+	if filename == "" {
+		return ""
+	}
+	var baseFallback *config.Rule
+	base := filepath.Base(filename)
+	for _, rules := range ruleSets {
+		for i, r := range rules {
+			path := ruleSourcePath(r.Source)
+			if path == filename {
+				return ruleID(r)
+			}
+			if baseFallback == nil && filepath.Base(path) == base {
+				baseFallback = &rules[i]
+			}
+		}
+	}
+	if baseFallback != nil {
+		return ruleID(*baseFallback)
+	}
+	return ""
+}
+
+// ruleID returns the rule's effect ID when a `then` is attached, empty
+// otherwise. Rules without `then` contribute to auditability but do not
+// carry a stable identifier for diagnostic attribution.
+func ruleID(r config.Rule) string {
+	if r.Then != nil {
+		return r.Then.RuleID
+	}
+	return ""
+}
+
 // printUsage writes the --help text to w.
 func printUsage(w io.Writer) {
 	writeUsage(w)
@@ -397,6 +584,9 @@ Flags:
   --global-config <path>  User-global rules directory (default: ~/`+defaultGlobalRulesSubpath+`).
   --fail-closed           On engine error, emit a Blocking envelope instead
                           of the default Allowing envelope.
+  --explain[=MODE]        Emit diagnostics to stderr. MODE is one of
+                          fired|missed|both; bare --explain defaults to
+                          missed. Omit the flag to disable (zero cost).
   -h, --help              Show this message and exit.
 
 Supported harnesses: claude.

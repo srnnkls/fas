@@ -71,11 +71,13 @@ type Rule struct {
 	Meta       *Meta
 }
 
-// rulesModuleRoot is the synthetic module-root directory used by the loader.
+// RulesModuleRoot is the synthetic module-root directory used by the loader.
 // It must be a distinct, absolute-looking path so CUE's overlay resolver does
 // not confuse it with the real filesystem root. The path itself never touches
-// disk; it only exists inside the in-memory overlay.
-const rulesModuleRoot = "/__quae_rules__"
+// disk; it only exists inside the in-memory overlay. Exported because CLI
+// tooling (cmd/quae --explain) must prime its source cache with the same
+// virtual prefix the overlay assigns to rule files.
+const RulesModuleRoot = "/__quae_rules__"
 
 // rulesModulePath is the synthetic module name assigned to the rules
 // directory. A module prefix is required so the overlay can host both the
@@ -234,7 +236,7 @@ func compileRuleFile(ctx *cue.Context, rulePath string, src []byte, stdlib map[s
 	maps.Copy(overlay, stdlib)
 	// Synthetic module root. Every overlay path must share this prefix so
 	// CUE treats the virtual directory as the module being loaded.
-	overlay[filepath.Join(rulesModuleRoot, "cue.mod", "module.cue")] = load.FromString(
+	overlay[filepath.Join(RulesModuleRoot, "cue.mod", "module.cue")] = load.FromString(
 		fmt.Sprintf("module: %q\nlanguage: version: \"v0.11.0\"\n", rulesModulePath),
 	)
 	// Virtual filename stripped of any suffix CUE treats as a build-tag.
@@ -243,11 +245,11 @@ func compileRuleFile(ctx *cue.Context, rulePath string, src []byte, stdlib map[s
 	// Diagnostic context for the author comes from wrapRuleLoadError, which
 	// prepends the real rule file path.
 	virtualName := sanitizeVirtualRuleName(filepath.Base(rulePath))
-	overlay[filepath.Join(rulesModuleRoot, virtualName)] = load.FromBytes(src)
+	overlay[filepath.Join(RulesModuleRoot, virtualName)] = load.FromBytes(src)
 
 	cfg := &load.Config{
-		Dir:        rulesModuleRoot,
-		ModuleRoot: rulesModuleRoot,
+		Dir:        RulesModuleRoot,
+		ModuleRoot: RulesModuleRoot,
 		Overlay:    overlay,
 	}
 	insts := load.Instances([]string{virtualName}, cfg)
@@ -304,7 +306,7 @@ func wrapFieldLoadError(rulePath, field string, err error) error {
 // suitable for passing straight to load.Config.Overlay.
 func buildStdlibOverlay() (map[string]load.Source, error) {
 	pkgRoot := filepath.Join(
-		rulesModuleRoot, "cue.mod", "pkg",
+		RulesModuleRoot, "cue.mod", "pkg",
 		filepath.FromSlash(stdlibOverlayImportPath),
 	)
 	overlay := map[string]load.Source{}
