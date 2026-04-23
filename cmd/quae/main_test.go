@@ -2397,3 +2397,188 @@ func TestRun_ExplainCmd_DoesNotLeakToggleIntoEval(t *testing.T) {
 		t.Errorf("positive control: eval --explain=missed must emit diagnostics, got empty stderr (run 2's emptiness is not meaningful)")
 	}
 }
+
+// -----------------------------------------------------------------------------
+// T10: `quae explain --code <code>` — offline help lookup
+// -----------------------------------------------------------------------------
+
+// stdinMustNotBeRead is a reader whose Read always fails. Passing it as stdin
+// proves the --code fast-path never consults stdin.
+type stdinMustNotBeRead struct {
+	t *testing.T
+}
+
+func (s stdinMustNotBeRead) Read(_ []byte) (int, error) {
+	s.t.Fatalf("--code path must not read stdin")
+	return 0, nil
+}
+
+// TestRun_ExplainCode_ValidCode_ExitZero pins the positive path: `--code E0201`
+// prints the registered help to stdout and exits 0 with empty stderr.
+func TestRun_ExplainCode_ValidCode_ExitZero(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exit := run(stdinMustNotBeRead{t: t}, &stdout, &stderr,
+		[]string{"explain", "--code", "E0201"})
+
+	if exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s stdout=%s", exit, stderr.String(), stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("stderr must be empty on valid --code; got %q", stderr.String())
+	}
+	want := "A path segment referenced in the rule does not exist in the input."
+	if !strings.Contains(stdout.String(), want) {
+		t.Errorf("stdout must contain E0201 help phrase %q; got %q", want, stdout.String())
+	}
+	if !strings.HasSuffix(stdout.String(), "\n") {
+		t.Errorf("stdout must end with a trailing newline; got %q", stdout.String())
+	}
+}
+
+// TestRun_ExplainCode_EqualsForm accepts `--code=E0301`, the equivalent flag
+// spelling. Separate case because flag.Parse treats the two forms differently.
+func TestRun_ExplainCode_EqualsForm(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exit := run(stdinMustNotBeRead{t: t}, &stdout, &stderr,
+		[]string{"explain", "--code=E0301"})
+
+	if exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s", exit, stderr.String())
+	}
+	want := "A string leaf does not satisfy the regex declared in the rule."
+	if !strings.Contains(stdout.String(), want) {
+		t.Errorf("stdout must contain E0301 help phrase %q; got %q", want, stdout.String())
+	}
+}
+
+// TestRun_ExplainCode_UnknownCode_ExitTwo pins the error branch: an unregistered
+// code surfaces on stderr, stdout stays empty, exit code is 2.
+func TestRun_ExplainCode_UnknownCode_ExitTwo(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exit := run(stdinMustNotBeRead{t: t}, &stdout, &stderr,
+		[]string{"explain", "--code", "E9999"})
+
+	if exit != 2 {
+		t.Fatalf("exit=%d want 2; stderr=%s stdout=%s", exit, stderr.String(), stdout.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("unknown --code: stdout must be empty; got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "E9999") {
+		t.Errorf("stderr must name the unknown code `E9999`; got %q", stderr.String())
+	}
+	if !strings.Contains(strings.ToLower(stderr.String()), "unknown") {
+		t.Errorf("stderr must indicate the code is unknown; got %q", stderr.String())
+	}
+}
+
+// TestRun_ExplainCode_CaseSensitive asserts the lookup is case-sensitive per
+// LookupCode's documented contract. `e0201` must not resolve to E0201.
+func TestRun_ExplainCode_CaseSensitive(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exit := run(stdinMustNotBeRead{t: t}, &stdout, &stderr,
+		[]string{"explain", "--code", "e0201"})
+
+	if exit != 2 {
+		t.Fatalf("exit=%d want 2 (lowercase is not a valid code); stderr=%s", exit, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("case mismatch: stdout must be empty; got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "e0201") {
+		t.Errorf("stderr must name the invalid code `e0201`; got %q", stderr.String())
+	}
+}
+
+// TestRun_ExplainCode_DoesNotLoadRules pins the fast-path contract: when
+// `--code` is supplied, rule loading is bypassed entirely. The test points
+// both --config and --global-config at regular files (not directories); the
+// loader rejects "not a directory" paths with a real error (unlike missing
+// paths, which it silently treats as empty), so a naive implementation that
+// calls loadRulesDir before branching on --code would surface that error on
+// stderr and exit non-zero. A correct --code fast-path stays exit 0 with empty
+// stderr.
+func TestRun_ExplainCode_DoesNotLoadRules(t *testing.T) {
+	dir := t.TempDir()
+	projectFile := filepath.Join(dir, "project-not-a-dir")
+	globalFile := filepath.Join(dir, "global-not-a-dir")
+	if err := os.WriteFile(projectFile, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("write project sentinel: %v", err)
+	}
+	if err := os.WriteFile(globalFile, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("write global sentinel: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exit := run(stdinMustNotBeRead{t: t}, &stdout, &stderr,
+		[]string{
+			"explain", "--code", "E0201",
+			"--config", projectFile,
+			"--global-config", globalFile,
+		})
+
+	if exit != 0 {
+		t.Fatalf("exit=%d want 0 (--code must not load rules); stderr=%s", exit, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("--code path must not touch rule loader; got stderr=%q", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "path") {
+		t.Errorf("stdout must carry the E0201 help (contains %q); got %q", "path", stdout.String())
+	}
+}
+
+// TestRun_ExplainCode_EmptyValue pins that an empty --code value is rejected
+// with exit 2 and stderr names the invalid input using the shared "unknown"
+// vocabulary (consistent with the UnknownCode case).
+func TestRun_ExplainCode_EmptyValue(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exit := run(stdinMustNotBeRead{t: t}, &stdout, &stderr,
+		[]string{"explain", "--code", ""})
+
+	if exit != 2 {
+		t.Fatalf("exit=%d want 2 (empty --code is invalid); stderr=%s stdout=%s",
+			exit, stderr.String(), stdout.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("empty --code: stdout must be empty; got %q", stdout.String())
+	}
+	if !strings.Contains(strings.ToLower(stderr.String()), "unknown") {
+		t.Errorf("stderr must flag the empty code as unknown; got %q", stderr.String())
+	}
+}
+
+// TestRun_ExplainCode_PrecedenceOverRuleID pins the precedence contract: if
+// `--code` appears anywhere in args, it wins — any positional rule_id is
+// ignored, stdin is not read, and rule loading is bypassed. This is the
+// cleanest resolution of the ambiguity between runExplain's current
+// args[0]-as-rule_id consumption and the new flag.
+func TestRun_ExplainCode_PrecedenceOverRuleID(t *testing.T) {
+	dir := t.TempDir()
+	bogus := filepath.Join(dir, "not-a-dir")
+	if err := os.WriteFile(bogus, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write sentinel: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exit := run(stdinMustNotBeRead{t: t}, &stdout, &stderr,
+		[]string{
+			"explain", "some_rule", "--code", "E0201",
+			"--config", bogus,
+			"--global-config", bogus,
+		})
+
+	if exit != 0 {
+		t.Fatalf("exit=%d want 0 (--code takes precedence over rule_id); stderr=%s stdout=%s",
+			exit, stderr.String(), stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("precedence: stderr must be empty; got %q", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "E0201") {
+		t.Errorf("stdout must reference the resolved code %q; got %q", "E0201", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "path") {
+		t.Errorf("stdout must carry the E0201 help (contains %q); got %q", "path", stdout.String())
+	}
+}

@@ -67,7 +67,7 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 	// its own flag set, rule-id resolution, and exit-code mapping — handle
 	// it before the eval path peels off its optional leading token.
 	if len(args) > 0 && args[0] == "explain" {
-		return runExplain(stdin, stderr, args[1:])
+		return runExplain(stdin, stdout, stderr, args[1:])
 	}
 
 	// Drop an optional leading "eval" subcommand so the CLI accepts both
@@ -153,7 +153,25 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 // to exit codes 0/1/2. The subcommand always localizes (implicit
 // explain-on), and resets the evaluator toggle on the way out so subsequent
 // in-process `eval` calls without --explain do not inherit it.
-func runExplain(stdin io.Reader, stderr io.Writer, args []string) int {
+func runExplain(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
+	// `--code <code>` is an offline fast-path: it prints the registered
+	// help for an error code and exits. Pre-scan args before the rule_id
+	// guard so the flag wins over any positional token, and so rule
+	// loading and stdin reads are skipped entirely.
+	if code, ok, valid := extractCodeFlag(args); ok {
+		if !valid {
+			errorf(stderr, "unknown error code %q\n", code)
+			return 2
+		}
+		info, found := diag.LookupCode(code)
+		if !found {
+			errorf(stderr, "unknown error code %q\n", code)
+			return 2
+		}
+		_, _ = fmt.Fprintf(stdout, "%s\n\n%s\n", info.Code, info.Help)
+		return 0
+	}
+
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
 		errorf(stderr, "usage: quae explain <rule_id> [--harness <name>] [--config <path>] [--global-config <path>]\n")
 		return 2
@@ -256,6 +274,33 @@ func runExplain(stdin io.Reader, stderr io.Writer, args []string) int {
 		_, _ = io.WriteString(stderr, diag.Render(d, src))
 	}
 	return 1
+}
+
+// extractCodeFlag scans args for a `--code` or `-code` flag (either the
+// space-separated `--code VAL` or the equals form `--code=VAL`). It returns
+// the value, whether the flag was found at all, and whether the value is a
+// non-empty token. The scan is bounded to runExplain's arg slice so the
+// fast-path can decide precedence without constructing a full FlagSet (which
+// would force it to also declare every other explain flag).
+func extractCodeFlag(args []string) (code string, found bool, valid bool) {
+	for i := range args {
+		a := args[i]
+		switch {
+		case a == "--code" || a == "-code":
+			if i+1 >= len(args) {
+				return "", true, false
+			}
+			v := args[i+1]
+			return v, true, v != ""
+		case strings.HasPrefix(a, "--code="):
+			v := strings.TrimPrefix(a, "--code=")
+			return v, true, v != ""
+		case strings.HasPrefix(a, "-code="):
+			v := strings.TrimPrefix(a, "-code=")
+			return v, true, v != ""
+		}
+	}
+	return "", false, false
 }
 
 // findRuleByID walks ruleSets in order and returns the first rule whose
@@ -756,6 +801,12 @@ Subcommands:
                           the vendor-native payload. Exit 0 on match, 1
                           on no-match (diagnostic on stderr), 2 on engine
                           error.
+  explain --code <code>   Print the registered help text for an error
+                          code (e.g. E0201) to stdout and exit 0. No
+                          stdin is read and no rules are loaded; if
+                          --code appears anywhere, it takes precedence
+                          over any positional rule_id. Unknown or empty
+                          codes exit 2 with a stderr diagnostic.
 
 Environment:
   QUAE_EXPLAIN            Truthy (1, true, yes — case-insensitive) enables

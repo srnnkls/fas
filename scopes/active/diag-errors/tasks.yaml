@@ -209,7 +209,7 @@ tasks:
     files:
       - cmd/quae/main.go
       - cmd/quae/main_test.go
-    status: pending
+    status: completed
     depends_on: [T2, T9]
     test_hints:
       - `quae explain --code E0201` → prints help, exit 0.
