@@ -177,7 +177,7 @@ tasks:
     files:
       - cmd/quae/main.go
       - cmd/quae/main_test.go
-    status: pending
+    status: completed
     depends_on: [T7]
     test_hints:
       - QUAE_EXPLAIN=1 without flag → same as --explain=missed.
@@ -194,7 +194,7 @@ tasks:
     files:
       - cmd/quae/main.go
       - cmd/quae/main_test.go
-    status: pending
+    status: completed
     depends_on: [T6]
     test_hints:
       - `quae explain known_rule < matching_input.json` → exit 0, stderr empty.
