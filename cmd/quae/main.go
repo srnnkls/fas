@@ -63,6 +63,13 @@ func main() {
 // intended process exit code instead of calling os.Exit so test harnesses can
 // drive the CLI with bytes.Buffers.
 func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
+	// The `explain` subcommand reuses stdin/rule-loading plumbing but owns
+	// its own flag set, rule-id resolution, and exit-code mapping — handle
+	// it before the eval path peels off its optional leading token.
+	if len(args) > 0 && args[0] == "explain" {
+		return runExplain(stdin, stderr, args[1:])
+	}
+
 	// Drop an optional leading "eval" subcommand so the CLI accepts both
 	// `quae eval --harness claude` and `quae --harness claude`. The v0.1
 	// binary only has one subcommand; insisting on it buys nothing.
@@ -110,6 +117,14 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 		return 1
 	}
 
+	// QUAE_EXPLAIN acts as an env fallback for `--explain=missed` but only
+	// when the user did not pass the flag explicitly. Read on every run so an
+	// in-process test harness sees fresh env state, never latched from a
+	// previous invocation.
+	if !opts.explain.set && isTruthyEnv(os.Getenv("QUAE_EXPLAIN")) {
+		opts.explain = explainFlag{set: true, value: explainMissed}
+	}
+
 	// The evaluator's explain toggle is a process-wide atomic. Reset it on
 	// every run so an in-process test harness cannot leak the previous run's
 	// state into the next invocation.
@@ -130,6 +145,131 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 		renderExplain(stderr, opts.explain.value, matches, diags, globalRules, projectRules)
 	}
 	return 0
+}
+
+// runExplain implements `quae explain <rule_id> < input.json`. It loads both
+// rule sets, resolves rule_id with project-wins tie-break, evaluates the
+// single rule against stdin input, and maps (match, no-match, engine error)
+// to exit codes 0/1/2. The subcommand always localizes (implicit
+// explain-on), and resets the evaluator toggle on the way out so subsequent
+// in-process `eval` calls without --explain do not inherit it.
+func runExplain(stdin io.Reader, stderr io.Writer, args []string) int {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		errorf(stderr, "usage: quae explain <rule_id> [--harness <name>] [--config <path>] [--global-config <path>]\n")
+		return 2
+	}
+	ruleID := args[0]
+	rest := args[1:]
+
+	fs := flag.NewFlagSet("quae explain", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.Usage = func() { writeUsage(stderr) }
+
+	defaultGlobal, err := defaultGlobalConfigDir()
+	if err != nil {
+		defaultGlobal = defaultGlobalRulesSubpath
+	}
+	harness := "claude"
+	projectConfig := defaultProjectRulesDir
+	globalConfig := defaultGlobal
+	fs.StringVar(&harness, "harness", harness,
+		"vendor harness whose hook protocol to speak (e.g. claude)")
+	fs.StringVar(&projectConfig, "config", projectConfig,
+		"path to the project rules directory")
+	fs.StringVar(&globalConfig, "global-config", globalConfig,
+		"path to the user-global rules directory")
+
+	if err := fs.Parse(rest); err != nil {
+		return 2
+	}
+
+	ad, ok := selectAdapter(harness)
+	if !ok {
+		errorf(stderr, "unknown harness %q; supported: %s\n",
+			harness, strings.Join(supportedHarnesses(), ", "))
+		return 2
+	}
+
+	globalRules, err := loadRulesDir(globalConfig)
+	if err != nil {
+		errorln(stderr, err)
+		return 2
+	}
+	projectRules, err := loadRulesDir(projectConfig)
+	if err != nil {
+		errorln(stderr, err)
+		return 2
+	}
+
+	// Project-wins tie-break: project rules are searched first so a rule_id
+	// present in both sets resolves to the project definition.
+	resolved, ok := findRuleByID(ruleID, projectRules, globalRules)
+	if !ok {
+		errorf(stderr, "rule_id %q not found in project or global rules\n", ruleID)
+		return 2
+	}
+
+	if err := checkAdapterCapabilities(ad, []config.Rule{resolved}); err != nil {
+		errorln(stderr, err)
+		return 2
+	}
+
+	raw, err := io.ReadAll(stdin)
+	if err != nil {
+		errorf(stderr, "read stdin: %v\n", err)
+		return 2
+	}
+
+	input, _, err := prepareInput(ad, raw)
+	if err != nil {
+		errorln(stderr, err)
+		return 2
+	}
+	cueInput, err := encodeInput(input)
+	if err != nil {
+		errorln(stderr, err)
+		return 2
+	}
+
+	// Implicit explain-on for this subcommand: no-match must always produce
+	// a localized diagnostic on stderr. Reset on exit so a subsequent
+	// in-process `eval` without --explain does not inherit the toggle.
+	evaluator.SetExplainEnabled(true)
+	defer evaluator.SetExplainEnabled(false)
+
+	matches, diags, err := evaluator.Evaluate([]config.Rule{resolved}, cueInput)
+	if err != nil {
+		if errors.Is(err, evaluator.ErrInvalidInput) {
+			errorln(stderr, "invalid input for evaluator")
+			return 2
+		}
+		errorf(stderr, "evaluate: %v\n", err)
+		return 2
+	}
+
+	if len(matches) > 0 {
+		return 0
+	}
+
+	src := primeFileCache([]config.Rule{resolved})
+	for _, d := range diags {
+		_, _ = io.WriteString(stderr, diag.Render(d, src))
+	}
+	return 1
+}
+
+// findRuleByID walks ruleSets in order and returns the first rule whose
+// `then.rule_id` equals id. Callers supply project rules before global rules
+// to implement the project-wins tie-break for ambiguous ids.
+func findRuleByID(id string, ruleSets ...[]config.Rule) (config.Rule, bool) {
+	for _, rules := range ruleSets {
+		for _, r := range rules {
+			if r.Then != nil && r.Then.RuleID == id {
+				return r, true
+			}
+		}
+	}
+	return config.Rule{}, false
 }
 
 // errorf writes a formatted diagnostic to w, discarding the write error.
@@ -199,6 +339,24 @@ func (f *explainFlag) Set(raw string) error {
 		return nil
 	default:
 		return fmt.Errorf("invalid --explain value %q: must be one of fired, missed, both", raw)
+	}
+}
+
+// isTruthyEnv reports whether an environment value means "on". Matches
+// {1, true, yes} case-insensitively; everything else (including filter-mode
+// words like "fired"/"missed"/"both") is treated as off. QUAE_EXPLAIN is a
+// truthiness switch, not a filter channel — truthy routes through the same
+// code path as `--explain=missed`.
+func isTruthyEnv(v string) bool {
+	switch {
+	case v == "1":
+		return true
+	case strings.EqualFold(v, "true"):
+		return true
+	case strings.EqualFold(v, "yes"):
+		return true
+	default:
+		return false
 	}
 }
 
@@ -571,6 +729,7 @@ func printUsage(w io.Writer) {
 // Kept in one place so the three entry points never drift.
 func writeUsage(w io.Writer) {
 	_, _ = fmt.Fprint(w, `Usage: quae eval [flags]
+       quae explain <rule_id> [flags]
 
 Read a vendor-native hook payload on stdin, evaluate it against the
 configured rule sets, and emit a vendor-native response on stdout.
@@ -588,6 +747,20 @@ Flags:
                           fired|missed|both; bare --explain defaults to
                           missed. Omit the flag to disable (zero cost).
   -h, --help              Show this message and exit.
+
+Subcommands:
+  explain <rule_id>       Run a single rule (resolved by rule_id across
+                          project+global sets; project wins on conflict)
+                          against stdin. The rule_id must precede any
+                          flags. Implicit --explain=missed; stdin carries
+                          the vendor-native payload. Exit 0 on match, 1
+                          on no-match (diagnostic on stderr), 2 on engine
+                          error.
+
+Environment:
+  QUAE_EXPLAIN            Truthy (1, true, yes — case-insensitive) enables
+                          --explain=missed when --explain is absent. The
+                          flag always wins when both are set.
 
 Supported harnesses: claude.
 `)

@@ -1372,3 +1372,1028 @@ func TestRun_Explain_Fired_DoesNotInterfereWithBlockingDecision(t *testing.T) {
 		t.Errorf("--explain=fired must reference fired rule_id `r1`; stderr=%q", res.stderr)
 	}
 }
+
+// -----------------------------------------------------------------------------
+// QUAE_EXPLAIN env var (T8) — env fallback for the --explain flag
+// -----------------------------------------------------------------------------
+//
+// QUAE_EXPLAIN accepts truthy values (1, true, yes; case-insensitive) and, when
+// set, enables the same behavior as --explain=missed. The explicit --explain
+// flag always wins when both are set (even if the flag's value is a stricter
+// or broader filter than the env-var default of `missed`). Non-truthy values
+// (0, false, no, empty, arbitrary strings) leave the env fallback off, so the
+// zero-cost fast path is preserved for users who haven't opted in.
+//
+// All tests use t.Setenv so env state is isolated per-test and automatically
+// restored on teardown — no leakage across the rest of TestRun_* can occur.
+
+// TestRun_QuaeExplain_TruthyEnablesMissed covers the baseline contract:
+// QUAE_EXPLAIN=1 with no --explain flag should behave exactly like passing
+// --explain=missed. A non-firing rule must surface its E0201 diagnostic on
+// stderr, and the vendor response on stdout must remain intact.
+func TestRun_QuaeExplain_TruthyEnablesMissed(t *testing.T) {
+	t.Setenv("QUAE_EXPLAIN", "1")
+
+	projectDir := writeRuleFiles(t, map[string]string{
+		"flags-miss.cue": missingKeyRule,
+	})
+	globalDir := emptyRulesDir(t)
+
+	stdin := claudeBashInput("ls")
+	res := runCLI(t, stdin,
+		"eval",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0 (env-driven explain must not fail pipeline); stderr=%s",
+			res.exit, res.stderr)
+	}
+	// Vendor response must still land on stdout.
+	resp := decodeCC(t, res.stdout)
+	if got, want := resp.HookSpecificOutput.PermissionDecision, "allow"; got != want {
+		t.Errorf("permissionDecision=%q, want %q", got, want)
+	}
+	if len(res.stderr) == 0 {
+		t.Fatalf("QUAE_EXPLAIN=1 must enable missed diagnostics; stderr is empty")
+	}
+	if !strings.Contains(string(res.stderr), "E0201") {
+		t.Errorf("stderr should carry E0201 when QUAE_EXPLAIN=1; got %q", res.stderr)
+	}
+}
+
+// TestRun_QuaeExplain_FlagWinsOverEnv asserts that --explain=both combined
+// with QUAE_EXPLAIN=1 produces `both` output (fired rule_id AND missed
+// E-code), NOT just `missed`. The flag is authoritative.
+func TestRun_QuaeExplain_FlagWinsOverEnv(t *testing.T) {
+	t.Setenv("QUAE_EXPLAIN", "1")
+
+	projectDir := writeRuleFiles(t, map[string]string{
+		"ask.cue":        askOnBashRule,
+		"flags-miss.cue": missingKeyRule,
+	})
+	globalDir := emptyRulesDir(t)
+
+	stdin := claudeBashInput("ls")
+	res := runCLI(t, stdin,
+		"eval",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+		"--explain=both",
+	)
+
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
+	}
+	stderrStr := string(res.stderr)
+	// Fired trace (from --explain=both) — env-driven `missed` would omit this.
+	if !strings.Contains(stderrStr, "ask-bash") {
+		t.Errorf("--explain=both must show fired rule_id `ask-bash` (flag wins over env); stderr=%q",
+			stderrStr)
+	}
+	// Missed E-code — present in both `missed` and `both`, so this alone
+	// can't distinguish; the fired-trace check above is the discriminator.
+	if !strings.Contains(stderrStr, "E0201") {
+		t.Errorf("--explain=both must show missed E0201; stderr=%q", stderrStr)
+	}
+}
+
+// TestRun_QuaeExplain_FlagWinsOverEnv_MoreRestrictive is the negative form of
+// the precedence check: QUAE_EXPLAIN=1 (which would enable `missed`) combined
+// with --explain=fired must produce fired-only output. If the implementation
+// OR'd env+flag filters instead of letting the flag win, we'd see E0201 in
+// stderr. Pins that the flag wins even when its filter is STRICTER than env.
+func TestRun_QuaeExplain_FlagWinsOverEnv_MoreRestrictive(t *testing.T) {
+	t.Setenv("QUAE_EXPLAIN", "1")
+
+	projectDir := writeRuleFiles(t, map[string]string{
+		"ask.cue":        askOnBashRule,
+		"flags-miss.cue": missingKeyRule,
+	})
+	globalDir := emptyRulesDir(t)
+
+	stdin := claudeBashInput("ls")
+	res := runCLI(t, stdin,
+		"eval",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+		"--explain=fired",
+	)
+
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
+	}
+	stderrStr := string(res.stderr)
+	// Fired trace must appear.
+	if !strings.Contains(stderrStr, "ask-bash") {
+		t.Errorf("--explain=fired must include fired rule_id `ask-bash`; stderr=%q", stderrStr)
+	}
+	// Missed E-code must NOT leak through. If the env widened the filter,
+	// this would trip.
+	if strings.Contains(stderrStr, "E0201") {
+		t.Errorf("--explain=fired with QUAE_EXPLAIN=1 must suppress missed diagnostics (flag wins); got E0201 in stderr=%q",
+			stderrStr)
+	}
+}
+
+// TestRun_QuaeExplain_FalsyDisabled covers QUAE_EXPLAIN=0. The env var is
+// present but non-truthy, so stderr must remain empty for a non-firing rule.
+// This distinguishes "env falsy" from "env unset" (separate test below) so a
+// bug that treated any non-empty value as truthy would trip here.
+func TestRun_QuaeExplain_FalsyDisabled(t *testing.T) {
+	t.Setenv("QUAE_EXPLAIN", "0")
+
+	projectDir := writeRuleFiles(t, map[string]string{
+		"flags-miss.cue": missingKeyRule,
+	})
+	globalDir := emptyRulesDir(t)
+
+	stdin := claudeBashInput("ls")
+	res := runCLI(t, stdin,
+		"eval",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
+	}
+	if len(res.stderr) != 0 {
+		t.Errorf("QUAE_EXPLAIN=0 must keep stderr empty (explain disabled); got %q",
+			res.stderr)
+	}
+}
+
+// TestRun_QuaeExplain_UnsetDisabled confirms the zero-cost default: when the
+// env var is not present in the environment at all, stderr stays empty. This
+// tests the UNSET case specifically (os.LookupEnv returns ok=false), as
+// distinct from the empty-string case covered in NonTruthyVariants.
+// Implementations that use os.LookupEnv to distinguish unset-vs-empty must
+// still treat unset as disabled.
+func TestRun_QuaeExplain_UnsetDisabled(t *testing.T) {
+	// Take ownership of QUAE_EXPLAIN: record prior, remove it, restore on
+	// cleanup. t.Setenv("") is NOT unset (LookupEnv still returns ok=true), so
+	// we use os.Unsetenv directly and manage restoration ourselves.
+	prior, had := os.LookupEnv("QUAE_EXPLAIN")
+	if err := os.Unsetenv("QUAE_EXPLAIN"); err != nil {
+		t.Fatalf("os.Unsetenv: %v", err)
+	}
+	t.Cleanup(func() {
+		if had {
+			_ = os.Setenv("QUAE_EXPLAIN", prior)
+		} else {
+			_ = os.Unsetenv("QUAE_EXPLAIN")
+		}
+	})
+
+	projectDir := writeRuleFiles(t, map[string]string{
+		"flags-miss.cue": missingKeyRule,
+	})
+	globalDir := emptyRulesDir(t)
+
+	stdin := claudeBashInput("ls")
+	res := runCLI(t, stdin,
+		"eval",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
+	}
+	if len(res.stderr) != 0 {
+		t.Errorf("QUAE_EXPLAIN unset must keep stderr empty; got %q", res.stderr)
+	}
+}
+
+// TestRun_QuaeExplain_TruthyVariants is the table-driven case for the truthy
+// set: 1, true, yes, TRUE (case-insensitive). Each must enable the env
+// fallback. Using distinct tempdirs per subtest prevents rule-cache crosstalk.
+func TestRun_QuaeExplain_TruthyVariants(t *testing.T) {
+	// Parent-level guard: a host-exported QUAE_EXPLAIN must not bleed into
+	// the first subtest before its own t.Setenv runs.
+	t.Setenv("QUAE_EXPLAIN", "")
+
+	cases := []struct {
+		name string
+		val  string
+	}{
+		{"digit_one", "1"},
+		{"true_lower", "true"},
+		{"yes_lower", "yes"},
+		{"true_upper", "TRUE"},
+		{"yes_upper", "YES"},
+		{"true_mixed", "True"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("QUAE_EXPLAIN", tc.val)
+
+			projectDir := writeRuleFiles(t, map[string]string{
+				"flags-miss.cue": missingKeyRule,
+			})
+			globalDir := emptyRulesDir(t)
+
+			stdin := claudeBashInput("ls")
+			res := runCLI(t, stdin,
+				"eval",
+				"--harness", "claude",
+				"--config", projectDir,
+				"--global-config", globalDir,
+			)
+
+			if res.exit != 0 {
+				t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
+			}
+			if !strings.Contains(string(res.stderr), "E0201") {
+				t.Errorf("QUAE_EXPLAIN=%q must enable missed diagnostics (E0201); stderr=%q",
+					tc.val, res.stderr)
+			}
+		})
+	}
+}
+
+// TestRun_QuaeExplain_NonTruthyVariants is the table-driven case for non-truthy
+// values. Each must leave the fallback off, producing empty stderr. Guards
+// against sloppy truthiness logic that might treat any non-empty value as on,
+// or lowercase-only matching that would miss TRUE/YES but accept "bogus".
+//
+// The filter-mode words ("fired", "missed", "both") are included as NON-truthy
+// to pin that the env var is a truthiness flag, NOT a filter-mode channel — a
+// naive implementation that reused --explain's Set() parser on $QUAE_EXPLAIN
+// would wrongly treat these as valid filter modes and enable explain.
+func TestRun_QuaeExplain_NonTruthyVariants(t *testing.T) {
+	// Parent-level guard: a host-exported QUAE_EXPLAIN must not bleed into
+	// the first subtest before its own t.Setenv runs.
+	t.Setenv("QUAE_EXPLAIN", "")
+
+	cases := []struct {
+		name string
+		val  string
+	}{
+		{"digit_zero", "0"},
+		{"false_lower", "false"},
+		{"no_lower", "no"},
+		{"empty", ""},
+		{"arbitrary", "bogus"},
+		{"false_upper", "FALSE"},
+		{"no_upper", "NO"},
+		{"filter_word_fired", "fired"},
+		{"filter_word_missed", "missed"},
+		{"filter_word_both", "both"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("QUAE_EXPLAIN", tc.val)
+
+			projectDir := writeRuleFiles(t, map[string]string{
+				"flags-miss.cue": missingKeyRule,
+			})
+			globalDir := emptyRulesDir(t)
+
+			stdin := claudeBashInput("ls")
+			res := runCLI(t, stdin,
+				"eval",
+				"--harness", "claude",
+				"--config", projectDir,
+				"--global-config", globalDir,
+			)
+
+			if res.exit != 0 {
+				t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
+			}
+			if len(res.stderr) != 0 {
+				t.Errorf("QUAE_EXPLAIN=%q must leave explain disabled; got stderr=%q",
+					tc.val, res.stderr)
+			}
+		})
+	}
+}
+
+// normalizeTempPaths replaces occurrences of the project and global tempdirs
+// in a byte slice with stable placeholders so byte-level comparisons across
+// runs (each with its own t.TempDir()) are not trivially broken by distinct
+// path prefixes.
+func normalizeTempPaths(b []byte, projectDir, globalDir string) []byte {
+	out := bytes.ReplaceAll(b, []byte(projectDir), []byte("<PROJECT>"))
+	out = bytes.ReplaceAll(out, []byte(globalDir), []byte("<GLOBAL>"))
+	return out
+}
+
+// TestRun_QuaeExplain_EquivalentToMissedFlag is the H1 equivalence anchor:
+// QUAE_EXPLAIN=1 and --explain=missed must produce byte-identical stderr
+// given identical input and rule contents. Tempdir paths (project AND global)
+// are normalized out before the comparison so the two runs' distinct
+// t.TempDir()s don't trivially diverge on path prefix.
+//
+// This is the env-first, then flag-first ordering. Its sibling
+// TestRun_QuaeExplain_EquivalentToMissedFlag_ReverseOrder swaps the order to
+// prove symmetry — neither ordering should be able to mask a sticky-toggle
+// bug in the evaluator's package-level state.
+func TestRun_QuaeExplain_EquivalentToMissedFlag(t *testing.T) {
+	stdin := claudeBashInput("ls")
+
+	// Run A: env-driven.
+	envProjectDir := writeRuleFiles(t, map[string]string{
+		"flags-miss.cue": missingKeyRule,
+	})
+	envGlobalDir := emptyRulesDir(t)
+	t.Setenv("QUAE_EXPLAIN", "1")
+	envRun := runCLI(t, stdin,
+		"eval",
+		"--harness", "claude",
+		"--config", envProjectDir,
+		"--global-config", envGlobalDir,
+	)
+	if envRun.exit != 0 {
+		t.Fatalf("env run exit=%d want 0; stderr=%s", envRun.exit, envRun.stderr)
+	}
+
+	// Run B: flag-driven — unset env here so the comparison is strictly
+	// env-only vs flag-only.
+	t.Setenv("QUAE_EXPLAIN", "")
+	flagProjectDir := writeRuleFiles(t, map[string]string{
+		"flags-miss.cue": missingKeyRule,
+	})
+	flagGlobalDir := emptyRulesDir(t)
+	flagRun := runCLI(t, stdin,
+		"eval",
+		"--harness", "claude",
+		"--config", flagProjectDir,
+		"--global-config", flagGlobalDir,
+		"--explain=missed",
+	)
+	if flagRun.exit != 0 {
+		t.Fatalf("flag run exit=%d want 0; stderr=%s", flagRun.exit, flagRun.stderr)
+	}
+
+	envNorm := normalizeTempPaths(envRun.stderr, envProjectDir, envGlobalDir)
+	flagNorm := normalizeTempPaths(flagRun.stderr, flagProjectDir, flagGlobalDir)
+	if !bytes.Equal(envNorm, flagNorm) {
+		t.Errorf("QUAE_EXPLAIN=1 stderr must match --explain=missed stderr;\n env=%s\n flag=%s",
+			envNorm, flagNorm)
+	}
+
+	// Sanity: both must have emitted E0201.
+	if !strings.Contains(string(envRun.stderr), "E0201") {
+		t.Errorf("env run should carry E0201; stderr=%q", envRun.stderr)
+	}
+	if !strings.Contains(string(flagRun.stderr), "E0201") {
+		t.Errorf("flag run should carry E0201; stderr=%q", flagRun.stderr)
+	}
+}
+
+// TestRun_QuaeExplain_EquivalentToMissedFlag_ReverseOrder swaps the execution
+// order of the equivalence test: flag FIRST, then env-only. Proves symmetry.
+// If the evaluator had a sticky-toggle bug (e.g. explainToggle latches once
+// set and never resets), the original env-first ordering could mask it —
+// a flag-driven second run would re-enable via flag and hide the leak. This
+// variant's second run relies solely on env-driven enablement, so any sticky
+// state from the first run cannot paper over an env-path regression.
+func TestRun_QuaeExplain_EquivalentToMissedFlag_ReverseOrder(t *testing.T) {
+	stdin := claudeBashInput("ls")
+
+	// Run A: flag-driven. Env explicitly cleared so enablement is flag-only.
+	t.Setenv("QUAE_EXPLAIN", "")
+	flagProjectDir := writeRuleFiles(t, map[string]string{
+		"flags-miss.cue": missingKeyRule,
+	})
+	flagGlobalDir := emptyRulesDir(t)
+	flagRun := runCLI(t, stdin,
+		"eval",
+		"--harness", "claude",
+		"--config", flagProjectDir,
+		"--global-config", flagGlobalDir,
+		"--explain=missed",
+	)
+	if flagRun.exit != 0 {
+		t.Fatalf("flag run exit=%d want 0; stderr=%s", flagRun.exit, flagRun.stderr)
+	}
+
+	// Run B: env-driven. No flag — enablement must come purely from env.
+	envProjectDir := writeRuleFiles(t, map[string]string{
+		"flags-miss.cue": missingKeyRule,
+	})
+	envGlobalDir := emptyRulesDir(t)
+	t.Setenv("QUAE_EXPLAIN", "1")
+	envRun := runCLI(t, stdin,
+		"eval",
+		"--harness", "claude",
+		"--config", envProjectDir,
+		"--global-config", envGlobalDir,
+	)
+	if envRun.exit != 0 {
+		t.Fatalf("env run exit=%d want 0; stderr=%s", envRun.exit, envRun.stderr)
+	}
+
+	flagNorm := normalizeTempPaths(flagRun.stderr, flagProjectDir, flagGlobalDir)
+	envNorm := normalizeTempPaths(envRun.stderr, envProjectDir, envGlobalDir)
+	if !bytes.Equal(flagNorm, envNorm) {
+		t.Errorf("reverse-order: --explain=missed stderr must match QUAE_EXPLAIN=1 stderr;\n flag=%s\n env=%s",
+			flagNorm, envNorm)
+	}
+	if !strings.Contains(string(flagRun.stderr), "E0201") {
+		t.Errorf("flag run should carry E0201; stderr=%q", flagRun.stderr)
+	}
+	if !strings.Contains(string(envRun.stderr), "E0201") {
+		t.Errorf("env run should carry E0201; stderr=%q", envRun.stderr)
+	}
+}
+
+// TestRun_QuaeExplain_FlagMissedWinsOverEnv is the H2 mirror to
+// TestRun_QuaeExplain_FlagWinsOverEnv: --explain=missed combined with
+// QUAE_EXPLAIN=1 must produce missed-only output (no fired trace). A bug
+// where env-driven enablement widens a restrictive flag (e.g. env OR flag
+// instead of flag-wins) would leak the fired rule_id into stderr.
+func TestRun_QuaeExplain_FlagMissedWinsOverEnv(t *testing.T) {
+	t.Setenv("QUAE_EXPLAIN", "1")
+
+	projectDir := writeRuleFiles(t, map[string]string{
+		"ask.cue":        askOnBashRule,
+		"flags-miss.cue": missingKeyRule,
+	})
+	globalDir := emptyRulesDir(t)
+
+	stdin := claudeBashInput("ls")
+	res := runCLI(t, stdin,
+		"eval",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+		"--explain=missed",
+	)
+
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
+	}
+	stderrStr := string(res.stderr)
+	// Missed E-code must appear.
+	if !strings.Contains(stderrStr, "E0201") {
+		t.Errorf("--explain=missed must include missed E0201; stderr=%q", stderrStr)
+	}
+	// Fired rule_id must NOT appear. If env widened the filter to `both`
+	// (or env's enablement OR'd with flag's filter to yield fired output),
+	// this would trip.
+	if strings.Contains(stderrStr, "ask-bash") {
+		t.Errorf("--explain=missed with QUAE_EXPLAIN=1 must suppress fired traces (flag wins); got `ask-bash` in stderr=%q",
+			stderrStr)
+	}
+}
+
+// TestRun_QuaeExplain_EnvResetsBetweenRuns mirrors T7's ToggleResetsBetweenRuns
+// for the env-driven path: a first run enables explain via QUAE_EXPLAIN=1, a
+// second run in the same process with env cleared (and no flag) must produce
+// empty stderr. Guards against env-driven enablement leaking into subsequent
+// run() invocations as sticky state (e.g. if the implementation reads
+// QUAE_EXPLAIN once into a package-level latch and never clears it on
+// subsequent calls where the env is no longer truthy).
+func TestRun_QuaeExplain_EnvResetsBetweenRuns(t *testing.T) {
+	projectDir := writeRuleFiles(t, map[string]string{
+		"flags-miss.cue": missingKeyRule,
+	})
+	globalDir := emptyRulesDir(t)
+	stdin := claudeBashInput("ls")
+
+	// First run: QUAE_EXPLAIN=1 → stderr should carry a diagnostic.
+	t.Setenv("QUAE_EXPLAIN", "1")
+	first := runCLI(t, stdin,
+		"eval",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+	if first.exit != 0 {
+		t.Fatalf("first run exit=%d want 0; stderr=%s", first.exit, first.stderr)
+	}
+	if len(first.stderr) == 0 {
+		t.Fatalf("first run (QUAE_EXPLAIN=1) should emit diagnostics; got empty stderr")
+	}
+
+	// Second run: env cleared, no flag → stderr must be empty. If the CLI
+	// latched enablement from the first run's env and never reset, localize
+	// would keep firing here.
+	t.Setenv("QUAE_EXPLAIN", "")
+	second := runCLI(t, stdin,
+		"eval",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+	if second.exit != 0 {
+		t.Fatalf("second run exit=%d want 0; stderr=%s", second.exit, second.stderr)
+	}
+	if len(second.stderr) != 0 {
+		t.Errorf("second run (QUAE_EXPLAIN cleared, no flag) must have empty stderr; env-leak detected. stderr=%q",
+			second.stderr)
+	}
+
+	// Third run: still env cleared, still no flag. Makes the assertion robust
+	// against a future impl that only flips the toggle on the first couple of
+	// calls.
+	third := runCLI(t, stdin,
+		"eval",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+	if third.exit != 0 {
+		t.Fatalf("third run exit=%d want 0; stderr=%s", third.exit, third.stderr)
+	}
+	if len(third.stderr) != 0 {
+		t.Errorf("third run (QUAE_EXPLAIN cleared, no flag) must have empty stderr; env-leak detected. stderr=%q",
+			third.stderr)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// quae explain <rule_id> subcommand (T9)
+// -----------------------------------------------------------------------------
+//
+// `quae explain <rule_id> < input.json` runs ONE named rule against the stdin
+// input. Unlike `quae eval`, the subcommand uses the exit code to encode
+// match/no-match:
+//
+//   exit 0 → rule matched; stderr empty; stdout empty (no --render yet)
+//   exit 1 → rule did not match; diagnostic on stderr (implicit explain on)
+//   exit 2 → engine error (unknown rule_id, bad stdin JSON, missing arg, etc.)
+//
+// Resolution: rule_id is looked up across both global and project rule sets.
+// When the same rule_id exists in both, project wins (narrower scope
+// overrides global, matching the two-phase override semantics). The
+// implementer should document this choice.
+
+// explainCmdRuleGlobalOnly is a match-on-Bash rule with rule_id `global-only`.
+// Used to assert `quae explain` resolves rule_id against the global set.
+const explainCmdRuleGlobalOnly = `package rules
+
+rule: {
+	when: {
+		hook_event_name: "PreToolUse"
+		tool_name:       "Bash"
+	}
+	then: ask: {
+		rule_id:  "global-only"
+		reason:   "global fires"
+		question: "proceed?"
+	}
+}
+`
+
+// explainCmdRuleProjectOnly mirrors the shape of the global-only fixture but
+// lives only in the project set and has rule_id `project-only`.
+const explainCmdRuleProjectOnly = `package rules
+
+rule: {
+	when: {
+		hook_event_name: "PreToolUse"
+		tool_name:       "Bash"
+	}
+	then: ask: {
+		rule_id:  "project-only"
+		reason:   "project fires"
+		question: "proceed?"
+	}
+}
+`
+
+// explainCmdRuleAmbiguousGlobal and explainCmdRuleAmbiguousProject share a
+// rule_id (`shared-id`) but distinct reasons so a test can tell which ruleset
+// was chosen when both sets contain the same id.
+const explainCmdRuleAmbiguousGlobal = `package rules
+
+rule: {
+	when: {
+		hook_event_name: "PreToolUse"
+		tool_name:       "Bash"
+	}
+	then: ask: {
+		rule_id:  "shared-id"
+		reason:   "from-global"
+		question: "proceed?"
+	}
+}
+`
+
+// TestRun_ExplainCmd_MatchingRule_ExitZero is the positive path: a matching
+// rule resolves by id, the subcommand returns exit 0, and stderr stays empty.
+// stdout is empty for T9 (no --render flag); see scope.md line 316 for the stdout contract.
+func TestRun_ExplainCmd_MatchingRule_ExitZero(t *testing.T) {
+	projectDir := writeRuleFiles(t, map[string]string{
+		"ask.cue": askOnBashRule,
+	})
+	globalDir := emptyRulesDir(t)
+
+	res := runCLI(t, claudeBashInput("ls"),
+		"explain", "ask-bash",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s stdout=%s", res.exit, res.stderr, res.stdout)
+	}
+	if len(res.stderr) != 0 {
+		t.Errorf("matching rule: stderr must be empty; got %q", res.stderr)
+	}
+	if len(res.stdout) != 0 {
+		t.Errorf("matching rule without --render: stdout must be empty; got %q", res.stdout)
+	}
+}
+
+// TestRun_ExplainCmd_NonMatchingRule_ExitOne covers the no-match branch: the
+// rule exists but its `when` doesn't subsume the input. Exit code 1, and a
+// diagnostic (E-code + file:line:col) must appear on stderr — the subcommand
+// has implicit explain-on behavior regardless of any --explain flag.
+func TestRun_ExplainCmd_NonMatchingRule_ExitOne(t *testing.T) {
+	projectDir := writeRuleFiles(t, map[string]string{
+		"flags-miss.cue": missingKeyRule,
+	})
+	globalDir := emptyRulesDir(t)
+
+	res := runCLI(t, claudeBashInput("ls"),
+		"explain", "flags-rule",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+
+	if res.exit != 1 {
+		t.Fatalf("exit=%d want 1 (no-match); stderr=%s stdout=%s",
+			res.exit, res.stderr, res.stdout)
+	}
+	if len(res.stderr) == 0 {
+		t.Fatalf("no-match: stderr must carry a diagnostic, got empty")
+	}
+	if got := strings.Count(string(res.stderr), "E0201"); got != 1 {
+		t.Errorf("want exactly one E0201 in stderr, got %d; stderr=%q", got, res.stderr)
+	}
+	if _, _, ok := parseExplainLineCol(res.stderr); !ok {
+		t.Errorf("no-match stderr must carry `<file>.cue:<line>:<col>` position anchor; got %q",
+			res.stderr)
+	}
+}
+
+// TestRun_ExplainCmd_MissingRuleID_ExitTwo covers the engine-error branch for
+// an unknown rule_id. Exit 2 and stderr must name the rule_id that was not
+// found. The error is NOT a diagnostic (no E-code expected) — it's a CLI
+// resolution error.
+func TestRun_ExplainCmd_MissingRuleID_ExitTwo(t *testing.T) {
+	projectDir := writeRuleFiles(t, map[string]string{
+		"ask.cue": askOnBashRule,
+	})
+	globalDir := emptyRulesDir(t)
+
+	res := runCLI(t, claudeBashInput("ls"),
+		"explain", "does-not-exist",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+
+	if res.exit != 2 {
+		t.Fatalf("exit=%d want 2 (engine error); stderr=%s", res.exit, res.stderr)
+	}
+	if !strings.Contains(string(res.stderr), "does-not-exist") {
+		t.Errorf("stderr must name the unresolved rule_id `does-not-exist`; got %q", res.stderr)
+	}
+	if strings.Contains(string(res.stderr), "E02") || strings.Contains(string(res.stderr), "error[E") {
+		t.Errorf("missing rule_id is an engine error, must not emit a localize diagnostic; stderr=%q", res.stderr)
+	}
+}
+
+// TestRun_ExplainCmd_NoRuleIDArg_ExitTwo asserts the subcommand refuses to run
+// without a rule_id positional arg. Must NOT silently pick the first rule.
+func TestRun_ExplainCmd_NoRuleIDArg_ExitTwo(t *testing.T) {
+	projectDir := writeRuleFiles(t, map[string]string{
+		"ask.cue": askOnBashRule,
+	})
+	globalDir := emptyRulesDir(t)
+
+	res := runCLI(t, claudeBashInput("ls"),
+		"explain",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+
+	if res.exit != 2 {
+		t.Fatalf("exit=%d want 2 (usage error); stderr=%s stdout=%s",
+			res.exit, res.stderr, res.stdout)
+	}
+	if len(res.stderr) == 0 {
+		t.Fatalf("missing rule_id must print a usage diagnostic on stderr; got empty")
+	}
+	// Positive: usage-style wording must name the missing arg.
+	stderrStr := string(res.stderr)
+	if !strings.Contains(stderrStr, "rule_id") && !strings.Contains(stderrStr, "usage") {
+		t.Errorf("stderr must mention `rule_id` or `usage`; got %q", res.stderr)
+	}
+	// Negative: a silent fallthrough that picked the first rule would emit an
+	// E-code (localize diagnostic) or reference an existing fixture rule_id.
+	if strings.Contains(stderrStr, "error[E") || strings.Contains(stderrStr, "E02") {
+		t.Errorf("no-arg must be a usage error, not a localize diagnostic; stderr=%q", res.stderr)
+	}
+	if strings.Contains(stderrStr, "ask-bash") {
+		t.Errorf("no-arg must not silently execute the first rule (found fixture rule_id `ask-bash` in stderr); stderr=%q", res.stderr)
+	}
+}
+
+// TestRun_ExplainCmd_MalformedStdin_ExitTwo covers the engine-error branch
+// for malformed stdin JSON. The subcommand cannot produce a cue.Value from
+// "not json" and must exit 2 with a parse/decode diagnostic on stderr.
+func TestRun_ExplainCmd_MalformedStdin_ExitTwo(t *testing.T) {
+	projectDir := writeRuleFiles(t, map[string]string{
+		"ask.cue": askOnBashRule,
+	})
+	globalDir := emptyRulesDir(t)
+
+	res := runCLI(t, []byte("not json"),
+		"explain", "ask-bash",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+
+	if res.exit != 2 {
+		t.Fatalf("exit=%d want 2 (engine error on malformed stdin); stderr=%s",
+			res.exit, res.stderr)
+	}
+	if len(res.stderr) == 0 {
+		t.Errorf("malformed stdin must surface an error on stderr; got empty")
+	}
+}
+
+// TestRun_ExplainCmd_DiagnosticPrintedWithoutExplainFlag pins the implicit
+// explain-on contract: the subcommand always renders its no-match diagnostic,
+// even without --explain. Contrast with `quae eval` where the absent flag
+// yields empty stderr on non-match.
+func TestRun_ExplainCmd_DiagnosticPrintedWithoutExplainFlag(t *testing.T) {
+	projectDir := writeRuleFiles(t, map[string]string{
+		"flags-miss.cue": missingKeyRule,
+	})
+	globalDir := emptyRulesDir(t)
+
+	// No --explain flag anywhere in args.
+	res := runCLI(t, claudeBashInput("ls"),
+		"explain", "flags-rule",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+
+	if res.exit != 1 {
+		t.Fatalf("exit=%d want 1 (no-match); stderr=%s", res.exit, res.stderr)
+	}
+	if len(res.stderr) == 0 {
+		t.Fatalf("explain subcmd must print diagnostic on no-match even without --explain; stderr empty")
+	}
+	if got := strings.Count(string(res.stderr), "E0201"); got != 1 {
+		t.Errorf("want exactly one E0201 in stderr, got %d; stderr=%q", got, res.stderr)
+	}
+}
+
+// TestRun_ExplainCmd_ResolvesGlobalRuleID asserts rule_id resolution walks the
+// global rules dir. A rule living in globalDir only must still be findable.
+// Pinned by BOTH exit 0 and empty stdout — explain subcmd doesn't emit a
+// vendor envelope, so a raw eval-path fallthrough would fail the stdout check.
+func TestRun_ExplainCmd_ResolvesGlobalRuleID(t *testing.T) {
+	projectDir := emptyRulesDir(t)
+	globalDir := writeRuleFiles(t, map[string]string{
+		"global.cue": explainCmdRuleGlobalOnly,
+	})
+
+	res := runCLI(t, claudeBashInput("ls"),
+		"explain", "global-only",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0 (rule in global resolves + matches); stderr=%s",
+			res.exit, res.stderr)
+	}
+	if len(res.stderr) != 0 {
+		t.Errorf("match from global rule: stderr must be empty; got %q", res.stderr)
+	}
+	// Anchor: explain subcmd must NOT emit the vendor envelope on stdout.
+	// A raw eval-path fallthrough would pollute stdout with JSON.
+	if len(res.stdout) != 0 {
+		t.Errorf("explain subcmd (match): stdout must be empty; got %q", res.stdout)
+	}
+}
+
+// TestRun_ExplainCmd_ResolvesProjectRuleID is the symmetric test: rule in
+// projectDir only must resolve.
+func TestRun_ExplainCmd_ResolvesProjectRuleID(t *testing.T) {
+	projectDir := writeRuleFiles(t, map[string]string{
+		"project.cue": explainCmdRuleProjectOnly,
+	})
+	globalDir := emptyRulesDir(t)
+
+	res := runCLI(t, claudeBashInput("ls"),
+		"explain", "project-only",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0 (rule in project resolves + matches); stderr=%s",
+			res.exit, res.stderr)
+	}
+	if len(res.stderr) != 0 {
+		t.Errorf("match from project rule: stderr must be empty; got %q", res.stderr)
+	}
+	if len(res.stdout) != 0 {
+		t.Errorf("explain subcmd (match): stdout must be empty; got %q", res.stdout)
+	}
+}
+
+// TestRun_ExplainCmd_ResolvesFromEitherSide_BothPopulated proves the resolver
+// walks BOTH rule sets when BOTH are populated with distinct ids. The single-
+// sided cases above could pass if the resolver only visited whichever set is
+// non-empty; this pins that both are always searched.
+func TestRun_ExplainCmd_ResolvesFromEitherSide_BothPopulated(t *testing.T) {
+	globalDir := writeRuleFiles(t, map[string]string{
+		"global.cue": strings.ReplaceAll(explainCmdRuleGlobalOnly, `"global-only"`, `"global-side"`),
+	})
+	projectDir := writeRuleFiles(t, map[string]string{
+		"project.cue": strings.ReplaceAll(explainCmdRuleProjectOnly, `"project-only"`, `"project-side"`),
+	})
+
+	first := runCLI(t, claudeBashInput("ls"),
+		"explain", "global-side",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+	if first.exit != 0 {
+		t.Fatalf("global-side: exit=%d want 0; stderr=%s", first.exit, first.stderr)
+	}
+	if len(first.stderr) != 0 {
+		t.Errorf("global-side match: stderr must be empty; got %q", first.stderr)
+	}
+	// Anchor the subcmd contract: no eval-path fallthrough (empty stdout, no envelope).
+	if len(first.stdout) != 0 {
+		t.Errorf("global-side match: stdout must be empty (no vendor envelope); got %q", first.stdout)
+	}
+
+	second := runCLI(t, claudeBashInput("ls"),
+		"explain", "project-side",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+	if second.exit != 0 {
+		t.Fatalf("project-side: exit=%d want 0; stderr=%s", second.exit, second.stderr)
+	}
+	if len(second.stderr) != 0 {
+		t.Errorf("project-side match: stderr must be empty; got %q", second.stderr)
+	}
+	if len(second.stdout) != 0 {
+		t.Errorf("project-side match: stdout must be empty (no vendor envelope); got %q", second.stdout)
+	}
+}
+
+// TestRun_ExplainCmd_AmbiguousRuleID_ProjectWins pins the tie-break: when the
+// same rule_id lives in both global and project sets, the project rule is
+// selected. Matches the two-phase override semantics where project effects
+// override global. Implementer: document this choice.
+//
+// To distinguish which rule ran, both fixtures match the same input (so exit
+// code alone can't tell them apart) but carry distinct reasons. Since T9's
+// stdout is empty on match, we can't probe the reason directly — instead we
+// make the project rule NOT match (swap a field) and assert exit 1 proving
+// project was chosen, while global would have matched.
+func TestRun_ExplainCmd_AmbiguousRuleID_ProjectWins(t *testing.T) {
+	// Project's shared-id rule requires flags.force (never present) → would
+	// NOT match a plain Bash payload. Global's shared-id rule matches any
+	// Bash payload. If project wins, exit 1 (project didn't match). If
+	// global wins, exit 0.
+	projectDir := writeRuleFiles(t, map[string]string{
+		"shared.cue": strings.ReplaceAll(missingKeyRule, `"flags-rule"`, `"shared-id"`),
+	})
+	globalDir := writeRuleFiles(t, map[string]string{
+		"shared.cue": explainCmdRuleAmbiguousGlobal,
+	})
+
+	res := runCLI(t, claudeBashInput("ls"),
+		"explain", "shared-id",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+
+	if res.exit != 1 {
+		t.Fatalf("exit=%d want 1 (project `shared-id` misses, proving project wins over global); stderr=%s",
+			res.exit, res.stderr)
+	}
+	if len(res.stderr) == 0 {
+		t.Errorf("ambiguous-id project-wins no-match: stderr must carry diagnostic; got empty")
+	}
+}
+
+// TestRun_ExplainCmd_DenyRule_StillExitsZeroOnMatch pins the contract boundary
+// between T7's --explain (which never flips exit code — eval decision stands)
+// and T9's explain subcommand (which DOES use exit code for match/no-match).
+// A deny-rule that matches the input yields exit 0 from `quae explain` — the
+// match succeeded; the deny decision is irrelevant to the subcommand's exit.
+func TestRun_ExplainCmd_DenyRule_StillExitsZeroOnMatch(t *testing.T) {
+	projectDir := writeRuleFiles(t, map[string]string{
+		"system.cue": denySystemTargetRule,
+	})
+	globalDir := emptyRulesDir(t)
+
+	// denySystemTargetRule's rule_id is "r1"; input matches (system target).
+	res := runCLI(t, claudeBashInput("rm -rf /etc/passwd"),
+		"explain", "r1",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0 (deny rule matched = match, not an error); stderr=%s",
+			res.exit, res.stderr)
+	}
+	if len(res.stderr) != 0 {
+		t.Errorf("deny-rule match: stderr must be empty; got %q", res.stderr)
+	}
+	// Anchor the subcommand contract: stdout must be empty (no vendor envelope).
+	// This also distinguishes the subcmd path from a raw eval-path fallthrough
+	// that would print a deny envelope to stdout.
+	if len(res.stdout) != 0 {
+		t.Errorf("explain subcmd (match): stdout must be empty; got %q", res.stdout)
+	}
+}
+
+// TestRun_ExplainCmd_DoesNotLeakToggleIntoEval is the leak guard: the explain
+// subcommand flips the evaluator's package-level explain toggle on internally
+// (to render diagnostics on no-match). A subsequent `quae eval` without
+// --explain in the same process must NOT see leaked diagnostics on stderr.
+// Mirrors TestRun_Explain_ToggleResetsBetweenRuns for the subcommand entry.
+func TestRun_ExplainCmd_DoesNotLeakToggleIntoEval(t *testing.T) {
+	projectDir := writeRuleFiles(t, map[string]string{
+		"flags-miss.cue": missingKeyRule,
+	})
+	globalDir := emptyRulesDir(t)
+
+	stdin := claudeBashInput("ls")
+
+	// First: run the explain subcommand on a non-matching rule. Toggle is
+	// set internally for localization; stderr should carry the diagnostic.
+	first := runCLI(t, stdin,
+		"explain", "flags-rule",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+	if first.exit != 1 {
+		t.Fatalf("first (explain subcmd) exit=%d want 1; stderr=%s", first.exit, first.stderr)
+	}
+	if len(first.stderr) == 0 {
+		t.Fatalf("first (explain subcmd) should emit diagnostics; got empty stderr")
+	}
+
+	// Second: run `quae eval` without --explain. Stderr must stay empty —
+	// otherwise the subcommand leaked its toggle into the eval path.
+	second := runCLI(t, stdin,
+		"eval",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+	if second.exit != 0 {
+		t.Fatalf("second (eval no-flag) exit=%d want 0; stderr=%s", second.exit, second.stderr)
+	}
+	if len(second.stderr) != 0 {
+		t.Errorf("explain subcommand leaked evaluator toggle into subsequent eval; stderr=%q",
+			second.stderr)
+	}
+
+	// Third: positive control — run `quae eval --explain=missed` on the same
+	// rule set. Stderr MUST be non-empty, proving the eval path is capable of
+	// emitting diagnostics when the flag is set. If run 2 was empty because of
+	// a broken pipeline (not a sealed toggle), this run would also be empty.
+	third := runCLI(t, stdin,
+		"eval",
+		"--explain=missed",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+	if third.exit != 0 {
+		t.Fatalf("third (eval --explain=missed) exit=%d want 0; stderr=%s", third.exit, third.stderr)
+	}
+	if len(third.stderr) == 0 {
+		t.Errorf("positive control: eval --explain=missed must emit diagnostics, got empty stderr (run 2's emptiness is not meaningful)")
+	}
+}

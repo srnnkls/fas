@@ -107,6 +107,77 @@ batch_reviews:
       so existing errors.As(err, &cueErr) callers continue to work.
       E0503 help wording flipped to match lint direction.
 
+  - batch: 6
+    tasks: [T8, T9]
+    commit: pending
+    reviewers:
+      - id: test-reviewer-claude-T8
+        status: completed
+        phase: A.5
+        outcome: changes_requested
+        gates: { test_quality: fail }
+        issues: { critical: 1, high: 2, medium: 3, low: 2 }
+        fix:
+          - resolved: [C1 actual unset via os.Unsetenv+Cleanup, H1 equivalence order swap, H2 flag=missed mirror, M1 parent Setenv guard, M2 "fired"/"missed"/"both" as non-truthy, M3 env reset between runs, L1 globalDir normalize, L2 drop lookupEnv wrapper]
+      - id: test-reviewer-claude-T9
+        status: completed
+        phase: A.5
+        outcome: changes_requested
+        gates: { test_quality: fail }
+        issues: { critical: 0, high: 2, medium: 3, low: 2 }
+        fix:
+          - resolved: [H1 E0201 count==1, H2 NoRuleIDArg positive+negative asserts, M1 MissingRuleID no E-code, M2 both-dirs-populated cross-resolution, M3 toggle-leak positive control, L1 delete unused fixtures, L2 stdout-contract anchor comment]
+      - id: code-reviewer-claude-T8
+        status: completed
+        phase: C
+        outcome: approved_after_fix
+        gates:
+          correctness: pass
+          security: pass
+          performance: pass
+          architecture: pass
+          style: pass
+        issues: { critical: 0, high: 0, medium: 1, low: 1 }
+        fix:
+          - resolved: [M1 writeUsage documents QUAE_EXPLAIN in a new Environment block]
+          - deferred: [L1 isTruthyEnv style uniformity]
+      - id: code-reviewer-claude-T9
+        status: completed
+        phase: C
+        outcome: approved_after_fix
+        gates:
+          correctness: pass
+          security: pass
+          performance: pass
+          architecture: pass
+          style: pass
+        issues: { critical: 0, high: 0, medium: 2, low: 3 }
+        fix:
+          - resolved: [M2 errors.Is(err, ErrInvalidInput) before generic err path, L3 writeUsage documents positional-first rule_id + implicit --explain=missed + stdin required]
+          - deferred: [M1 flag-before-positional form (documented constraint, low-risk), L1 flag duplication between runExplain and parseFlags, L2 findRuleByID variadic vs positional]
+    synthesized:
+      gates:
+        correctness: pass
+        security: pass
+        performance: pass
+        architecture: pass
+        style: pass
+      critical_issues: 0
+      high_issues: 0
+      medium_issues: 4
+      low_issues: 5
+    outcome: approved_after_fix
+    notes: |
+      T8+T9 executed in parallel with the user's explicit preference to
+      disregard same-file merge concerns. Four distinct Phase A.5 + Phase C
+      subagents ran with no conflicts because each scoped its edits
+      narrowly: T8 touched cliOptions area + isTruthyEnv; T9 touched the
+      top-of-run dispatch + new runExplain/findRuleByID. Post-review fixes
+      were applied directly to main.go (writeUsage QUAE_EXPLAIN
+      Environment block + positional-first & implicit-explain guidance;
+      ErrInvalidInput sentinel check in runExplain) rather than spawning
+      another loop. All 24 combined T8+T9 tests pass; full suite green.
+
   - batch: 5
     tasks: [T7]
     commit: pending
@@ -205,6 +276,23 @@ batch_reviews:
       iter.Seq break semantics locked by paired CallerBreak + NoBreak tests.
 
 deferred_issues:
+  - batch: 6
+    severity: medium
+    file: cmd/quae/main.go
+    description: "`quae explain --harness claude myrule` (flag-before-positional) is rejected by the `strings.HasPrefix(args[0], \"-\")` guard. Documented in writeUsage as positional-first; consider walking args for the first non-flag token in a follow-up."
+  - batch: 6
+    severity: low
+    file: cmd/quae/main.go
+    description: isTruthyEnv uses `v == \"1\"` literal for digit branch and strings.EqualFold for word forms — minor asymmetry, tests pin exact behavior
+  - batch: 6
+    severity: low
+    file: cmd/quae/main.go
+    description: flag duplication between runExplain's private FlagSet and parseFlags (harness/config/global-config); consolidate with a shared registerCommonFlags helper after T9 lands
+  - batch: 6
+    severity: low
+    file: cmd/quae/main.go
+    description: findRuleByID is variadic `...[]config.Rule` but both call sites pass at most two; positional `(project, global []config.Rule)` would make project-wins self-documenting
+
   - batch: 5
     severity: medium
     file: cmd/quae/main.go
