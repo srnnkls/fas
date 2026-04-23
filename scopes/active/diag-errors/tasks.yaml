@@ -160,7 +160,7 @@ tasks:
     files:
       - cmd/quae/main.go
       - cmd/quae/main_test.go
-    status: pending
+    status: completed
     depends_on: [T6]
     test_hints:
       - `--explain` with one non-firing rule → one diagnostic on stderr.

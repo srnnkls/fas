@@ -107,6 +107,58 @@ batch_reviews:
       so existing errors.As(err, &cueErr) callers continue to work.
       E0503 help wording flipped to match lint direction.
 
+  - batch: 5
+    tasks: [T7]
+    commit: pending
+    reviewers:
+      - id: test-reviewer-claude
+        status: completed
+        phase: A.5
+        outcome: changes_requested
+        gates: { test_quality: fail }
+        issues: { critical: 0, high: 3, medium: 3, low: 2 }
+        fix:
+          - resolved: [H1 bare vs explicit --explain equivalence, H2 three-rule exact-count test, H3 toggle-reset in-process documentation, M1 position-anchor within file line range, M2 fired+blocking exit-code test, M3 ordering comment, L1 exit!=0 relaxation, L2 E0201 count==1]
+      - id: code-reviewer-claude
+        status: completed
+        phase: C
+        outcome: approved_after_fix
+        gates:
+          correctness: pass
+          security: pass
+          performance: pass
+          architecture: pass
+          style: pass
+        issues: { critical: 0, high: 1, medium: 3, low: 3 }
+        fix:
+          - resolved: [H1 export config.RulesModuleRoot and drop rulesVirtualRoot duplicate, M3 ruleIDForDiag prefers full-path over basename]
+          - deferred: [M1 rule_id as Diagnostic Note inside localize, M2 fired trace via diag.Render, L1 explainOff unused, L2 renderExplain variadic arity, L3 token.Pos.Filename spelling smoke test]
+    synthesized:
+      gates:
+        correctness: pass
+        security: pass
+        performance: pass
+        architecture: pass
+        style: pass
+      critical_issues: 0
+      high_issues: 0
+      medium_issues: 2
+      low_issues: 3
+    outcome: approved_after_fix
+    notes: |
+      Phase A.5 test review caught 3 tautology/weak-assertion issues (bare
+      --explain vs explicit =missed equivalence, missing exact-count
+      assertion against scope F7 acceptance, in-process toggle-leak
+      contract). Tester back-filled before GREEN. Phase C review flagged
+      one drift risk: rulesVirtualRoot in main.go duplicated unexported
+      config.rulesModuleRoot — resolved by exporting config.RulesModuleRoot
+      (single source of truth, compile-time break on drift). M3
+      ruleIDForDiag now prefers full-path match to handle
+      global+project same-basename collisions. M1 (rule_id as Diagnostic
+      Note) and M2 (fired trace via diag.Render) deferred — both are
+      architectural cleanups that touch evaluator/localize.go and belong in
+      a follow-up rather than sprawling T7.
+
   - batch: 4
     tasks: [T6]
     commit: pending
@@ -153,6 +205,27 @@ batch_reviews:
       iter.Seq break semantics locked by paired CallerBreak + NoBreak tests.
 
 deferred_issues:
+  - batch: 5
+    severity: medium
+    file: cmd/quae/main.go
+    description: rule_id prefix for missed diagnostics printed as separate line rather than attached as a Note inside evaluator/localize.go — fractures "one renderer" invariant; consider moving into Diagnostic.Notes in a follow-up
+  - batch: 5
+    severity: medium
+    file: cmd/quae/main.go
+    description: fired traces are hand-rolled plaintext ("fired: <id> (<source>)") rather than routed through diag.Render; inconsistent visual style across --explain output
+  - batch: 5
+    severity: low
+    file: cmd/quae/main.go
+    description: explainOff const declared but only used as iota zero value; either reference it in the enabled-check or drop
+  - batch: 5
+    severity: low
+    file: cmd/quae/main.go
+    description: renderExplain takes ruleSets variadic but every caller passes exactly two slices; variadic hides arity
+  - batch: 5
+    severity: low
+    file: cmd/quae/main_test.go
+    description: no smoke test pins token.Pos.Filename spelling — if CUE overlay path changes upstream, tests pass while --explain degrades
+
   - batch: 4
     severity: medium
     file: internal/evaluator/localize.go
