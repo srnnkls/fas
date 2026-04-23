@@ -448,6 +448,292 @@ func TestRender_CaretAlignsToColumn(t *testing.T) {
 	}
 }
 
+// TestRender_TabsExpandedInSnippet: leading tabs in the source line must be
+// expanded to 4 spaces each so terminals render the snippet identically to
+// the column math, and no raw \t byte survives into the rendered output.
+func TestRender_TabsExpandedInSnippet(t *testing.T) {
+	pos := newPos(t, "r.cue", 0)
+	src := fakeSource{entries: map[token.Pos]fakeEntry{
+		pos: {line: "\t\tfoo: bar", lineNum: 1, col: 3},
+	}}
+
+	d := diag.Diagnostic{
+		Code:     "E0201",
+		Severity: diag.SeverityError,
+		Title:    "t",
+		Primary:  diag.Label{Pos: pos, Len: 3, Msg: "m"},
+	}
+
+	got := diag.Render(d, src)
+
+	if !strings.Contains(got, "        foo: bar") {
+		t.Errorf("snippet should expand leading tabs to 4 spaces each; expected `        foo: bar` in output:\n%s", got)
+	}
+	if strings.Contains(got, "\t") {
+		t.Errorf("rendered output must not contain literal tab bytes.\noutput:\n%q", got)
+	}
+}
+
+// TestRender_CaretAlignsAcrossLeadingTabs: with source indented by tabs, the
+// caret's visual column must account for tab expansion so the caret sits
+// beneath the target byte in the expanded snippet.
+func TestRender_CaretAlignsAcrossLeadingTabs(t *testing.T) {
+	pos := newPos(t, "r.cue", 0)
+	src := fakeSource{entries: map[token.Pos]fakeEntry{
+		pos: {line: "\t\tfoo: bar", lineNum: 1, col: 3},
+	}}
+
+	d := diag.Diagnostic{
+		Code:     "E0201",
+		Severity: diag.SeverityError,
+		Title:    "t",
+		Primary:  diag.Label{Pos: pos, Len: 3, Msg: "m"},
+	}
+
+	got := diag.Render(d, src)
+	caretLine := findCaretLine(t, got)
+
+	pipeIdx := strings.Index(caretLine, "|")
+	if pipeIdx < 0 {
+		t.Fatalf("caret line has no gutter pipe: %q", caretLine)
+	}
+	after := caretLine[pipeIdx+1:]
+	caretIdx := strings.Index(after, "^")
+	if caretIdx < 0 {
+		t.Fatalf("caret line has no caret character: %q", caretLine)
+	}
+
+	// byte col 3 with 2 leading tabs (tabWidth=4) → visual col 3 + 2*(4-1) = 9.
+	wantSpaces := 9
+	if caretIdx != wantSpaces {
+		t.Errorf("caret misaligned across tabs: got %d chars between `|` and `^`, want %d.\ncaret line: %q\nfull output:\n%s",
+			caretIdx, wantSpaces, caretLine, got)
+	}
+}
+
+// TestRender_CaretAlignsWithMixedTabsAndSpaces: tabs mixed with spaces before
+// the caret target must contribute 4 visual columns per tab while spaces
+// contribute one each.
+func TestRender_CaretAlignsWithMixedTabsAndSpaces(t *testing.T) {
+	pos := newPos(t, "r.cue", 0)
+	src := fakeSource{entries: map[token.Pos]fakeEntry{
+		pos: {line: "\t  foo", lineNum: 1, col: 4},
+	}}
+
+	d := diag.Diagnostic{
+		Code:     "E0201",
+		Severity: diag.SeverityError,
+		Title:    "t",
+		Primary:  diag.Label{Pos: pos, Len: 3, Msg: "m"},
+	}
+
+	got := diag.Render(d, src)
+	caretLine := findCaretLine(t, got)
+
+	pipeIdx := strings.Index(caretLine, "|")
+	if pipeIdx < 0 {
+		t.Fatalf("caret line has no gutter pipe: %q", caretLine)
+	}
+	after := caretLine[pipeIdx+1:]
+	caretIdx := strings.Index(after, "^")
+	if caretIdx < 0 {
+		t.Fatalf("caret line has no caret character: %q", caretLine)
+	}
+
+	// byte col 4 with 1 tab before target (tabWidth=4) → visual col 4 + 1*(4-1) = 7.
+	wantSpaces := 7
+	if caretIdx != wantSpaces {
+		t.Errorf("caret misaligned with mixed indent: got %d chars between `|` and `^`, want %d.\ncaret line: %q\nfull output:\n%s",
+			caretIdx, wantSpaces, caretLine, got)
+	}
+}
+
+// TestRender_NoTabs_UnchangedBehavior: tab-free sources must render exactly
+// as before (caret column == col, snippet verbatim). Pins that the fix is a
+// no-op for existing tab-free scrut snapshots.
+func TestRender_NoTabs_UnchangedBehavior(t *testing.T) {
+	pos := newPos(t, "r.cue", 0)
+	src := fakeSource{entries: map[token.Pos]fakeEntry{
+		pos: {line: "    abc", lineNum: 1, col: 5},
+	}}
+
+	d := diag.Diagnostic{
+		Code:     "E0201",
+		Severity: diag.SeverityError,
+		Title:    "t",
+		Primary:  diag.Label{Pos: pos, Len: 3, Msg: "m"},
+	}
+
+	got := diag.Render(d, src)
+
+	if !strings.Contains(got, "    abc") {
+		t.Errorf("tab-free snippet should render verbatim.\noutput:\n%s", got)
+	}
+
+	caretLine := findCaretLine(t, got)
+	pipeIdx := strings.Index(caretLine, "|")
+	if pipeIdx < 0 {
+		t.Fatalf("caret line has no gutter pipe: %q", caretLine)
+	}
+	after := caretLine[pipeIdx+1:]
+	caretIdx := strings.Index(after, "^")
+	if caretIdx < 0 {
+		t.Fatalf("caret line has no caret character: %q", caretLine)
+	}
+
+	wantSpaces := 5
+	if caretIdx != wantSpaces {
+		t.Errorf("tab-free caret column drift: got %d chars between `|` and `^`, want %d.\ncaret line: %q",
+			caretIdx, wantSpaces, caretLine)
+	}
+}
+
+// TestRender_Degraded_WithHelp_HasNoSnippet guards the template refactor: a
+// diagnostic whose Primary position is unresolved but which carries Help must
+// still emit the header, `position unknown` marker, and help line without
+// any caret or snippet.
+func TestRender_Degraded_WithHelp_HasNoSnippet(t *testing.T) {
+	pos := newPos(t, "vanished.cue", 0)
+	src := fakeSource{entries: map[token.Pos]fakeEntry{}}
+
+	d := diag.Diagnostic{
+		Code:     "E0201",
+		Severity: diag.SeverityError,
+		Title:    "degraded with help",
+		Primary:  diag.Label{Pos: pos, Len: 1, Msg: "m"},
+		Help:     "try adding the key",
+	}
+
+	got := diag.Render(d, src)
+
+	if !strings.Contains(got, "error[E0201]: degraded with help") {
+		t.Errorf("output missing header.\noutput:\n%s", got)
+	}
+	if !strings.Contains(got, "position unknown") {
+		t.Errorf("degraded output missing `position unknown` marker.\noutput:\n%s", got)
+	}
+	if !strings.Contains(got, "= help: try adding the key") {
+		t.Errorf("degraded output missing help line.\noutput:\n%s", got)
+	}
+	if strings.Contains(got, "^") {
+		t.Errorf("degraded output should not contain caret characters.\noutput:\n%s", got)
+	}
+}
+
+// TestRender_CaretAtTab_CountsOnlyTabsStrictlyBefore: the caret target byte
+// itself is a tab. Tabs are counted strictly before the caret column (a byte
+// is not "before" itself), so tabsBefore=0 and the visual column equals the
+// byte column — even though that target tab still expands in the snippet.
+func TestRender_CaretAtTab_CountsOnlyTabsStrictlyBefore(t *testing.T) {
+	pos := newPos(t, "r.cue", 0)
+	src := fakeSource{entries: map[token.Pos]fakeEntry{
+		pos: {line: "\tfoo", lineNum: 1, col: 1},
+	}}
+
+	d := diag.Diagnostic{
+		Code:     "E0201",
+		Severity: diag.SeverityError,
+		Title:    "t",
+		Primary:  diag.Label{Pos: pos, Len: 1, Msg: "m"},
+	}
+
+	got := diag.Render(d, src)
+	caretLine := findCaretLine(t, got)
+
+	pipeIdx := strings.Index(caretLine, "|")
+	if pipeIdx < 0 {
+		t.Fatalf("caret line has no gutter pipe: %q", caretLine)
+	}
+	after := caretLine[pipeIdx+1:]
+	caretIdx := strings.Index(after, "^")
+	if caretIdx < 0 {
+		t.Fatalf("caret line has no caret character: %q", caretLine)
+	}
+
+	wantSpaces := 1
+	if caretIdx != wantSpaces {
+		t.Errorf("caret at tab: got %d chars between `|` and `^`, want %d.\ncaret line: %q\nfull output:\n%s",
+			caretIdx, wantSpaces, caretLine, got)
+	}
+
+	if !strings.Contains(got, "    foo") {
+		t.Errorf("target tab must still expand in snippet; expected `    foo` in output:\n%s", got)
+	}
+}
+
+// TestRender_MultiLabel_TabsPerLineIndependent: each caret line shifts by its
+// own source line's tab count, not by the diagnostic-wide maximum or the
+// primary's count. Primary line has two leading tabs; note line has none.
+func TestRender_MultiLabel_TabsPerLineIndependent(t *testing.T) {
+	primary := newPos(t, "r.cue", 0)
+	note := newPos(t, "r.cue", 100)
+
+	src := fakeSource{entries: map[token.Pos]fakeEntry{
+		primary: {line: "\t\talpha", lineNum: 1, col: 3},
+		note:    {line: "beta", lineNum: 5, col: 2},
+	}}
+
+	d := diag.Diagnostic{
+		Code:     "E0201",
+		Severity: diag.SeverityError,
+		Title:    "t",
+		Primary:  diag.Label{Pos: primary, Len: 1, Msg: "p"},
+		Notes:    []diag.Label{{Pos: note, Len: 1, Msg: "n"}},
+	}
+
+	got := diag.Render(d, src)
+
+	var caretLines []string
+	for line := range strings.SplitSeq(got, "\n") {
+		if strings.Contains(line, "^") && strings.Contains(line, "|") {
+			caretLines = append(caretLines, line)
+		}
+	}
+	if len(caretLines) < 2 {
+		t.Fatalf("expected at least 2 caret lines, got %d.\nfull output:\n%s", len(caretLines), got)
+	}
+
+	primaryCaret := caretLines[0]
+	noteCaret := caretLines[1]
+
+	spacesBeforeCaret := func(line string) (int, bool) {
+		_, after, ok := strings.Cut(line, "|")
+		if !ok {
+			return 0, false
+		}
+		caretIdx := strings.Index(after, "^")
+		if caretIdx < 0 {
+			return 0, false
+		}
+		return caretIdx, true
+	}
+
+	primarySpaces, ok := spacesBeforeCaret(primaryCaret)
+	if !ok {
+		t.Fatalf("primary caret line malformed: %q", primaryCaret)
+	}
+	if primarySpaces != 9 {
+		t.Errorf("primary caret misaligned: got %d chars between `|` and `^`, want 9.\ncaret line: %q\nfull output:\n%s",
+			primarySpaces, primaryCaret, got)
+	}
+
+	noteSpaces, ok := spacesBeforeCaret(noteCaret)
+	if !ok {
+		t.Fatalf("note caret line malformed: %q", noteCaret)
+	}
+	if noteSpaces != 2 {
+		t.Errorf("note caret misaligned: got %d chars between `|` and `^`, want 2.\ncaret line: %q\nfull output:\n%s",
+			noteSpaces, noteCaret, got)
+	}
+
+	if !strings.Contains(got, "        alpha") {
+		t.Errorf("primary snippet should expand 2 leading tabs to 8 spaces; expected `        alpha`.\nfull output:\n%s", got)
+	}
+	if !strings.Contains(got, "beta") {
+		t.Errorf("note snippet should render verbatim `beta`.\nfull output:\n%s", got)
+	}
+}
+
 // -----------------------------------------------------------------------------
 // Test helpers
 // -----------------------------------------------------------------------------

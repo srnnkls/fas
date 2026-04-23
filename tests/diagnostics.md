@@ -42,8 +42,8 @@ $ cat << 'EOF' |
 error[E0201]: key not found
   --> /__quae_rules__/absent_path.cue:11:3
    |
-11 | \t\tsignals: user_confirmed: true (escaped)
-   |   ^^^^^^^ key "signals" not found in input at path <root>
+11 |         signals: user_confirmed: true
+   |         ^^^^^^^ key "signals" not found in input at path <root>
    |
    = help: input.<root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
 [1]
@@ -68,14 +68,14 @@ $ cat << 'EOF' |
 error[E0301]: leaf constraint failed
   --> /__quae_rules__/leaf_regex.cue:12:24
    |
-12 | \t\ttool_input: command: =~"^rm " (escaped)
-   |                        ^^^^^^^^ constraint not satisfied
+12 |         tool_input: command: =~"^rm "
+   |                              ^^^^^^^^ constraint not satisfied
    |
-12 | \t\ttool_input: command: =~"^rm " (escaped)
-   |                        ^^^^^^^^ want: =~"^rm "
+12 |         tool_input: command: =~"^rm "
+   |                              ^^^^^^^^ want: =~"^rm "
    |
-12 | \t\ttool_input: command: =~"^rm " (escaped)
-   |                        ^^^^^^^^ got: "ls"
+12 |         tool_input: command: =~"^rm "
+   |                              ^^^^^^^^ got: "ls"
 [1]
 ```
 
@@ -99,17 +99,17 @@ $ cat << 'EOF' |
 error[E0401]: no disjunction arm matched
   --> /__quae_rules__/disjunction.cue:10:20
    |
-10 | \t\ttool_name:       "Read" | "Write" | "Edit" (escaped)
-   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^ no arm subsumes "Bash"
+10 |         tool_name:       "Read" | "Write" | "Edit"
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^^^ no arm subsumes "Bash"
    |
-10 | \t\ttool_name:       "Read" | "Write" | "Edit" (escaped)
-   |                    ^^^^^^ arm "Read" did not match
+10 |         tool_name:       "Read" | "Write" | "Edit"
+   |                          ^^^^^^ arm "Read" did not match
    |
-10 | \t\ttool_name:       "Read" | "Write" | "Edit" (escaped)
-   |                             ^^^^^^^ arm "Write" did not match
+10 |         tool_name:       "Read" | "Write" | "Edit"
+   |                                   ^^^^^^^ arm "Write" did not match
    |
-10 | \t\ttool_name:       "Read" | "Write" | "Edit" (escaped)
-   |                                       ^^^^^^ arm "Edit" did not match
+10 |         tool_name:       "Read" | "Write" | "Edit"
+   |                                             ^^^^^^ arm "Edit" did not match
 [1]
 ```
 
@@ -133,8 +133,8 @@ $ cat << 'EOF' |
 error[E0501]: rule "uid_rule": unbound identifier "myUnknownVar" in `when`
   --> tests/diagnostics_rules_broken_scope/unbound.cue:6:20
   |
-6 | \twhen: {tool_name: myUnknownVar} (escaped)
-  |                    ^^^^^^^^^^^^ unbound identifier "myUnknownVar" in rule "uid_rule"
+6 |     when: {tool_name: myUnknownVar}
+  |                       ^^^^^^^^^^^^ unbound identifier "myUnknownVar" in rule "uid_rule"
   |
   = help: Declare a hidden sibling (leading underscore, e.g. `_myUnknownVar: ...`) on the same rule, or import the value from a stdlib package (e.g. `import "list"`). Bare identifiers in `when` must resolve to one of those two scopes.
 
@@ -161,8 +161,8 @@ $ cat << 'EOF' |
 error[E0502]: rule "consumer_rule": cross-rule reference into "base_rule".when from `when`
   --> tests/diagnostics_rules_broken_cross/crossref.cue:14:20
    |
-14 | \twhen: {tool_name: base_rule.when.tool_name} (escaped)
-   |                    ^^^^^^^^^ cross-rule reference from "consumer_rule" to "base_rule".when
+14 |     when: {tool_name: base_rule.when.tool_name}
+   |                       ^^^^^^^^^ cross-rule reference from "consumer_rule" to "base_rule".when
    |
    = help: A rule references an identifier declared inside a different rule.
 
@@ -216,40 +216,40 @@ rule_id: absent-path
 error[E0301]: leaf constraint failed
   --> /__quae_rules__/absent_path.cue:10:20
    |
-10 | \t\ttool_name:       "Bash" (escaped)
-   |                    ^^^^^^ constraint not satisfied
+10 |         tool_name:       "Bash"
+   |                          ^^^^^^ constraint not satisfied
    |
-10 | \t\ttool_name:       "Bash" (escaped)
-   |                    ^^^^^^ want: "Bash"
+10 |         tool_name:       "Bash"
+   |                          ^^^^^^ want: "Bash"
    |
-10 | \t\ttool_name:       "Bash" (escaped)
-   |                    ^^^^^^ got: "Read"
+10 |         tool_name:       "Bash"
+   |                          ^^^^^^ got: "Read"
 rule_id: absent-path
 error[E0201]: key not found
   --> /__quae_rules__/absent_path.cue:11:3
    |
-11 | \t\tsignals: user_confirmed: true (escaped)
-   |   ^^^^^^^ key "signals" not found in input at path <root>
+11 |         signals: user_confirmed: true
+   |         ^^^^^^^ key "signals" not found in input at path <root>
    |
    = help: input.<root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
 rule_id: leaf-regex
 error[E0301]: leaf constraint failed
   --> /__quae_rules__/leaf_regex.cue:11:20
    |
-11 | \t\ttool_name:       "Bash" (escaped)
-   |                    ^^^^^^ constraint not satisfied
+11 |         tool_name:       "Bash"
+   |                          ^^^^^^ constraint not satisfied
    |
-11 | \t\ttool_name:       "Bash" (escaped)
-   |                    ^^^^^^ want: "Bash"
+11 |         tool_name:       "Bash"
+   |                          ^^^^^^ want: "Bash"
    |
-11 | \t\ttool_name:       "Bash" (escaped)
-   |                    ^^^^^^ got: "Read"
+11 |         tool_name:       "Bash"
+   |                          ^^^^^^ got: "Read"
 rule_id: leaf-regex
 error[E0201]: key not found
   --> /__quae_rules__/leaf_regex.cue:12:15
    |
-12 | \t\ttool_input: command: =~"^rm " (escaped)
-   |               ^^^^^^^ key "command" not found in input at path tool_input
+12 |         tool_input: command: =~"^rm "
+   |                     ^^^^^^^ key "command" not found in input at path tool_input
    |
    = help: input.tool_input has keys: file_path
 ```

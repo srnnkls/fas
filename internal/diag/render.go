@@ -1,10 +1,10 @@
 package diag
 
 import (
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"cuelang.org/go/cue/token"
 )
@@ -16,34 +16,43 @@ type SourceCache interface {
 	LineAt(pos token.Pos) (line string, lineNum int, col int, ok bool)
 }
 
+// tabWidth is the number of spaces each tab expands to in rendered snippets.
+// The caret's visual column is shifted by (tabsBefore * (tabWidth-1)) so the
+// caret sits beneath the target byte after expansion.
+const tabWidth = 4
+
 // Render formats a Diagnostic into a multi-line, Rust-style string using src
 // to fetch snippet lines. Missing source degrades to a "position unknown"
 // marker; Render never panics on bad input per scope NF3.
 func Render(d Diagnostic, src SourceCache) string {
+	data := buildRenderData(d, src)
+
 	var b strings.Builder
-
-	writeHeader(&b, d)
-
-	_, primaryLineNum, primaryCol, primaryOK := src.LineAt(d.Primary.Pos)
-	writeLocation(&b, d.Primary, primaryLineNum, primaryCol, primaryOK)
-
-	labels := orderedLabels(d, src)
-	gutter := gutterWidth(labels)
-
-	writeBlankGutter(&b, gutter)
-	for i, l := range labels {
-		writeLabelBlock(&b, l, gutter)
-		if i < len(labels)-1 {
-			writeBlankGutter(&b, gutter)
-		}
+	if err := renderTmpl.Execute(&b, data); err != nil {
+		// Template/data shape drift is a programmer bug, not a runtime
+		// condition — but NF3 forbids panics. Degrade to a terse marker so
+		// the caller still gets an identifiable line.
+		return "error: render template failure: " + err.Error() + "\n"
 	}
-
-	if d.Help != "" {
-		writeBlankGutter(&b, gutter)
-		writeHelp(&b, d.Help, gutter)
-	}
-
 	return b.String()
+}
+
+type renderData struct {
+	Severity string
+	Code     string
+	Title    string
+	Location string
+	Gutter   int
+	Labels   []labelData
+	Help     string
+}
+
+type labelData struct {
+	LineNum  int
+	Line     string
+	CaretCol int
+	Carets   string
+	Msg      string
 }
 
 type resolvedLabel struct {
@@ -52,6 +61,38 @@ type resolvedLabel struct {
 	lineNum int
 	col     int
 	ok      bool
+}
+
+func buildRenderData(d Diagnostic, src SourceCache) renderData {
+	_, primaryLineNum, primaryCol, primaryOK := src.LineAt(d.Primary.Pos)
+
+	resolved := orderedLabels(d, src)
+	gutter := gutterWidth(resolved)
+
+	labels := make([]labelData, 0, len(resolved))
+	for _, r := range resolved {
+		if !r.ok {
+			continue
+		}
+		expanded, visualCol := expandTabs(r.line, r.col)
+		labels = append(labels, labelData{
+			LineNum:  r.lineNum,
+			Line:     expanded,
+			CaretCol: visualCol,
+			Carets:   carets(r.label.Len),
+			Msg:      r.label.Msg,
+		})
+	}
+
+	return renderData{
+		Severity: severityWord(d.Severity),
+		Code:     d.Code,
+		Title:    d.Title,
+		Location: locationLine(d.Primary, primaryLineNum, primaryCol, primaryOK),
+		Gutter:   gutter,
+		Labels:   labels,
+		Help:     d.Help,
+	}
 }
 
 func orderedLabels(d Diagnostic, src SourceCache) []resolvedLabel {
@@ -85,13 +126,15 @@ func gutterWidth(labels []resolvedLabel) int {
 	return len(strconv.Itoa(maxLine))
 }
 
-func writeHeader(b *strings.Builder, d Diagnostic) {
-	b.WriteString(severityWord(d.Severity))
-	b.WriteByte('[')
-	b.WriteString(d.Code)
-	b.WriteString("]: ")
-	b.WriteString(d.Title)
-	b.WriteByte('\n')
+// expandTabs replaces tabs in src with tabWidth spaces and returns the visual
+// column corresponding to the 1-based byte column col. Tabs AT the target
+// column do not count toward the shift (strict-before semantics); the column
+// scan is clamped to len(src) so a col past end-of-line is safe.
+func expandTabs(src string, col int) (expanded string, visualCol int) {
+	limit := max(min(col-1, len(src)), 0)
+	tabsBefore := strings.Count(src[:limit], "\t")
+	expanded = strings.ReplaceAll(src, "\t", strings.Repeat(" ", tabWidth))
+	return expanded, col + tabsBefore*(tabWidth-1)
 }
 
 func severityWord(s Severity) string {
@@ -105,36 +148,11 @@ func severityWord(s Severity) string {
 	}
 }
 
-func writeLocation(b *strings.Builder, primary Label, lineNum, col int, ok bool) {
+func locationLine(primary Label, lineNum, col int, ok bool) string {
 	if !ok {
-		b.WriteString("  --> position unknown\n")
-		return
+		return "  --> position unknown"
 	}
-	file := primary.Pos.Filename()
-	fmt.Fprintf(b, "  --> %s:%d:%d\n", file, lineNum, col)
-}
-
-func writeBlankGutter(b *strings.Builder, gutter int) {
-	b.WriteString(strings.Repeat(" ", gutter))
-	b.WriteString(" |\n")
-}
-
-func writeLabelBlock(b *strings.Builder, r resolvedLabel, gutter int) {
-	if !r.ok {
-		return
-	}
-
-	fmt.Fprintf(b, "%*d | %s\n", gutter, r.lineNum, r.line)
-
-	b.WriteString(strings.Repeat(" ", gutter))
-	b.WriteString(" |")
-	b.WriteString(strings.Repeat(" ", r.col))
-	b.WriteString(carets(r.label.Len))
-	if r.label.Msg != "" {
-		b.WriteByte(' ')
-		b.WriteString(r.label.Msg)
-	}
-	b.WriteByte('\n')
+	return "  --> " + primary.Pos.Filename() + ":" + strconv.Itoa(lineNum) + ":" + strconv.Itoa(col)
 }
 
 func carets(n int) string {
@@ -144,9 +162,30 @@ func carets(n int) string {
 	return strings.Repeat("^", n)
 }
 
-func writeHelp(b *strings.Builder, help string, gutter int) {
-	b.WriteString(strings.Repeat(" ", gutter))
-	b.WriteString(" = help: ")
-	b.WriteString(help)
-	b.WriteByte('\n')
+var renderTmpl = template.Must(template.New("diag").
+	Funcs(template.FuncMap{
+		"pad":    func(n int) string { return strings.Repeat(" ", n) },
+		"lineNo": func(gutter, n int) string { return leftPad(strconv.Itoa(n), gutter) },
+	}).
+	Parse(renderTemplate))
+
+func leftPad(s string, width int) string {
+	if len(s) >= width {
+		return s
+	}
+	return strings.Repeat(" ", width-len(s)) + s
 }
+
+const renderTemplate = "" +
+	"{{.Severity}}[{{.Code}}]: {{.Title}}\n" +
+	"{{.Location}}\n" +
+	"{{pad .Gutter}} |\n" +
+	"{{range $i, $l := .Labels}}" +
+	"{{if $i}}{{pad $.Gutter}} |\n{{end}}" +
+	"{{lineNo $.Gutter $l.LineNum}} | {{$l.Line}}\n" +
+	"{{pad $.Gutter}} |{{pad $l.CaretCol}}{{$l.Carets}}{{with $l.Msg}} {{.}}{{end}}\n" +
+	"{{end}}" +
+	"{{with .Help}}" +
+	"{{pad $.Gutter}} |\n" +
+	"{{pad $.Gutter}} = help: {{.}}\n" +
+	"{{end}}"
