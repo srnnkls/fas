@@ -225,7 +225,7 @@ tasks:
       renderer output for stability.
     files:
       - tests/diagnostics.md
-    status: pending
+    status: completed
     depends_on: [T7, T8, T9, T10]
     test_hints:
       - `scrut test tests/diagnostics.md` all blocks pass.
