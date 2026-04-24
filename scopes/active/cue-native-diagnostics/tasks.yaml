@@ -383,7 +383,7 @@ tasks:
       - internal/diag/render_color.go
       - internal/diag/render_color_test.go
       - internal/diag/render.go
-    status: pending
+    status: completed
     depends_on: [T12]
     test_hints:
       - --color=never → no ANSI escapes in output.
