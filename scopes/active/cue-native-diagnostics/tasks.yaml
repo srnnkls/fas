@@ -1,7 +1,7 @@
 ---
 scope: cue-native-diagnostics
 created: 2026-04-23
-status: draft
+status: completed
 ---
 
 tasks:
@@ -446,7 +446,7 @@ tasks:
         - `QUAE_FORMAT=json` → same as --format=json.
     files:
       - tests/diagnostics_formats.md
-    status: pending
+    status: completed
     depends_on: [T16, T17]
     test_hints:
       - All scrut blocks pass.
