@@ -315,7 +315,7 @@ tasks:
     files:
       - internal/diag/render.go
       - internal/diag/render_reason_test.go
-    status: pending
+    status: completed
     depends_on: [T1, T10]
     test_hints:
       - Each of the 7 Reason variants has a dedicated renderer test with golden output.
