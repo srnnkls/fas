@@ -72,6 +72,20 @@ func walkStruct(node ast.Expr, ruleCur, inputCur cue.Value, path []string, yield
 		if !ruleNext.Exists() {
 			continue
 		}
+		// Literal-arm disjunctions own their own narrative via ranked arms
+		// (E0401 + DisjunctionFailed). Pure kind-union disjunctions
+		// (`int | string`) defer to the leaf-level KindMismatch path so
+		// "expected int|string, got bool" stays a single E0303 reason
+		// rather than three useless arm rankings.
+		if b, ok := f.Value.(*ast.BinaryExpr); ok && b.Op == token.OR && hasConcreteArm(ruleNext) {
+			if ruleNext.Subsume(next, cue.Final(), cue.Schema()) == nil {
+				continue
+			}
+			if !yield(disjunctionDiagnostic(b, ruleNext, next)) {
+				return false
+			}
+			continue
+		}
 		// Short-circuit the leaf so no second diagnostic follows.
 		if kindsDisjoint(ruleNext.IncompleteKind(), next.Kind()) {
 			if !yield(kindMismatchDiagnostic(f, ruleNext, next)) {
@@ -80,12 +94,6 @@ func walkStruct(node ast.Expr, ruleCur, inputCur cue.Value, path []string, yield
 			continue
 		}
 		if ruleNext.Subsume(next, cue.Final(), cue.Schema()) == nil {
-			continue
-		}
-		if b, ok := f.Value.(*ast.BinaryExpr); ok && b.Op == token.OR {
-			if !yield(disjunctionDiagnostic(b, next)) {
-				return false
-			}
 			continue
 		}
 		reasons := failingConjuncts(ruleNext, next)
@@ -409,27 +417,22 @@ func kindMismatchDiagnostic(f *ast.Field, ruleNext, actual cue.Value) diag.Diagn
 }
 
 // disjunctionDiagnostic builds an E0401 spanning the entire `A | B | C` chain
-// with one Note per arm so the renderer can underline each alternative.
-func disjunctionDiagnostic(expr *ast.BinaryExpr, actual cue.Value) diag.Diagnostic {
+// with a Primary Label carrying a DisjunctionFailed Reason whose Arms are
+// ranked by closeness to the input. T12 owns the per-arm caret rendering;
+// here we populate only the data layer.
+func disjunctionDiagnostic(expr *ast.BinaryExpr, ruleNext, actual cue.Value) diag.Diagnostic {
 	arms := flattenOrArms(expr)
-	notes := make([]diag.Label, 0, len(arms))
-	for _, arm := range arms {
-		notes = append(notes, diag.Label{
-			Pos: arm.Pos(),
-			Len: exprLen(arm),
-			Msg: fmt.Sprintf("arm %s did not match", renderExpr(arm)),
-		})
-	}
+	ranked := rankArms(arms, ruleNext, actual)
 	return diag.Diagnostic{
 		Code:     diag.E0401.Code,
 		Severity: diag.SeverityError,
 		Title:    "no disjunction arm matched",
 		Primary: diag.Label{
-			Pos: expr.Pos(),
-			Len: exprLen(expr),
-			Msg: "no arm subsumes " + renderValue(actual),
+			Pos:     expr.Pos(),
+			Len:     exprLen(expr),
+			Msg:     "no arm subsumes " + renderValue(actual),
+			Reasons: []diag.Reason{diag.DisjunctionFailed{Arms: ranked}},
 		},
-		Notes: notes,
 	}
 }
 
