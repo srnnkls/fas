@@ -125,7 +125,7 @@ tasks:
     files:
       - internal/evaluator/localize.go
       - internal/evaluator/localize_conjunct_test.go
-    status: pending
+    status: completed
     depends_on: [T1, T3]
     test_hints:
       - `count: int & >=5 & <=10` vs `count: 3` → Label.Reasons has length 1 (one ConjunctFailed), primary underlines `>=5`.
