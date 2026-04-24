@@ -82,7 +82,7 @@ error[E0201]: key not found
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found in input at path <root>
    |
-   = help: input.<root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
+   = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
 [1]
 ```
 
@@ -112,7 +112,7 @@ error[E0201]: key not found
 10 |         tool_input: command: "ls"
    |                     ^^^^^^^ key "command" not found in input at path tool_input
    |
-   = help: input.tool_input has keys: commnd, parsed
+   = help: tool_input has keys: commnd, parsed
    = hint: did you mean "commnd"?
 [1]
 ```
@@ -376,7 +376,7 @@ error[E0201]: key not found
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found in input at path <root>
    |
-   = help: input.<root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
+   = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
 rule_id: leaf-regex
 error[E0301]: leaf constraint failed
   --> /__quae_rules__/leaf_regex.cue:11:20
@@ -390,7 +390,7 @@ error[E0201]: key not found
 12 |         tool_input: command: =~"^rm "
    |                     ^^^^^^^ key "command" not found in input at path tool_input
    |
-   = help: input.tool_input has keys: file_path
+   = help: tool_input has keys: file_path
 ```
 
 ## `quae explain` exit codes — match, no-match, unknown rule

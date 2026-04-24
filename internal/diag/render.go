@@ -253,8 +253,8 @@ func dispatchReasons(l Label) (msgs []string, frames []frameData, footers []stri
 
 // emptyParentHelp derives the "= help: parent at <path> is an empty struct"
 // prefix from the Help string that localize populated. The Help carries the
-// parent path in "input.<path> has keys: " form; we peel it and assemble
-// the new sentence here so render_reason.go stays dependency-free.
+// parent path in "<path> has keys: " form; we peel it and assemble the new
+// sentence here so render_reason.go stays dependency-free.
 func emptyParentHelp(help string) string {
 	path := parseEmptyParentPath(help)
 	return "parent at " + path + " is an empty struct"

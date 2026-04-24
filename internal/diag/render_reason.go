@@ -243,8 +243,8 @@ func renderKeyMissing(v KeyMissing) reasonRender {
 		// struct phrasing. path is derived from Key's context — we only
 		// know the key name here, so we rely on the Help string the
 		// localize layer already populated to convey the parent path.
-		// Localize sets Help = "input.<path> has keys: " with an empty
-		// list, so we trim that to recover <path>.
+		// Localize sets Help = "<path> has keys: " with an empty list,
+		// so we trim that to recover <path>.
 		// The override text assembles at wireHelp in buildRenderData
 		// where it has access to the existing Help; we just signal the
 		// switch here by returning an empty string override.
@@ -270,17 +270,12 @@ func renderProvenance(v Provenance) reasonRender {
 	}
 }
 
-// parseEmptyParentPath peels the "input.<path> has keys: " shape back to
-// <path> so the override footer reads "parent at <path> is an empty
-// struct". Unknown shapes fall back to "<unknown>".
+// parseEmptyParentPath peels the "<path> has keys: " shape back to <path>
+// so the override footer reads "parent at <path> is an empty struct".
+// Unknown shapes fall back to "<unknown>".
 func parseEmptyParentPath(help string) string {
-	const prefix = "input."
 	const mid = " has keys: "
-	if !strings.HasPrefix(help, prefix) {
-		return "<unknown>"
-	}
-	rest := help[len(prefix):]
-	before, _, ok := strings.Cut(rest, mid)
+	before, _, ok := strings.Cut(help, mid)
 	if !ok {
 		return "<unknown>"
 	}
