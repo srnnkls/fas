@@ -97,7 +97,7 @@ func walkStruct(node ast.Expr, ruleCur, inputCur cue.Value, path []string, yield
 			continue
 		}
 		reasons := failingConjuncts(ruleNext, next)
-		if !yield(leafDiagnostic(f, ruleNext, reasons)) {
+		if !yield(leafDiagnostic(f, ruleNext, next, reasons)) {
 			return false
 		}
 	}
@@ -121,25 +121,32 @@ func flattenConjuncts(v cue.Value) []cue.Value {
 
 // failingConjuncts walks ruleNext's `&` chain and returns one ConjunctFailed
 // entry per operand that does not subsume input, preserving source order.
-// Returns nil when ruleNext has fewer than two conjuncts so a literal leaf
-// falls through to the legacy Msg path (NF5). When a failing conjunct is a
-// bound expression (op >=, <=, >, <, !=), Sub carries a BoundViolation.
+// Returns nil when every conjunct would produce a bare ConjunctFailed with
+// no Sub (typically a single-literal constraint — the variant adds nothing
+// over the caret-underlined source) so the caller can render a `got:` note
+// instead. When a failing conjunct is a bound expression (op >=, <=, >, <,
+// !=), Sub carries a BoundViolation; a regex =~ carries RegexMismatch.
 func failingConjuncts(ruleNext, input cue.Value) []diag.Reason {
 	conjuncts := flattenConjuncts(ruleNext)
-	if len(conjuncts) < 2 {
-		return nil
-	}
 	var reasons []diag.Reason
+	anyMeaningful := false
 	for _, c := range conjuncts {
 		if c.Subsume(input, cue.Final(), cue.Schema()) == nil {
 			continue
 		}
 		expr, span := conjunctExprAndSpan(c)
+		sub := conjunctSubReason(c, input)
+		if sub != nil {
+			anyMeaningful = true
+		}
 		reasons = append(reasons, diag.ConjunctFailed{
 			Expr: expr,
 			Span: span,
-			Sub:  conjunctSubReason(c, input),
+			Sub:  sub,
 		})
+	}
+	if len(reasons) <= 1 && !anyMeaningful {
+		return nil
 	}
 	return reasons
 }
@@ -150,7 +157,14 @@ func failingConjuncts(ruleNext, input cue.Value) []diag.Reason {
 // BoundViolation, and regex matches (op =~) yielding RegexMismatch. Returns
 // nil for shapes not yet specialised so v0 fallback rendering applies.
 func conjunctSubReason(c, input cue.Value) diag.Reason {
-	u, ok := c.Source().(*ast.UnaryExpr)
+	// For a single-conjunct field (no `&` chain), c.Source() returns the
+	// containing *ast.Field; reach through to its Value so regex/bound
+	// conjuncts produce a Sub Reason regardless of chain depth.
+	src := c.Source()
+	if f, ok := src.(*ast.Field); ok {
+		src = f.Value
+	}
+	u, ok := src.(*ast.UnaryExpr)
 	if !ok {
 		return nil
 	}
@@ -314,10 +328,11 @@ func absentKeyDiagnostic(f *ast.Field, name string, parent cue.Value, path []str
 // gates in wantNoteMsg fire; the legacy unconditional `want:`/`got:` pair is
 // gone. Provenance footer notes (T9) are appended for every cross-file
 // conjunct carried by ruleNext, capped at maxProvenanceEntries.
-func leafDiagnostic(f *ast.Field, ruleNext cue.Value, reasons []diag.Reason) diag.Diagnostic {
+func leafDiagnostic(f *ast.Field, ruleNext, actual cue.Value, reasons []diag.Reason) diag.Diagnostic {
 	hostFile := f.Value.Pos().Filename()
 	pos := f.Value.Pos()
 	span := exprLen(f.Value)
+	msg := ""
 	if len(reasons) > 0 {
 		if first, ok := reasons[0].(diag.ConjunctFailed); ok && first.Span.Length > 0 {
 			if p := firstConjunctPos(f.Value, first.Span); p.IsValid() {
@@ -325,6 +340,11 @@ func leafDiagnostic(f *ast.Field, ruleNext cue.Value, reasons []diag.Reason) dia
 			}
 			span = first.Span.Length
 		}
+	} else {
+		// No Reason variant matches a bare-literal constraint; without a
+		// message the diagnostic renders as carets-only. Surface the
+		// actual input so the reader knows what didn't match.
+		msg = "got: " + renderValue(actual)
 	}
 	d := diag.Diagnostic{
 		Code:     diag.E0301.Code,
@@ -333,6 +353,7 @@ func leafDiagnostic(f *ast.Field, ruleNext cue.Value, reasons []diag.Reason) dia
 		Primary: diag.Label{
 			Pos:     pos,
 			Len:     span,
+			Msg:     msg,
 			Reasons: reasons,
 		},
 	}
