@@ -24,8 +24,11 @@ type Diagnostic struct {
 }
 
 // Label marks a span of source referenced by Pos with an inline message.
+// Reasons carries the structured failure tree; a zero-length slice means
+// legacy Msg-only rendering (NF5 fallthrough).
 type Label struct {
-	Pos token.Pos
-	Len int
-	Msg string
+	Pos     token.Pos
+	Len     int
+	Msg     string
+	Reasons []Reason
 }

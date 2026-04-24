@@ -80,9 +80,11 @@ var E0301 = CodeInfo{
 	Help: `A string leaf does not satisfy the regex declared in the rule.
 
 Regex constraints in ` + "`when`" + ` must match the full input string. The
-diagnostic shows the expected pattern (` + "`want`" + `) and the concrete input
-(` + "`got`" + `); compare the two to decide whether to loosen the pattern or
-fix the producer of the input.`,
+primary caret row underlines the pattern; the ` + "`got:`" + ` label echoes the
+concrete input. Compare the two to decide whether to loosen the
+pattern or fix the producer of the input. References that resolve to
+a regex (e.g. ` + "`#DangerousCmds`" + `) additionally surface the expanded
+pattern via a ` + "`want:`" + ` label.`,
 }
 
 var E0302 = CodeInfo{
@@ -167,6 +169,10 @@ The match phase sees only the input; fields declared in ` + "`then`" + ` or
 pattern so it depends only on the input and, if a constant is
 needed, lift it to a hidden sibling (leading underscore).`,
 }
+
+// CodesInScopeV1 freezes the code count for this scope; bumping it requires
+// a deliberate design review to justify adding a new code.
+const CodesInScopeV1 = 15
 
 // codeRegistry maps each stable code string to its CodeInfo.
 // Built at package init so that duplicate codes fail loudly rather
