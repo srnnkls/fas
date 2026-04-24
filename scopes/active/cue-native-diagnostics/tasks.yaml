@@ -255,7 +255,7 @@ tasks:
     files:
       - internal/diag/render.go
       - internal/diag/render_test.go
-    status: pending
+    status: completed
     depends_on: [T1]
     test_hints:
       - Legacy diagnostic with Primary + 2 Notes on same span → source printed once, 3 aligned messages beneath.
@@ -276,7 +276,7 @@ tasks:
     files:
       - internal/evaluator/localize.go
       - internal/evaluator/restate_test.go
-    status: pending
+    status: completed
     depends_on: [T1, T4]
     test_hints:
       - `tool_input: command: =~"^rm "` vs `"ls"` → no `want:` label emitted, no "constraint not satisfied" Primary msg.

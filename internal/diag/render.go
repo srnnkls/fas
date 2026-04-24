@@ -53,6 +53,11 @@ type labelData struct {
 	CaretCol int
 	Carets   string
 	Msg      string
+	// Collapsed is true when this label shares its (file, line, col, len)
+	// tuple with a previously-rendered label. Collapsed labels emit only an
+	// aligned message row under the caret column of the first occurrence;
+	// no snippet, no caret row.
+	Collapsed bool
 }
 
 type resolvedLabel struct {
@@ -70,11 +75,37 @@ func buildRenderData(d Diagnostic, src SourceCache) renderData {
 	gutter := gutterWidth(resolved)
 
 	labels := make([]labelData, 0, len(resolved))
+	// Track previously-rendered spans by (file, line, col, len). A later
+	// label matching any prior tuple renders as an aligned message row
+	// only — skipping the snippet and caret to keep visual density low
+	// when several messages attach to the same span (F7).
+	type spanKey struct {
+		file   string
+		line   int
+		col    int
+		length int
+	}
+	seen := make(map[spanKey]int, len(resolved)) // value = visual caret column of first occurrence
 	for _, r := range resolved {
 		if !r.ok {
 			continue
 		}
 		expanded, visualCol := expandTabs(r.line, r.col)
+		key := spanKey{
+			file:   r.label.Pos.Filename(),
+			line:   r.lineNum,
+			col:    r.col,
+			length: r.label.Len,
+		}
+		if firstCol, ok := seen[key]; ok {
+			labels = append(labels, labelData{
+				CaretCol:  firstCol,
+				Msg:       r.label.Msg,
+				Collapsed: true,
+			})
+			continue
+		}
+		seen[key] = visualCol
 		labels = append(labels, labelData{
 			LineNum:  r.lineNum,
 			Line:     expanded,
@@ -181,9 +212,13 @@ const renderTemplate = "" +
 	"{{.Location}}\n" +
 	"{{pad .Gutter}} |\n" +
 	"{{range $i, $l := .Labels}}" +
+	"{{if $l.Collapsed}}" +
+	"{{pad $.Gutter}} |{{pad $l.CaretCol}}{{$l.Msg}}\n" +
+	"{{else}}" +
 	"{{if $i}}{{pad $.Gutter}} |\n{{end}}" +
 	"{{lineNo $.Gutter $l.LineNum}} | {{$l.Line}}\n" +
 	"{{pad $.Gutter}} |{{pad $l.CaretCol}}{{$l.Carets}}{{with $l.Msg}} {{.}}{{end}}\n" +
+	"{{end}}" +
 	"{{end}}" +
 	"{{with .Help}}" +
 	"{{pad $.Gutter}} |\n" +
