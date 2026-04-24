@@ -97,7 +97,7 @@ func walkStruct(node ast.Expr, ruleCur, inputCur cue.Value, path []string, yield
 			continue
 		}
 		reasons := failingConjuncts(ruleNext, next)
-		if !yield(leafDiagnostic(f, ruleNext, next, reasons)) {
+		if !yield(leafDiagnostic(f, ruleNext, reasons)) {
 			return false
 		}
 	}
@@ -306,43 +306,25 @@ func absentKeyDiagnostic(f *ast.Field, name string, parent cue.Value, path []str
 	}
 }
 
-// leafDiagnostic builds an E0301 for a failed leaf constraint. When reasons
-// is non-empty the Primary Label carries the structured Reason slice and
-// underlines the first failing conjunct; otherwise the diagnostic falls
-// through to the legacy Msg path (NF5) so v0 behavior is preserved for
-// literal constraints and single-conjunct leaves that T5/T6 will specialise.
-// Provenance footer notes (T9) are appended for every cross-file conjunct
-// carried by ruleNext, capped at maxProvenanceEntries.
-func leafDiagnostic(f *ast.Field, ruleNext, actual cue.Value, reasons []diag.Reason) diag.Diagnostic {
+// leafDiagnostic builds an E0301 for a failed leaf constraint. The Primary
+// Label carries the structured Reason slice when one was produced (T4/T5/T6)
+// and underlines the first failing conjunct; otherwise it carries an empty
+// Msg (no "constraint not satisfied" restatement — the Title already says so
+// per F7). A conditional `want:` Note is appended only when the emission
+// gates in wantNoteMsg fire; the legacy unconditional `want:`/`got:` pair is
+// gone. Provenance footer notes (T9) are appended for every cross-file
+// conjunct carried by ruleNext, capped at maxProvenanceEntries.
+func leafDiagnostic(f *ast.Field, ruleNext cue.Value, reasons []diag.Reason) diag.Diagnostic {
 	hostFile := f.Value.Pos().Filename()
-	if len(reasons) == 0 {
-		wantStr := renderExpr(f.Value)
-		gotStr := renderValue(actual)
-		span := exprLen(f.Value)
-		d := diag.Diagnostic{
-			Code:     diag.E0301.Code,
-			Severity: diag.SeverityError,
-			Title:    "leaf constraint failed",
-			Primary: diag.Label{
-				Pos: f.Value.Pos(),
-				Len: span,
-				Msg: "constraint not satisfied",
-			},
-			Notes: []diag.Label{
-				{Pos: f.Value.Pos(), Len: span, Msg: "want: " + wantStr},
-				{Pos: f.Value.Pos(), Len: span, Msg: "got: " + gotStr},
-			},
-		}
-		d.Notes = append(d.Notes, provenanceNotes(ruleNext, hostFile)...)
-		return d
-	}
 	pos := f.Value.Pos()
 	span := exprLen(f.Value)
-	if first, ok := reasons[0].(diag.ConjunctFailed); ok && first.Span.Length > 0 {
-		if p := firstConjunctPos(f.Value, first.Span); p.IsValid() {
-			pos = p
+	if len(reasons) > 0 {
+		if first, ok := reasons[0].(diag.ConjunctFailed); ok && first.Span.Length > 0 {
+			if p := firstConjunctPos(f.Value, first.Span); p.IsValid() {
+				pos = p
+			}
+			span = first.Span.Length
 		}
-		span = first.Span.Length
 	}
 	d := diag.Diagnostic{
 		Code:     diag.E0301.Code,
@@ -354,8 +336,58 @@ func leafDiagnostic(f *ast.Field, ruleNext, actual cue.Value, reasons []diag.Rea
 			Reasons: reasons,
 		},
 	}
+	if msg, ok := wantNoteMsg(f.Value, ruleNext); ok {
+		d.Notes = append(d.Notes, diag.Label{
+			Pos: f.Value.Pos(),
+			Len: exprLen(f.Value),
+			Msg: msg,
+		})
+	}
 	d.Notes = append(d.Notes, provenanceNotes(ruleNext, hostFile)...)
 	return d
+}
+
+// wantNoteMsg decides whether a `want:` Note should accompany a leaf
+// diagnostic and, if so, returns the expanded form to display. Per F7 the
+// two gates are:
+//
+//   - Cheap AST gate: f.Value is *ast.Ident or *ast.SelectorExpr — a
+//     reference whose source spelling hides the constraint body.
+//   - Format-divergence gate: the formatted expanded form of ruleNext
+//     differs from the formatted source of f.Value — unification narrowed
+//     the constraint beyond what the caret underlines.
+//
+// When neither fires the caret-underlined span already conveys the
+// constraint and a `want:` line would only restate what the reader can see.
+func wantNoteMsg(fValue ast.Expr, ruleNext cue.Value) (string, bool) {
+	expanded := formattedExpanded(ruleNext)
+	if expanded == "" {
+		return "", false
+	}
+	switch fValue.(type) {
+	case *ast.Ident, *ast.SelectorExpr:
+		return "want: " + expanded, true
+	}
+	if expanded != renderExpr(fValue) {
+		return "want: " + expanded, true
+	}
+	return "", false
+}
+
+// formattedExpanded returns the expanded, reference-resolved source form of v
+// (e.g. `int & >=0` for a value narrowed from `int` via a stdlib constraint).
+// Empty string signals the value's syntax could not be formatted — treat as
+// "no useful expanded form available".
+func formattedExpanded(v cue.Value) string {
+	node := v.Eval().Syntax(cue.Raw())
+	if node == nil {
+		return ""
+	}
+	b, err := format.Node(node)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // firstConjunctPos derives a token.Pos anchored at the failing conjunct's

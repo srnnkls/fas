@@ -270,11 +270,18 @@ func TestLocalize_E0201_OptionalField_NoDiagnostic(t *testing.T) {
 // E0301 — leaf constraint failure (regex / type / range)
 // -----------------------------------------------------------------------------
 
-// TestLocalize_E0301_RegexLeafFails_WantGotLabels verifies that a regex
-// constraint `command: =~"^rm "` on a leaf produces an E0301 diagnostic
-// whose Notes carry `want:` (pattern) and `got:` (actual value) labels, so
-// the renderer can print both under the caret.
-func TestLocalize_E0301_RegexLeafFails_WantGotLabels(t *testing.T) {
+// TestLocalize_E0301_RegexLeafFails_NoLegacyWantGot verifies the T11 spec
+// change (F7 "no-restate"): a literal regex `command: =~"^rm "` whose
+// formatted source matches the expanded ruleNext form must NOT emit the
+// legacy `want:` / `got:` Notes — the caret row already underlines the
+// pattern, and the new Reasons (T4-T7) carry the input via RegexMismatch.
+// Primary.Msg must also be empty (Title "leaf constraint failed" carries
+// that signal already).
+//
+// Legacy spec change: predecessor of this test
+// (TestLocalize_E0301_RegexLeafFails_WantGotLabels) pinned the opposite
+// behavior — the old renderer depended on both Notes. T11 supersedes it.
+func TestLocalize_E0301_RegexLeafFails_NoLegacyWantGot(t *testing.T) {
 	evaluator.SetExplainEnabled(true)
 	t.Cleanup(func() { evaluator.SetExplainEnabled(false) })
 
@@ -285,7 +292,6 @@ func TestLocalize_E0301_RegexLeafFails_WantGotLabels(t *testing.T) {
 	}`)
 	rule := loadOne(t, dir)
 
-	// Input supplies command but fails the regex — path exists, leaf fails.
 	input := compileVal(t, `{command: "ls -la"}`)
 
 	_, diags, err := evaluator.Evaluate([]config.Rule{rule}, input)
@@ -297,25 +303,18 @@ func TestLocalize_E0301_RegexLeafFails_WantGotLabels(t *testing.T) {
 	if !d.Primary.Pos.IsValid() {
 		t.Fatalf("E0301 primary pos must be valid; got %v", d.Primary.Pos)
 	}
-
-	// Notes must include one labelled `want:` carrying the pattern and one
-	// labelled `got:` carrying the concrete string. Exact message format is
-	// the implementer's choice; these probes assert content is present.
-	var sawWant, sawGot bool
+	if d.Primary.Msg != "" {
+		t.Errorf("E0301 Primary.Msg = %q, want empty (Title carries the restatement)",
+			d.Primary.Msg)
+	}
 	for _, n := range d.Notes {
 		low := strings.ToLower(n.Msg)
-		if strings.Contains(low, "want") && strings.Contains(n.Msg, `^rm `) {
-			sawWant = true
+		if strings.Contains(low, "want:") {
+			t.Errorf("E0301 literal regex must NOT emit `want:` Note; got %q", n.Msg)
 		}
-		if strings.Contains(low, "got") && strings.Contains(n.Msg, "ls -la") {
-			sawGot = true
+		if strings.Contains(low, "got:") {
+			t.Errorf("E0301 literal regex must NOT emit legacy `got:` Note; got %q", n.Msg)
 		}
-	}
-	if !sawWant {
-		t.Errorf("E0301 missing `want:` note containing pattern `^rm `; notes=%+v", d.Notes)
-	}
-	if !sawGot {
-		t.Errorf("E0301 missing `got:` note containing value `ls -la`; notes=%+v", d.Notes)
 	}
 }
 
