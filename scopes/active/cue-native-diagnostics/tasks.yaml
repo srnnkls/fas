@@ -95,7 +95,7 @@ tasks:
     files:
       - internal/evaluator/localize.go
       - internal/evaluator/localize_kind_test.go
-    status: pending
+    status: completed
     depends_on: [T1, T2]
     test_hints:
       - `count: int` vs `count: "5"` → E0303 KindMismatch{Want: IntKind, Got: StringKind, Actual: `"5"`}.
@@ -216,7 +216,7 @@ tasks:
       - internal/evaluator/localize.go
       - internal/evaluator/levenshtein.go
       - internal/evaluator/levenshtein_test.go
-    status: pending
+    status: completed
     depends_on: [T1]
     test_hints:
       - Missing `flags` with actual keys [`flag`, `forced`] → Suggestion "flag" (distance 1).
