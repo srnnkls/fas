@@ -142,7 +142,7 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 	}
 
 	if opts.explain.set {
-		renderExplain(stderr, opts.explain.value, matches, diags, globalRules, projectRules)
+		renderExplain(stderr, opts.explain.value, opts.format, opts.color, matches, diags, globalRules, projectRules)
 	}
 	return 0
 }
@@ -196,8 +196,24 @@ func runExplain(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 		"path to the project rules directory")
 	fs.StringVar(&globalConfig, "global-config", globalConfig,
 		"path to the user-global rules directory")
+	var format formatFlag
+	var color colorFlag
+	fs.Var(&format, "format",
+		"diagnostic output format: text|json|sarif (default text)")
+	fs.Var(&color, "color",
+		"color mode for text diagnostics: auto|always|never (default auto)")
 
 	if err := fs.Parse(rest); err != nil {
+		return 2
+	}
+	resolvedFormat, ferr := resolveFormat(format, os.Getenv("QUAE_FORMAT"))
+	if ferr != nil {
+		errorln(stderr, ferr)
+		return 2
+	}
+	resolvedColor, cerr := resolveColor(color, os.Getenv("QUAE_COLOR"), os.Getenv("NO_COLOR"))
+	if cerr != nil {
+		errorln(stderr, cerr)
 		return 2
 	}
 
@@ -269,11 +285,30 @@ func runExplain(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 		return 0
 	}
 
-	src := primeFileCache([]config.Rule{resolved})
-	for i := range diags {
-		_, _ = io.WriteString(stderr, diag.Render(diags[i], src))
-	}
+	writeExplainDiagnostics(stderr, diags, resolvedFormat, resolvedColor, []config.Rule{resolved})
 	return 1
+}
+
+// writeExplainDiagnostics is the `quae explain` variant of writeDiagnostics:
+// same format dispatch, but without the per-diag `rule_id:` header (the
+// caller has already resolved a single rule_id, so the per-diag attribution
+// step is redundant noise for this subcommand).
+func writeExplainDiagnostics(w io.Writer, diags []diag.Diagnostic, format outputFormat, color colorMode, rules []config.Rule) {
+	if len(diags) == 0 {
+		return
+	}
+	switch format {
+	case formatJSON:
+		_ = diag.RenderJSONStream(w, diags)
+	case formatSARIF:
+		_, _ = w.Write(diag.RenderSARIF(diags))
+	default:
+		palette := paletteFor(color, isTTY(os.Stderr), os.Getenv("NO_COLOR"))
+		src := primeFileCache(rules)
+		for i := range diags {
+			_, _ = io.WriteString(w, diag.RenderWithPalette(diags[i], src, palette))
+		}
+	}
 }
 
 // extractCodeFlag scans args for a `--code` or `-code` flag (either the
@@ -412,6 +447,195 @@ type cliOptions struct {
 	globalConfig  string
 	failClosed    bool
 	explain       explainFlag
+	format        outputFormat
+	color         colorMode
+}
+
+// outputFormat enumerates diagnostic emission formats wired through to the
+// renderer. `formatUnset` distinguishes "no flag provided" from "text" so
+// env-var fallback (QUAE_FORMAT) only fires when the flag is absent.
+type outputFormat int
+
+const (
+	formatUnset outputFormat = iota
+	formatText
+	formatJSON
+	formatSARIF
+)
+
+// colorMode enumerates --color values. `colorUnset` is the pre-resolution
+// sentinel that triggers QUAE_COLOR / NO_COLOR fallback; the other three
+// map 1:1 to the user-visible flag vocabulary.
+type colorMode int
+
+const (
+	colorUnset colorMode = iota
+	colorAuto
+	colorAlways
+	colorNever
+)
+
+// parseFormatValue decodes a --format / QUAE_FORMAT string. Empty and
+// "text" map to text; "json" and "sarif" are recognised; everything else is
+// an error surfaced to the caller for an exit-2 diagnostic.
+func parseFormatValue(s string) (outputFormat, error) {
+	switch s {
+	case "", "text":
+		return formatText, nil
+	case "json":
+		return formatJSON, nil
+	case "sarif":
+		return formatSARIF, nil
+	default:
+		return formatUnset, fmt.Errorf("invalid format %q: must be one of text, json, sarif", s)
+	}
+}
+
+// parseColorValue decodes a --color / QUAE_COLOR string. Empty treats as
+// auto for env-var precedence callers.
+func parseColorValue(s string) (colorMode, error) {
+	switch s {
+	case "", "auto":
+		return colorAuto, nil
+	case "always":
+		return colorAlways, nil
+	case "never":
+		return colorNever, nil
+	default:
+		return colorUnset, fmt.Errorf("invalid color %q: must be one of auto, always, never", s)
+	}
+}
+
+// formatFlag backs --format on both subcommands. It tracks whether the
+// user set it explicitly so env-var precedence (flag > env > default) can
+// fire only when the flag is absent.
+type formatFlag struct {
+	set   bool
+	value outputFormat
+}
+
+func (f *formatFlag) String() string {
+	if f == nil {
+		return "text"
+	}
+	switch f.value {
+	case formatJSON:
+		return "json"
+	case formatSARIF:
+		return "sarif"
+	default:
+		return "text"
+	}
+}
+
+func (f *formatFlag) Set(raw string) error {
+	v, err := parseFormatValue(raw)
+	if err != nil {
+		return err
+	}
+	f.set = true
+	f.value = v
+	return nil
+}
+
+// colorFlag backs --color on both subcommands. Like formatFlag, the `set`
+// bit disambiguates default-from-explicit so env vars and flags compose
+// correctly.
+type colorFlag struct {
+	set   bool
+	value colorMode
+}
+
+func (f *colorFlag) String() string {
+	if f == nil {
+		return "auto"
+	}
+	switch f.value {
+	case colorAlways:
+		return "always"
+	case colorNever:
+		return "never"
+	default:
+		return "auto"
+	}
+}
+
+func (f *colorFlag) Set(raw string) error {
+	v, err := parseColorValue(raw)
+	if err != nil {
+		return err
+	}
+	f.set = true
+	f.value = v
+	return nil
+}
+
+// resolveFormat applies precedence: flag > env > default. Unknown env
+// values produce a terse wrapped error the caller surfaces on stderr.
+func resolveFormat(fv formatFlag, env string) (outputFormat, error) {
+	if fv.set {
+		return fv.value, nil
+	}
+	if env != "" {
+		v, err := parseFormatValue(env)
+		if err != nil {
+			return formatText, fmt.Errorf("QUAE_FORMAT: %w", err)
+		}
+		return v, nil
+	}
+	return formatText, nil
+}
+
+// resolveColor applies precedence across --color / QUAE_COLOR / NO_COLOR.
+// Order: explicit flag wins; else QUAE_COLOR (quae-specific) wins over
+// NO_COLOR (community convention); else auto with NO_COLOR respected.
+// Unknown env values return an error so startup can exit 2.
+func resolveColor(cv colorFlag, quaeColorEnv, noColorEnv string) (colorMode, error) {
+	if cv.set {
+		return cv.value, nil
+	}
+	if quaeColorEnv != "" {
+		v, err := parseColorValue(quaeColorEnv)
+		if err != nil {
+			return colorAuto, fmt.Errorf("QUAE_COLOR: %w", err)
+		}
+		return v, nil
+	}
+	if noColorEnv != "" {
+		return colorNever, nil
+	}
+	return colorAuto, nil
+}
+
+// isTTY reports whether f is attached to a terminal (character device).
+// The check uses only os.FileInfo.Mode so it works without importing
+// golang.org/x/term — the go.mod does not pull it in transitively and this
+// scope forbids new deps.
+func isTTY(f *os.File) bool {
+	if f == nil {
+		return false
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
+// paletteFor converts a resolved colorMode + TTY probe into a concrete
+// diag.Palette. auto defers to the TTY probe AND the NO_COLOR community
+// convention; always/never are unconditional.
+func paletteFor(mode colorMode, tty bool, noColorEnv string) diag.Palette {
+	switch mode {
+	case colorAlways:
+		return diag.ANSIPalette{}
+	case colorNever:
+		return diag.NoColorPalette{}
+	}
+	if tty && noColorEnv == "" {
+		return diag.ANSIPalette{}
+	}
+	return diag.NoColorPalette{}
 }
 
 // parseFlags reads args into a cliOptions. The returned bool is true when the
@@ -443,6 +667,12 @@ func parseFlags(args []string, stderr io.Writer) (cliOptions, bool, error) {
 		"on engine error, emit a Blocking envelope instead of Allowing")
 	fs.Var(&opts.explain, "explain",
 		"emit diagnostics to stderr: fired|missed|both (default missed when bare)")
+	var format formatFlag
+	var color colorFlag
+	fs.Var(&format, "format",
+		"diagnostic output format: text|json|sarif (default text)")
+	fs.Var(&color, "color",
+		"color mode for text diagnostics: auto|always|never (default auto)")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -450,6 +680,20 @@ func parseFlags(args []string, stderr io.Writer) (cliOptions, bool, error) {
 		}
 		return opts, false, err
 	}
+	opts.format = formatText
+	opts.color = colorAuto
+	f, rerr := resolveFormat(format, os.Getenv("QUAE_FORMAT"))
+	if rerr != nil {
+		errorln(stderr, rerr)
+		return opts, false, rerr
+	}
+	opts.format = f
+	c, rerr := resolveColor(color, os.Getenv("QUAE_COLOR"), os.Getenv("NO_COLOR"))
+	if rerr != nil {
+		errorln(stderr, rerr)
+		return opts, false, rerr
+	}
+	opts.color = c
 	return opts, false, nil
 }
 
@@ -666,7 +910,7 @@ func fallbackEnvelope(cause error, failClosed bool) envelope.OutputEnvelope {
 // token.Pos.Filename() on a diagnostic resolves to that virtual path rather
 // than the on-disk absolute path. primeFileCache seeds every spelling the
 // renderer may see.
-func renderExplain(w io.Writer, filter explainFilter, matches []evaluator.Match, diags []diag.Diagnostic, ruleSets ...[]config.Rule) {
+func renderExplain(w io.Writer, filter explainFilter, format outputFormat, color colorMode, matches []evaluator.Match, diags []diag.Diagnostic, ruleSets ...[]config.Rule) {
 	if filter == explainFired || filter == explainBoth {
 		for _, m := range matches {
 			ruleID := ""
@@ -677,11 +921,30 @@ func renderExplain(w io.Writer, filter explainFilter, matches []evaluator.Match,
 		}
 	}
 	if filter == explainMissed || filter == explainBoth {
+		writeDiagnostics(w, diags, format, color, ruleSets...)
+	}
+}
+
+// writeDiagnostics emits diags in the requested format. Text selects a
+// palette via paletteFor and writes one Rust-style frame per diagnostic
+// (preserving the existing per-diag `rule_id:` header); JSON streams one
+// NDJSON object per diag; SARIF emits a single document.
+func writeDiagnostics(w io.Writer, diags []diag.Diagnostic, format outputFormat, color colorMode, ruleSets ...[]config.Rule) {
+	if len(diags) == 0 {
+		return
+	}
+	switch format {
+	case formatJSON:
+		_ = diag.RenderJSONStream(w, diags)
+	case formatSARIF:
+		_, _ = w.Write(diag.RenderSARIF(diags))
+	default:
+		palette := paletteFor(color, isTTY(os.Stderr), os.Getenv("NO_COLOR"))
 		src := primeFileCache(ruleSets...)
 		for i := range diags {
 			ruleID := ruleIDForDiag(diags[i], ruleSets...)
 			errorf(w, "rule_id: %s\n", ruleID)
-			_, _ = io.WriteString(w, diag.Render(diags[i], src))
+			_, _ = io.WriteString(w, diag.RenderWithPalette(diags[i], src, palette))
 		}
 	}
 }
@@ -791,6 +1054,13 @@ Flags:
   --explain[=MODE]        Emit diagnostics to stderr. MODE is one of
                           fired|missed|both; bare --explain defaults to
                           missed. Omit the flag to disable (zero cost).
+  --format <fmt>          Diagnostic output format: text|json|sarif
+                          (default: text). JSON emits one object per
+                          diagnostic (NDJSON); SARIF emits a single
+                          2.1.0 document.
+  --color <mode>          Color mode for text diagnostics:
+                          auto|always|never (default: auto). Has no
+                          effect on --format=json|sarif.
   -h, --help              Show this message and exit.
 
 Subcommands:
@@ -812,6 +1082,13 @@ Environment:
   QUAE_EXPLAIN            Truthy (1, true, yes — case-insensitive) enables
                           --explain=missed when --explain is absent. The
                           flag always wins when both are set.
+  QUAE_FORMAT             Selects the diagnostic output format when
+                          --format is absent (text|json|sarif).
+  QUAE_COLOR              Selects the color mode when --color is absent
+                          (auto|always|never). Overrides NO_COLOR.
+  NO_COLOR                Community convention: when set (any value),
+                          color is disabled. Superseded by --color or
+                          QUAE_COLOR when those are set.
 
 Supported harnesses: claude.
 `)

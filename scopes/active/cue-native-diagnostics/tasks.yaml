@@ -401,7 +401,7 @@ tasks:
     files:
       - cmd/quae/main.go
       - cmd/quae/main_format_test.go
-    status: pending
+    status: completed
     depends_on: [T13, T14, T15]
     test_hints:
       - `--format=json` emits one JSON object per diagnostic on stderr.
