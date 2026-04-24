@@ -83,9 +83,11 @@ func TestLocalize_Conjunct_SingleFailure_E0301WithOneReason(t *testing.T) {
 		t.Errorf("ConjunctFailed.Span.Length = %d, want < %d (must underline just the failing conjunct, not the whole chain)",
 			cfs[0].Span.Length, len("int & >=5 & <=10"))
 	}
-	// T4 scope: Sub is nil (T5/T6 populate it).
-	if cfs[0].Sub != nil {
-		t.Errorf("ConjunctFailed.Sub = %+v, want nil (T5/T6/T7 populate Sub later)", cfs[0].Sub)
+	// T5: bound conjunct now carries a BoundViolation Sub. Detailed
+	// BoundViolation field assertions live in bound_test.go; here we just
+	// check the Sub slot is populated so T4's pairing invariant holds.
+	if cfs[0].Sub == nil {
+		t.Errorf("ConjunctFailed.Sub = nil, want a BoundViolation for `>=5` (T5)")
 	}
 }
 
