@@ -179,3 +179,22 @@ func TestCodeInfoZeroValue(t *testing.T) {
 		t.Errorf("zero CodeInfo.Help = %q, want empty string", zero.Help)
 	}
 }
+
+// Asserts that this scope adds no new error codes.
+func TestNoNewCodesInScope(t *testing.T) {
+	const frozen = 15
+	if got := diag.CodesInScopeV1; got != frozen {
+		t.Errorf("diag.CodesInScopeV1 = %d, want %d", got, frozen)
+	}
+	if got := len(expectedCodes()); got != frozen {
+		t.Errorf("expectedCodes() enumerated %d codes, want %d", got, frozen)
+	}
+}
+
+// E0301 help must not promise a `want:` label for literal regex constraints.
+func TestE0301HelpReflectsWantSuppression(t *testing.T) {
+	const misleading = "(`want`)"
+	if strings.Contains(diag.E0301.Help, misleading) {
+		t.Errorf("E0301.Help contains misleading substring %q", misleading)
+	}
+}

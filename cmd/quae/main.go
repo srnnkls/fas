@@ -270,8 +270,8 @@ func runExplain(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 	}
 
 	src := primeFileCache([]config.Rule{resolved})
-	for _, d := range diags {
-		_, _ = io.WriteString(stderr, diag.Render(d, src))
+	for i := range diags {
+		_, _ = io.WriteString(stderr, diag.Render(diags[i], src))
 	}
 	return 1
 }
@@ -678,10 +678,10 @@ func renderExplain(w io.Writer, filter explainFilter, matches []evaluator.Match,
 	}
 	if filter == explainMissed || filter == explainBoth {
 		src := primeFileCache(ruleSets...)
-		for _, d := range diags {
-			ruleID := ruleIDForDiag(d, ruleSets...)
+		for i := range diags {
+			ruleID := ruleIDForDiag(diags[i], ruleSets...)
 			errorf(w, "rule_id: %s\n", ruleID)
-			_, _ = io.WriteString(w, diag.Render(d, src))
+			_, _ = io.WriteString(w, diag.Render(diags[i], src))
 		}
 	}
 }
