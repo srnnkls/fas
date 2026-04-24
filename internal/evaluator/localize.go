@@ -97,7 +97,7 @@ func walkStruct(node ast.Expr, ruleCur, inputCur cue.Value, path []string, yield
 			continue
 		}
 		reasons := failingConjuncts(ruleNext, next)
-		if !yield(leafDiagnostic(f, next, reasons)) {
+		if !yield(leafDiagnostic(f, ruleNext, next, reasons)) {
 			return false
 		}
 	}
@@ -311,12 +311,15 @@ func absentKeyDiagnostic(f *ast.Field, name string, parent cue.Value, path []str
 // underlines the first failing conjunct; otherwise the diagnostic falls
 // through to the legacy Msg path (NF5) so v0 behavior is preserved for
 // literal constraints and single-conjunct leaves that T5/T6 will specialise.
-func leafDiagnostic(f *ast.Field, actual cue.Value, reasons []diag.Reason) diag.Diagnostic {
+// Provenance footer notes (T9) are appended for every cross-file conjunct
+// carried by ruleNext, capped at maxProvenanceEntries.
+func leafDiagnostic(f *ast.Field, ruleNext, actual cue.Value, reasons []diag.Reason) diag.Diagnostic {
+	hostFile := f.Value.Pos().Filename()
 	if len(reasons) == 0 {
 		wantStr := renderExpr(f.Value)
 		gotStr := renderValue(actual)
 		span := exprLen(f.Value)
-		return diag.Diagnostic{
+		d := diag.Diagnostic{
 			Code:     diag.E0301.Code,
 			Severity: diag.SeverityError,
 			Title:    "leaf constraint failed",
@@ -330,6 +333,8 @@ func leafDiagnostic(f *ast.Field, actual cue.Value, reasons []diag.Reason) diag.
 				{Pos: f.Value.Pos(), Len: span, Msg: "got: " + gotStr},
 			},
 		}
+		d.Notes = append(d.Notes, provenanceNotes(ruleNext, hostFile)...)
+		return d
 	}
 	pos := f.Value.Pos()
 	span := exprLen(f.Value)
@@ -339,7 +344,7 @@ func leafDiagnostic(f *ast.Field, actual cue.Value, reasons []diag.Reason) diag.
 		}
 		span = first.Span.Length
 	}
-	return diag.Diagnostic{
+	d := diag.Diagnostic{
 		Code:     diag.E0301.Code,
 		Severity: diag.SeverityError,
 		Title:    "leaf constraint failed",
@@ -349,6 +354,8 @@ func leafDiagnostic(f *ast.Field, actual cue.Value, reasons []diag.Reason) diag.
 			Reasons: reasons,
 		},
 	}
+	d.Notes = append(d.Notes, provenanceNotes(ruleNext, hostFile)...)
+	return d
 }
 
 // firstConjunctPos derives a token.Pos anchored at the failing conjunct's
@@ -397,8 +404,10 @@ func kindsDisjoint(want, got cue.Kind) bool {
 }
 
 // kindMismatchDiagnostic builds an E0303 with a singular KindMismatch Reason.
+// Provenance notes (T9) are appended for every cross-file conjunct of
+// ruleNext so cross-package type constraints show their origin.
 func kindMismatchDiagnostic(f *ast.Field, ruleNext, actual cue.Value) diag.Diagnostic {
-	return diag.Diagnostic{
+	d := diag.Diagnostic{
 		Code:     diag.E0303.Code,
 		Severity: diag.SeverityError,
 		Title:    "type mismatch",
@@ -414,16 +423,20 @@ func kindMismatchDiagnostic(f *ast.Field, ruleNext, actual cue.Value) diag.Diagn
 			},
 		},
 	}
+	d.Notes = append(d.Notes, provenanceNotes(ruleNext, f.Value.Pos().Filename())...)
+	return d
 }
 
 // disjunctionDiagnostic builds an E0401 spanning the entire `A | B | C` chain
 // with a Primary Label carrying a DisjunctionFailed Reason whose Arms are
 // ranked by closeness to the input. T12 owns the per-arm caret rendering;
-// here we populate only the data layer.
+// here we populate only the data layer. Provenance notes (T9) are appended
+// for every cross-file arm source so disjunctions composed from stdlib
+// imports surface their origin on the footer.
 func disjunctionDiagnostic(expr *ast.BinaryExpr, ruleNext, actual cue.Value) diag.Diagnostic {
 	arms := flattenOrArms(expr)
 	ranked := rankArms(arms, ruleNext, actual)
-	return diag.Diagnostic{
+	d := diag.Diagnostic{
 		Code:     diag.E0401.Code,
 		Severity: diag.SeverityError,
 		Title:    "no disjunction arm matched",
@@ -434,6 +447,8 @@ func disjunctionDiagnostic(expr *ast.BinaryExpr, ruleNext, actual cue.Value) dia
 			Reasons: []diag.Reason{diag.DisjunctionFailed{Arms: ranked}},
 		},
 	}
+	d.Notes = append(d.Notes, provenanceNotes(ruleNext, expr.Pos().Filename())...)
+	return d
 }
 
 // fieldName extracts the textual name from a field label, supporting the
