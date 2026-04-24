@@ -139,7 +139,11 @@ error[E0301]: leaf constraint failed
   --> /__quae_rules__/leaf_regex.cue:12:24
    |
 12 |         tool_input: command: =~"^rm "
-   |                              ^^^^^^^^
+   |                              ^^^^^^^^^^^^^^^^^ got: "ls"
+   |
+   | ls
+   | ^
+   = note: regex first diverged at offset 0
 [1]
 ```
 
@@ -368,7 +372,7 @@ error[E0301]: leaf constraint failed
   --> /__quae_rules__/absent_path.cue:10:20
    |
 10 |         tool_name:       "Bash"
-   |                          ^^^^^^
+   |                          ^^^^^^ got: "Read"
 rule_id: absent-path
 error[E0201]: key not found
   --> /__quae_rules__/absent_path.cue:11:3
@@ -382,7 +386,7 @@ error[E0301]: leaf constraint failed
   --> /__quae_rules__/leaf_regex.cue:11:20
    |
 11 |         tool_name:       "Bash"
-   |                          ^^^^^^
+   |                          ^^^^^^ got: "Read"
 rule_id: leaf-regex
 error[E0201]: key not found
   --> /__quae_rules__/leaf_regex.cue:12:15
