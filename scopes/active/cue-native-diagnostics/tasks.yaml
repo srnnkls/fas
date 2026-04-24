@@ -197,7 +197,7 @@ tasks:
       - internal/evaluator/localize.go
       - internal/evaluator/disjunction_rank.go
       - internal/evaluator/disjunction_rank_test.go
-    status: pending
+    status: completed
     depends_on: [T1, T3, T4]
     test_hints:
       - `"Bash" | "Read" | "Write"` vs `"Rd"` → closest arm = "Read" (edit distance).

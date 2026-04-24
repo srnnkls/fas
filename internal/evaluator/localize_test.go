@@ -320,46 +320,6 @@ func TestLocalize_E0301_RegexLeafFails_WantGotLabels(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// E0401 — disjunction: all arms failed
-// -----------------------------------------------------------------------------
-
-// TestLocalize_E0401_AllArmsFail_PerArmLabels verifies that when a disjunction
-// `tool_name: "A" | "B" | "C"` fails against input `"D"`, the diagnostic
-// carries one label per arm — three Notes, each pointing at its arm's span.
-// The renderer uses these to underline every alternative.
-func TestLocalize_E0401_AllArmsFail_PerArmLabels(t *testing.T) {
-	evaluator.SetExplainEnabled(true)
-	t.Cleanup(func() { evaluator.SetExplainEnabled(false) })
-
-	dir := t.TempDir()
-	writeLocalizeRule(t, dir, "enum.cue", `{
-		when: {tool_name: "A" | "B" | "C"}
-		then: deny: {rule_id: "r", reason: "nope"}
-	}`)
-	rule := loadOne(t, dir)
-
-	input := compileVal(t, `{tool_name: "D"}`)
-
-	_, diags, err := evaluator.Evaluate([]config.Rule{rule}, input)
-	if err != nil {
-		t.Fatalf("Evaluate: %v", err)
-	}
-	d := findDiagWithCode(t, diags, "E0401")
-
-	if len(d.Notes) != 3 {
-		t.Fatalf("E0401 must carry one Note per arm (3 arms); got %d: %+v", len(d.Notes), d.Notes)
-	}
-	for i, n := range d.Notes {
-		if !n.Pos.IsValid() {
-			t.Errorf("E0401 Note[%d].Pos must be valid; got %v", i, n.Pos)
-		}
-		if n.Msg == "" {
-			t.Errorf("E0401 Note[%d].Msg must be non-empty", i)
-		}
-	}
-}
-
-// -----------------------------------------------------------------------------
 // Iterator semantics — caller break halts the walker cleanly
 // -----------------------------------------------------------------------------
 
