@@ -71,6 +71,13 @@ func walkStruct(node ast.Expr, ruleCur, inputCur cue.Value, path []string, yield
 		if !ruleNext.Exists() {
 			continue
 		}
+		// Short-circuit the leaf so no second diagnostic follows.
+		if kindsDisjoint(ruleNext.IncompleteKind(), next.Kind()) {
+			if !yield(kindMismatchDiagnostic(f, ruleNext, next)) {
+				return false
+			}
+			continue
+		}
 		if ruleNext.Subsume(next, cue.Final(), cue.Schema()) == nil {
 			continue
 		}
@@ -90,6 +97,24 @@ func walkStruct(node ast.Expr, ruleCur, inputCur cue.Value, path []string, yield
 // absentKeyDiagnostic builds an E0201 carrying a caret at the field label and
 // a help line listing the keys the input actually exposes at the parent path.
 func absentKeyDiagnostic(f *ast.Field, name string, parent cue.Value, path []string) diag.Diagnostic {
+	available := listKeys(parent)
+	if available == nil {
+		available = []string{}
+	}
+	suggestion := ""
+	if len(available) > 0 {
+		bestIdx, bestDist := 0, levenshtein(name, available[0])
+		for i := 1; i < len(available); i++ {
+			d := levenshtein(name, available[i])
+			if d < bestDist {
+				bestDist = d
+				bestIdx = i
+			}
+		}
+		if bestDist <= 2 {
+			suggestion = available[bestIdx]
+		}
+	}
 	return diag.Diagnostic{
 		Code:     diag.E0201.Code,
 		Severity: diag.SeverityError,
@@ -98,8 +123,15 @@ func absentKeyDiagnostic(f *ast.Field, name string, parent cue.Value, path []str
 			Pos: f.Label.Pos(),
 			Len: len(name),
 			Msg: fmt.Sprintf("key %q not found in input at path %s", name, joinPath(path)),
+			Reasons: []diag.Reason{
+				diag.KeyMissing{
+					Key:           name,
+					AvailableKeys: available,
+					Suggestion:    suggestion,
+				},
+			},
 		},
-		Help: fmt.Sprintf("input.%s has keys: %s", joinPath(path), strings.Join(listKeys(parent), ", ")),
+		Help: fmt.Sprintf("input.%s has keys: %s", joinPath(path), strings.Join(available, ", ")),
 	}
 }
 
@@ -122,6 +154,45 @@ func leafDiagnostic(f *ast.Field, actual cue.Value) diag.Diagnostic {
 		Notes: []diag.Label{
 			{Pos: f.Value.Pos(), Len: span, Msg: "want: " + wantStr},
 			{Pos: f.Value.Pos(), Len: span, Msg: "got: " + gotStr},
+		},
+	}
+}
+
+// kindsDisjoint reports whether two kind masks share no lattice overlap.
+// Number-family bits (IntKind, FloatKind, NumberKind) are treated as mutually
+// overlapping so refinements like `int` vs a `5.5` input fall through to the
+// Subsume path rather than surfacing as a type mismatch.
+func kindsDisjoint(want, got cue.Kind) bool {
+	// bottom on either side: defer to Subsume.
+	if want == 0 || got == 0 {
+		return false
+	}
+	if want&got != 0 {
+		return false
+	}
+	const numberFamily = cue.IntKind | cue.FloatKind | cue.NumberKind
+	if want&numberFamily != 0 && got&numberFamily != 0 {
+		return false
+	}
+	return true
+}
+
+// kindMismatchDiagnostic builds an E0303 with a singular KindMismatch Reason.
+func kindMismatchDiagnostic(f *ast.Field, ruleNext, actual cue.Value) diag.Diagnostic {
+	return diag.Diagnostic{
+		Code:     diag.E0303.Code,
+		Severity: diag.SeverityError,
+		Title:    "type mismatch",
+		Primary: diag.Label{
+			Pos: f.Value.Pos(),
+			Len: exprLen(f.Value),
+			Reasons: []diag.Reason{
+				diag.KindMismatch{
+					Want:   ruleNext.IncompleteKind(),
+					Got:    actual.Kind(),
+					Actual: renderValue(actual),
+				},
+			},
 		},
 	}
 }
