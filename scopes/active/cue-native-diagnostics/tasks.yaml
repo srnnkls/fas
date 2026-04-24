@@ -176,7 +176,7 @@ tasks:
       - internal/evaluator/localize.go
       - internal/evaluator/regex_diverge.go
       - internal/evaluator/regex_diverge_test.go
-    status: pending
+    status: completed
     depends_on: [T4]
     test_hints:
       - `=~"^rm "` vs `"ls"` → DivergeAt=0 (first char mismatch).

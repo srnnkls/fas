@@ -138,25 +138,53 @@ func failingConjuncts(ruleNext, input cue.Value) []diag.Reason {
 
 // conjunctSubReason inspects a failing conjunct's source AST and returns a
 // structured Reason describing the shape of the failure when it matches a
-// recognised form. Currently handles bound expressions (op >=, <=, >, <, !=)
-// yielding BoundViolation. Returns nil for shapes owned by sibling tasks
-// (regex → T6, etc.) so their populators can layer in additively.
+// recognised form. Handles bound expressions (op >=, <=, >, <, !=) yielding
+// BoundViolation, and regex matches (op =~) yielding RegexMismatch. Returns
+// nil for shapes not yet specialised so v0 fallback rendering applies.
 func conjunctSubReason(c, input cue.Value) diag.Reason {
 	u, ok := c.Source().(*ast.UnaryExpr)
 	if !ok {
 		return nil
 	}
-	opStr, isBound := boundOpString(u.Op)
-	if !isBound {
+	if opStr, isBound := boundOpString(u.Op); isBound {
+		bound := strings.TrimSpace(renderExpr(u.X))
+		actual := renderValue(input)
+		return diag.BoundViolation{
+			Op:       opStr,
+			Bound:    bound,
+			Actual:   actual,
+			Distance: boundDistance(u.Op, bound, actual),
+		}
+	}
+	if u.Op == token.MAT {
+		return regexSubReason(u.X, input)
+	}
+	return nil
+}
+
+// regexSubReason extracts the pattern string from a =~ operand and the input
+// string from the failing input value, then computes DivergeAt via
+// regex_diverge. Returns a RegexMismatch reason even when pattern extraction
+// partially fails or divergence is unavailable — the renderer falls back on
+// DivergeAt=-1 uniformly. Returns nil only when neither pattern nor input
+// can be recovered at all (so v0 Msg rendering applies).
+func regexSubReason(patternExpr ast.Expr, input cue.Value) diag.Reason {
+	lit, ok := patternExpr.(*ast.BasicLit)
+	if !ok {
 		return nil
 	}
-	bound := strings.TrimSpace(renderExpr(u.X))
-	actual := renderValue(input)
-	return diag.BoundViolation{
-		Op:       opStr,
-		Bound:    bound,
-		Actual:   actual,
-		Distance: boundDistance(u.Op, bound, actual),
+	pattern, err := strconv.Unquote(lit.Value)
+	if err != nil {
+		return nil
+	}
+	inputStr, err := input.String()
+	if err != nil {
+		return nil
+	}
+	return diag.RegexMismatch{
+		Pattern:   pattern,
+		Input:     inputStr,
+		DivergeAt: regexDiverge(pattern, inputStr),
 	}
 }
 
