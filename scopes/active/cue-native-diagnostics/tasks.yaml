@@ -236,7 +236,7 @@ tasks:
       - internal/evaluator/localize.go
       - internal/evaluator/provenance.go
       - internal/evaluator/provenance_test.go
-    status: pending
+    status: completed
     depends_on: [T1, T4]
     test_hints:
       - Rule field `x: int & stdlib.Positive` → 1 provenance entry pointing at stdlib.

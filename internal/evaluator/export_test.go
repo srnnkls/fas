@@ -15,3 +15,10 @@ import (
 func LocalizeForTest(rule config.Rule, input cue.Value) iter.Seq[diag.Diagnostic] {
 	return localize(rule, input)
 }
+
+// ProvenanceNotesForTest exposes the unexported provenanceNotes helper so
+// T9's tests can assert cap/sort/dedup directly on constructed cue.Values
+// without having to route through the full Evaluate pipeline.
+func ProvenanceNotesForTest(ruleNext cue.Value, hostFile string) []diag.Label {
+	return provenanceNotes(ruleNext, hostFile)
+}
