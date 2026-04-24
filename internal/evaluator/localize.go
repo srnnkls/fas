@@ -87,11 +87,77 @@ func walkStruct(node ast.Expr, ruleCur, inputCur cue.Value, path []string, yield
 			}
 			continue
 		}
-		if !yield(leafDiagnostic(f, next)) {
+		reasons := failingConjuncts(ruleNext, next)
+		if !yield(leafDiagnostic(f, next, reasons)) {
 			return false
 		}
 	}
 	return true
+}
+
+// flattenConjuncts recurses into v.Expr() and returns the leaf operands of any
+// top-level `&` chain in source order. `(A & B) & C` flattens to `[A, B, C]`.
+// A value whose top-level op is not AndOp contributes itself as a single entry.
+func flattenConjuncts(v cue.Value) []cue.Value {
+	op, operands := v.Expr()
+	if op == cue.AndOp {
+		out := make([]cue.Value, 0, len(operands))
+		for _, o := range operands {
+			out = append(out, flattenConjuncts(o)...)
+		}
+		return out
+	}
+	return []cue.Value{v}
+}
+
+// failingConjuncts walks ruleNext's `&` chain and returns one ConjunctFailed
+// entry per operand that does not subsume input, preserving source order.
+// Returns nil when ruleNext has fewer than two conjuncts so a literal leaf
+// falls through to the legacy Msg path (NF5). T5/T6 populate Sub.
+func failingConjuncts(ruleNext, input cue.Value) []diag.Reason {
+	conjuncts := flattenConjuncts(ruleNext)
+	if len(conjuncts) < 2 {
+		return nil
+	}
+	var reasons []diag.Reason
+	for _, c := range conjuncts {
+		if c.Subsume(input, cue.Final(), cue.Schema()) == nil {
+			continue
+		}
+		expr, span := conjunctExprAndSpan(c)
+		reasons = append(reasons, diag.ConjunctFailed{
+			Expr: expr,
+			Span: span,
+			Sub:  nil,
+		})
+	}
+	return reasons
+}
+
+// conjunctExprAndSpan renders a conjunct value's source expression and builds
+// a serializable Span DTO from its Source() position. Span.Length matches the
+// rendered expression's byte length so downstream renderers underline exactly
+// the failing conjunct. Falls back to an empty Span on unresolvable source.
+func conjunctExprAndSpan(v cue.Value) (string, diag.Span) {
+	src := v.Source()
+	if src == nil {
+		return renderValue(v), diag.Span{}
+	}
+	b, err := format.Node(src)
+	if err != nil {
+		return fmt.Sprintf("<unformatted %T>", src), diag.Span{}
+	}
+	expr := strings.TrimSpace(string(b))
+	pos := src.Pos()
+	if !pos.IsValid() {
+		return expr, diag.Span{}
+	}
+	return expr, diag.Span{
+		File:   pos.Filename(),
+		Line:   pos.Line(),
+		Col:    pos.Column(),
+		Length: len(expr),
+	}
 }
 
 // absentKeyDiagnostic builds an E0201 carrying a caret at the field label and
@@ -135,27 +201,75 @@ func absentKeyDiagnostic(f *ast.Field, name string, parent cue.Value, path []str
 	}
 }
 
-// leafDiagnostic builds an E0301 pairing the constraint expression and the
-// actual input value via `want:` / `got:` notes. Tokens are exact because
-// downstream tooling greps for them.
-func leafDiagnostic(f *ast.Field, actual cue.Value) diag.Diagnostic {
-	wantStr := renderExpr(f.Value)
-	gotStr := renderValue(actual)
+// leafDiagnostic builds an E0301 for a failed leaf constraint. When reasons
+// is non-empty the Primary Label carries the structured Reason slice and
+// underlines the first failing conjunct; otherwise the diagnostic falls
+// through to the legacy Msg path (NF5) so v0 behavior is preserved for
+// literal constraints and single-conjunct leaves that T5/T6 will specialise.
+func leafDiagnostic(f *ast.Field, actual cue.Value, reasons []diag.Reason) diag.Diagnostic {
+	if len(reasons) == 0 {
+		wantStr := renderExpr(f.Value)
+		gotStr := renderValue(actual)
+		span := exprLen(f.Value)
+		return diag.Diagnostic{
+			Code:     diag.E0301.Code,
+			Severity: diag.SeverityError,
+			Title:    "leaf constraint failed",
+			Primary: diag.Label{
+				Pos: f.Value.Pos(),
+				Len: span,
+				Msg: "constraint not satisfied",
+			},
+			Notes: []diag.Label{
+				{Pos: f.Value.Pos(), Len: span, Msg: "want: " + wantStr},
+				{Pos: f.Value.Pos(), Len: span, Msg: "got: " + gotStr},
+			},
+		}
+	}
+	pos := f.Value.Pos()
 	span := exprLen(f.Value)
+	if first, ok := reasons[0].(diag.ConjunctFailed); ok && first.Span.Length > 0 {
+		if p := firstConjunctPos(f.Value, first.Span); p.IsValid() {
+			pos = p
+		}
+		span = first.Span.Length
+	}
 	return diag.Diagnostic{
 		Code:     diag.E0301.Code,
 		Severity: diag.SeverityError,
 		Title:    "leaf constraint failed",
 		Primary: diag.Label{
-			Pos: f.Value.Pos(),
-			Len: span,
-			Msg: "constraint not satisfied",
-		},
-		Notes: []diag.Label{
-			{Pos: f.Value.Pos(), Len: span, Msg: "want: " + wantStr},
-			{Pos: f.Value.Pos(), Len: span, Msg: "got: " + gotStr},
+			Pos:     pos,
+			Len:     span,
+			Reasons: reasons,
 		},
 	}
+}
+
+// firstConjunctPos derives a token.Pos anchored at the failing conjunct's
+// source location. The renderer needs a token.Pos for file/line/col alignment,
+// while the Reason tree carries only a serializable Span DTO — so we reconstruct
+// the Pos from the enclosing AST node by matching file+line+column.
+func firstConjunctPos(leaf ast.Expr, span diag.Span) token.Pos {
+	if span.File == "" || span.Line <= 0 || span.Col <= 0 {
+		return token.NoPos
+	}
+	var found token.Pos
+	ast.Walk(leaf, func(n ast.Node) bool {
+		if found.IsValid() {
+			return false
+		}
+		p := n.Pos()
+		if !p.IsValid() {
+			return true
+		}
+		if p.Filename() == span.File && p.Line() == span.Line && p.Column() == span.Col {
+			found = p
+			return false
+		}
+		return true
+	}, nil)
+	return found
 }
 
 // kindsDisjoint reports whether two kind masks share no lattice overlap.
