@@ -146,7 +146,7 @@ tasks:
     files:
       - internal/evaluator/localize.go
       - internal/evaluator/bound_test.go
-    status: pending
+    status: completed
     depends_on: [T4]
     test_hints:
       - `>=5` with actual `3` → Distance "off by 2".

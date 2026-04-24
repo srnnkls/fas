@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"iter"
 	"slices"
+	"strconv"
 	"strings"
 
 	"cuelang.org/go/cue"
@@ -113,7 +114,8 @@ func flattenConjuncts(v cue.Value) []cue.Value {
 // failingConjuncts walks ruleNext's `&` chain and returns one ConjunctFailed
 // entry per operand that does not subsume input, preserving source order.
 // Returns nil when ruleNext has fewer than two conjuncts so a literal leaf
-// falls through to the legacy Msg path (NF5). T5/T6 populate Sub.
+// falls through to the legacy Msg path (NF5). When a failing conjunct is a
+// bound expression (op >=, <=, >, <, !=), Sub carries a BoundViolation.
 func failingConjuncts(ruleNext, input cue.Value) []diag.Reason {
 	conjuncts := flattenConjuncts(ruleNext)
 	if len(conjuncts) < 2 {
@@ -128,10 +130,77 @@ func failingConjuncts(ruleNext, input cue.Value) []diag.Reason {
 		reasons = append(reasons, diag.ConjunctFailed{
 			Expr: expr,
 			Span: span,
-			Sub:  nil,
+			Sub:  conjunctSubReason(c, input),
 		})
 	}
 	return reasons
+}
+
+// conjunctSubReason inspects a failing conjunct's source AST and returns a
+// structured Reason describing the shape of the failure when it matches a
+// recognised form. Currently handles bound expressions (op >=, <=, >, <, !=)
+// yielding BoundViolation. Returns nil for shapes owned by sibling tasks
+// (regex → T6, etc.) so their populators can layer in additively.
+func conjunctSubReason(c, input cue.Value) diag.Reason {
+	u, ok := c.Source().(*ast.UnaryExpr)
+	if !ok {
+		return nil
+	}
+	opStr, isBound := boundOpString(u.Op)
+	if !isBound {
+		return nil
+	}
+	bound := strings.TrimSpace(renderExpr(u.X))
+	actual := renderValue(input)
+	return diag.BoundViolation{
+		Op:       opStr,
+		Bound:    bound,
+		Actual:   actual,
+		Distance: boundDistance(u.Op, bound, actual),
+	}
+}
+
+// boundOpString maps a CUE bound token to its canonical literal form. The
+// bool result signals whether the token is one of the five bound operators.
+func boundOpString(op token.Token) (string, bool) {
+	switch op {
+	case token.GEQ:
+		return ">=", true
+	case token.LEQ:
+		return "<=", true
+	case token.GTR:
+		return ">", true
+	case token.LSS:
+		return "<", true
+	case token.NEQ:
+		return "!=", true
+	}
+	return "", false
+}
+
+// boundDistance pre-formats the "off by N" distance string per spec:
+//   - numeric ≥/≤/>/<: absolute value of (actual − bound), formatted with %g.
+//   - strict > or < where actual == bound: "off by 1" (smallest violation).
+//   - != with actual == bound: "" (no scalar distance for equality failure).
+//   - non-numeric operands: "".
+func boundDistance(op token.Token, boundStr, actualStr string) string {
+	if op == token.NEQ {
+		return ""
+	}
+	bound, berr := strconv.ParseFloat(boundStr, 64)
+	actual, aerr := strconv.ParseFloat(actualStr, 64)
+	if berr != nil || aerr != nil {
+		return ""
+	}
+	delta := actual - bound
+	if delta < 0 {
+		delta = -delta
+	}
+	// Strict inequality with actual == bound: smallest scalar violation is 1.
+	if delta == 0 && (op == token.GTR || op == token.LSS) {
+		return "off by 1"
+	}
+	return "off by " + strconv.FormatFloat(delta, 'g', -1, 64)
 }
 
 // conjunctExprAndSpan renders a conjunct value's source expression and builds
