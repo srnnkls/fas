@@ -10,23 +10,60 @@ Run with:
 scrut test -w . tests/diagnostics.md
 ```
 
-Fixture rules live under `tests/diagnostics_rules/` (well-formed rules that
-fail to match a chosen input, producing miss diagnostics) and two sibling
-directories for load-time errors:
+Fixture rules live under `tests/diagnostics_rules*/`:
 
-- `tests/diagnostics_rules_broken_scope/` — unbound identifier (E0501)
-- `tests/diagnostics_rules_broken_cross/` — cross-rule reference (E0502)
+- `tests/diagnostics_rules/` — the core three (`absent-path`, `leaf-regex`,
+  `disjunction`) used by the `--explain=both|fired` blocks.
+- `tests/diagnostics_rules_kind_mismatch/` — E0303 (`KindMismatch`).
+- `tests/diagnostics_rules_bound_violation/` — E0301 (`BoundViolation`, with
+  distance).
+- `tests/diagnostics_rules_key_missing_hint/` — E0201 (`KeyMissing` +
+  `Suggestion` footer).
+- `tests/diagnostics_rules_disjunction_close/` — E0401 with a close arm
+  (ranked `closest arm was X` primary).
+- `tests/diagnostics_rules_broken_scope/` — load-time E0501.
+- `tests/diagnostics_rules_broken_cross/` — load-time E0502.
 
 Each block redirects stderr into stdout (`2>&1`) so scrut — which only
 captures stdout by default — sees the diagnostic stream. The
 `--global-config /tmp/quae-nonexistent-global` trick isolates the suite from
 host-global rules.
 
-## E0201 — absent path segment
+The minimal-form rules documented in scope.md F7-F12 apply throughout:
+
+- No "constraint not satisfied" restatement — the Title alone names the
+  failure class.
+- Conditional `want:` — emitted only when the caret span is not already the
+  literal constraint (the "cheap/strong gate" from F7; see
+  `feedback_diag_no_restate.md`).
+- Per-Reason text formatting — `KindMismatch` → `expected X, got Y: Z`;
+  `BoundViolation` → `V violates op B (off by N)`;
+  `DisjunctionFailed` no-close-arm → `got V — no arm was close` + `= note:
+  tried arms:`.
+- Same-span label collapse — the source line prints once, subsequent
+  messages stack aligned under the same caret column.
+- `KeyMissing.Suggestion` non-empty → `= hint: did you mean "X"?` footer.
+
+### Deferred
+
+- **Provenance footer in text output.** `provenanceNotes` walks cross-file
+  conjuncts and emits `Provenance` Labels with an invalid `Pos` (the Span
+  is the payload). `orderedLabels` drops labels whose `Pos` doesn't
+  resolve via `SourceCache.LineAt`, so the Text renderer currently skips
+  these entries even though `--format=json` surfaces them intact. Until
+  the renderer grows a dedicated Provenance fold that bypasses `LineAt`,
+  a Provenance golden cannot match byte-for-byte. `tests/diagnostics_rules_*`
+  still exercises the data path via the non-text format tests in the
+  future `tests/diagnostics_formats.md` (T18). Target footer shape per
+  scope.md Ex 5: `= note: constraint introduced at <file:line:col>`.
+
+## E0201 — absent path segment (no hint path)
 
 The `absent_path` rule demands `signals.user_confirmed: true`; a Bash payload
-that omits `signals` entirely produces an E0201 carat at `signals` and a
-help line listing the keys the input actually exposes at that level.
+that omits `signals` entirely produces an E0201 caret at `signals` and a
+help line listing the keys the input actually exposes at that level. No
+input key is within Levenshtein distance 2 of "signals", so no `= hint:`
+footer appears.
 
 ```scrut
 $ cat << 'EOF' |
@@ -49,10 +86,43 @@ error[E0201]: key not found
 [1]
 ```
 
-## E0301 — leaf constraint failure (regex)
+## E0201 — absent key with did-you-mean hint
 
-The `leaf_regex` rule pins `tool_input.command: =~"^rm "`. An `ls` command
-surfaces the leaf miss with `want:` / `got:` notes under a single caret span.
+The `key_missing_hint` rule demands `tool_input.command`; the payload
+supplies `tool_input.commnd` (Levenshtein 1). `KeyMissing.Suggestion` is
+non-empty, so the renderer appends a `= hint: did you mean "commnd"?`
+footer under the help line. The `parsed` key appears in the available-keys
+list because the preprocessor injects a `parsed.*` synthetic subtree
+alongside any `tool_input.command` it sees.
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"commnd": "ls"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> quae explain key-missing-hint --config tests/diagnostics_rules_key_missing_hint --global-config /tmp/quae-nonexistent-global 2>&1
+error[E0201]: key not found
+  --> /__quae_rules__/key_missing_hint.cue:10:15
+   |
+10 |         tool_input: command: "ls"
+   |                     ^^^^^^^ key "command" not found in input at path tool_input
+   |
+   = help: input.tool_input has keys: commnd, parsed
+   = hint: did you mean "commnd"?
+[1]
+```
+
+## E0301 — leaf constraint failure (regex, single-conjunct)
+
+The `leaf_regex` rule pins `tool_input.command: =~"^rm "`. With a single
+conjunct the localize walker emits an empty-Reasons Label (no
+`ConjunctFailed` wrapper, no `want:` gate) and the renderer falls through
+to the bare caret row — no `got:` restatement, no `= want:` footer.
 
 ```scrut
 $ cat << 'EOF' |
@@ -69,21 +139,75 @@ error[E0301]: leaf constraint failed
   --> /__quae_rules__/leaf_regex.cue:12:24
    |
 12 |         tool_input: command: =~"^rm "
-   |                              ^^^^^^^^ constraint not satisfied
-   |
-12 |         tool_input: command: =~"^rm "
-   |                              ^^^^^^^^ want: =~"^rm "
-   |
-12 |         tool_input: command: =~"^rm "
-   |                              ^^^^^^^^ got: "ls"
+   |                              ^^^^^^^^
 [1]
 ```
 
-## E0401 — disjunction all-arms-fail
+## E0301 — bound violation with distance
 
-The `disjunction` rule accepts `tool_name: "Read" | "Write" | "Edit"`. Feeding
-`tool_name: "Bash"` rejects every arm; the diagnostic highlights the full span
-and adds one Note per arm.
+The `bound_violation` rule requires `tool_input.retry_count: _int & <=10`.
+An input `retry_count: 12` fails the `<=10` conjunct with a `BoundViolation`
+whose primary row renders `V violates op B (off by N)`. A second
+(same-span) Label stacks the `want:` expansion of the full conjunction
+underneath — emitted because the caret spans the whole `_int & <=10` form,
+not just the literal bound.
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"retry_count": 12},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> quae explain bound-violation --config tests/diagnostics_rules_bound_violation --global-config /tmp/quae-nonexistent-global 2>&1
+error[E0301]: leaf constraint failed
+  --> /__quae_rules__/bound_violation.cue:11:35
+   |
+11 |         tool_input: retry_count: _int & <=10
+   |                                         ^^^^ 12 violates <= 10 (off by 2)
+   |
+11 |         tool_input: retry_count: _int & <=10
+   |                                  ^^^^^^^^^^^ want: int & <=10
+[1]
+```
+
+## E0303 — kind mismatch
+
+The `kind_mismatch` rule requires `tool_input.command: _int` (hidden-sibling
+alias for `int`). A string input is kind-disjoint from `int`, so localize
+short-circuits to `kindMismatchDiagnostic` and builds an E0303 with a
+`KindMismatch` Reason. The caret row reads `expected <Want>, got <Got>:
+<Actual>` per scope.md Ex 5.
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "ls"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> quae explain kind-mismatch --config tests/diagnostics_rules_kind_mismatch --global-config /tmp/quae-nonexistent-global 2>&1
+error[E0303]: type mismatch
+  --> /__quae_rules__/kind_mismatch.cue:13:24
+   |
+13 |         tool_input: command: _int
+   |                              ^^^^ expected int, got string: "ls"
+[1]
+```
+
+## E0401 — disjunction, no arm close enough
+
+The `disjunction` rule accepts `tool_name: "Read" | "Write" | "Edit"`.
+Feeding `tool_name: "Bash"` ranks every arm below `ScoreKindMatch` (kind
+matches but the Levenshtein distance drags every score under 100), so the
+renderer takes the "no-close-arm" path: a flat primary message plus a
+`= note: tried arms:` footer in rank order, with no per-arm caret frames.
 
 ```scrut
 $ cat << 'EOF' |
@@ -100,16 +224,43 @@ error[E0401]: no disjunction arm matched
   --> /__quae_rules__/disjunction.cue:10:20
    |
 10 |         tool_name:       "Read" | "Write" | "Edit"
-   |                          ^^^^^^^^^^^^^^^^^^^^^^^^^ no arm subsumes "Bash"
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^^^ got "Bash" — no arm was close
+   = note: tried arms: "Read", "Edit", "Write"
+[1]
+```
+
+## E0401 — disjunction, ranked arms (closest arm was X)
+
+Same rule shape, but the input `tool_name: "Rea"` is Levenshtein 1 from
+`"Read"`. The top arm's score lands at or above `ScoreKindMatch`, so the
+renderer names the closest arm on the primary row and emits one secondary
+caret frame per arm (sorted by score descending).
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Rea",
+>   "tool_input": {"file_path": "/tmp/f"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> quae explain disjunction-close --config tests/diagnostics_rules_disjunction_close --global-config /tmp/quae-nonexistent-global 2>&1
+error[E0401]: no disjunction arm matched
+  --> /__quae_rules__/disjunction_close.cue:10:20
    |
 10 |         tool_name:       "Read" | "Write" | "Edit"
-   |                          ^^^^^^ arm "Read" did not match
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^^^ got "Rea" — closest arm was "Read"
    |
-10 |         tool_name:       "Read" | "Write" | "Edit"
-   |                                   ^^^^^^^ arm "Write" did not match
+10 | 
+   |                    ^^^^^^ "Read"
    |
-10 |         tool_name:       "Read" | "Write" | "Edit"
-   |                                             ^^^^^^ arm "Edit" did not match
+10 | 
+   |                                       ^^^^^^ "Edit"
+   |
+10 | 
+   |                             ^^^^^^^ "Write"
 [1]
 ```
 
@@ -198,7 +349,7 @@ $ cat << 'EOF' |
 
 `--explain=both` combines the fired-trace lane and the missed-diagnostic lane;
 the same Read payload shows one fired trace for `disjunction` plus the miss
-diagnostics for the other two rules.
+diagnostics for the other two rules. Diagnostics appear in rule_id order.
 
 ```scrut
 $ cat << 'EOF' |
@@ -217,13 +368,7 @@ error[E0301]: leaf constraint failed
   --> /__quae_rules__/absent_path.cue:10:20
    |
 10 |         tool_name:       "Bash"
-   |                          ^^^^^^ constraint not satisfied
-   |
-10 |         tool_name:       "Bash"
-   |                          ^^^^^^ want: "Bash"
-   |
-10 |         tool_name:       "Bash"
-   |                          ^^^^^^ got: "Read"
+   |                          ^^^^^^
 rule_id: absent-path
 error[E0201]: key not found
   --> /__quae_rules__/absent_path.cue:11:3
@@ -237,13 +382,7 @@ error[E0301]: leaf constraint failed
   --> /__quae_rules__/leaf_regex.cue:11:20
    |
 11 |         tool_name:       "Bash"
-   |                          ^^^^^^ constraint not satisfied
-   |
-11 |         tool_name:       "Bash"
-   |                          ^^^^^^ want: "Bash"
-   |
-11 |         tool_name:       "Bash"
-   |                          ^^^^^^ got: "Read"
+   |                          ^^^^^^
 rule_id: leaf-regex
 error[E0201]: key not found
   --> /__quae_rules__/leaf_regex.cue:12:15

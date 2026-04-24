@@ -425,7 +425,7 @@ tasks:
       retained.
     files:
       - tests/diagnostics.md
-    status: pending
+    status: completed
     depends_on: [T10, T11, T12]
     test_hints:
       - `scrut test tests/diagnostics.md` passes.
