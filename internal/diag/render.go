@@ -25,7 +25,18 @@ const tabWidth = 4
 // to fetch snippet lines. Missing source degrades to a "position unknown"
 // marker; Render never panics on bad input per scope NF3.
 func Render(d Diagnostic, src SourceCache) string {
-	data := buildRenderData(d, src)
+	return RenderWithPalette(d, src, NoColorPalette{})
+}
+
+// RenderWithPalette formats a Diagnostic applying the given Palette to the
+// severity word, caret runs, location segment, and hint footers. Legacy
+// callers use Render which wraps this with NoColorPalette for byte-identical
+// backwards compatibility.
+func RenderWithPalette(d Diagnostic, src SourceCache, palette Palette) string {
+	if palette == nil {
+		palette = NoColorPalette{}
+	}
+	data := buildRenderData(d, src, palette)
 
 	var b strings.Builder
 	if err := renderTmpl.Execute(&b, data); err != nil {
@@ -104,7 +115,10 @@ type spanKey struct {
 	length int
 }
 
-func buildRenderData(d Diagnostic, src SourceCache) renderData {
+func buildRenderData(d Diagnostic, src SourceCache, palette Palette) renderData {
+	if palette == nil {
+		palette = NoColorPalette{}
+	}
 	_, primaryLineNum, primaryCol, primaryOK := src.LineAt(d.Primary.Pos)
 
 	resolved := orderedLabels(d, src)
@@ -165,7 +179,7 @@ func buildRenderData(d Diagnostic, src SourceCache) renderData {
 				LineNum:  r.lineNum,
 				Line:     expanded,
 				CaretCol: visualCol,
-				Carets:   carets(r.label.Len),
+				Carets:   palette.Caret(carets(r.label.Len)),
 				Msg:      primaryMsg,
 			})
 		}
@@ -190,6 +204,11 @@ func buildRenderData(d Diagnostic, src SourceCache) renderData {
 			if ln > maxLineNum {
 				maxLineNum = ln
 			}
+			// Secondary frames also honour the palette so caret colour
+			// stays consistent across primary, arm, and synthetic frames.
+			if lbl.Carets != "" {
+				lbl.Carets = palette.Caret(lbl.Carets)
+			}
 			labels = append(labels, lbl)
 		}
 	}
@@ -197,10 +216,10 @@ func buildRenderData(d Diagnostic, src SourceCache) renderData {
 	gutter := len(strconv.Itoa(maxLineNum))
 
 	return renderData{
-		Severity: severityWord(d.Severity),
+		Severity: palette.Severity(severityWord(d.Severity)),
 		Code:     d.Code,
 		Title:    d.Title,
-		Location: locationLine(d.Primary, primaryLineNum, primaryCol, primaryOK),
+		Location: locationLine(d.Primary, primaryLineNum, primaryCol, primaryOK, palette),
 		Gutter:   gutter,
 		Labels:   labels,
 		Help:     help,
@@ -371,11 +390,15 @@ func severityWord(s Severity) string {
 	}
 }
 
-func locationLine(primary Label, lineNum, col int, ok bool) string {
+func locationLine(primary Label, lineNum, col int, ok bool, palette Palette) string {
+	if palette == nil {
+		palette = NoColorPalette{}
+	}
 	if !ok {
 		return "  --> position unknown"
 	}
-	return "  --> " + primary.Pos.Filename() + ":" + strconv.Itoa(lineNum) + ":" + strconv.Itoa(col)
+	coords := primary.Pos.Filename() + ":" + strconv.Itoa(lineNum) + ":" + strconv.Itoa(col)
+	return "  --> " + palette.Location(coords)
 }
 
 func carets(n int) string {
