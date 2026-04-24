@@ -413,7 +413,7 @@ var renderTmpl = template.Must(template.New("diag").
 		"pad":    func(n int) string { return strings.Repeat(" ", n) },
 		"lineNo": func(gutter, n int) string { return leftPad(strconv.Itoa(n), gutter) },
 	}).
-	Parse(renderTemplate))
+	Parse(diagnosticTemplate))
 
 func leftPad(s string, width int) string {
 	if len(s) >= width {
@@ -422,27 +422,17 @@ func leftPad(s string, width int) string {
 	return strings.Repeat(" ", width-len(s)) + s
 }
 
-const renderTemplate = "" +
-	"{{.Severity}}[{{.Code}}]: {{.Title}}\n" +
-	"{{.Location}}\n" +
-	"{{pad .Gutter}} |\n" +
-	"{{range $i, $l := .Labels}}" +
-	"{{if $l.Collapsed}}" +
-	"{{pad $.Gutter}} |{{pad $l.CaretCol}}{{$l.Msg}}\n" +
-	"{{else if $l.Synthetic}}" +
-	"{{if $i}}{{pad $.Gutter}} |\n{{end}}" +
-	"{{pad $.Gutter}} | {{$l.Line}}\n" +
-	"{{pad $.Gutter}} |{{pad $l.CaretCol}}{{$l.Carets}}{{with $l.Msg}} {{.}}{{end}}\n" +
-	"{{else}}" +
-	"{{if $i}}{{pad $.Gutter}} |\n{{end}}" +
-	"{{lineNo $.Gutter $l.LineNum}} | {{$l.Line}}\n" +
-	"{{pad $.Gutter}} |{{pad $l.CaretCol}}{{$l.Carets}}{{with $l.Msg}} {{.}}{{end}}\n" +
-	"{{end}}" +
-	"{{end}}" +
-	"{{with .Help}}" +
-	"{{pad $.Gutter}} |\n" +
-	"{{pad $.Gutter}} = help: {{.}}\n" +
-	"{{end}}" +
-	"{{range .Footers}}" +
-	"{{pad $.Gutter}} {{.}}\n" +
-	"{{end}}"
+const diagnosticTemplate = `{{.Severity}}[{{.Code}}]: {{.Title}}
+{{.Location}}
+{{pad .Gutter}} |
+{{range $i, $l := .Labels}}{{if $l.Collapsed}}{{pad $.Gutter}} |{{pad $l.CaretCol}}{{$l.Msg}}
+{{else if $l.Synthetic}}{{if $i}}{{pad $.Gutter}} |
+{{end}}{{pad $.Gutter}} | {{$l.Line}}
+{{pad $.Gutter}} |{{pad $l.CaretCol}}{{$l.Carets}}{{with $l.Msg}} {{.}}{{end}}
+{{else}}{{if $i}}{{pad $.Gutter}} |
+{{end}}{{lineNo $.Gutter $l.LineNum}} | {{$l.Line}}
+{{pad $.Gutter}} |{{pad $l.CaretCol}}{{$l.Carets}}{{with $l.Msg}} {{.}}{{end}}
+{{end}}{{end}}{{with .Help}}{{pad $.Gutter}} |
+{{pad $.Gutter}} = help: {{.}}
+{{end}}{{range .Footers}}{{pad $.Gutter}} {{.}}
+{{end}}`
