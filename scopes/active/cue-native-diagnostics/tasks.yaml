@@ -340,7 +340,7 @@ tasks:
       - internal/diag/render_json.go
       - internal/diag/render_json_test.go
       - internal/diag/json_schema.md
-    status: pending
+    status: completed
     depends_on: [T1, T12]
     test_hints:
       - Round-trip: marshal → unmarshal → remarshal = byte-identical.
@@ -362,7 +362,7 @@ tasks:
       - internal/diag/render_sarif.go
       - internal/diag/render_sarif_test.go
       - internal/diag/sarif_fixture.json
-    status: pending
+    status: completed
     depends_on: [T1, T12]
     test_hints:
       - Emitted SARIF parses as valid JSON with required top-level keys (version, runs).
