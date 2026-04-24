@@ -50,7 +50,7 @@ $ cat << 'EOF' |
 > }
 > EOF
 > quae explain absent-path --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global --format=json 2>&1
-{"code":"E0201","severity":"error","title":"key not found","location":{"file":"/__quae_rules__/absent_path.cue","line":11,"col":3},"primary":*"reasons":[{"type":"key_missing",*}]},"help":"input.*has keys: *"} (glob)
+{"code":"E0201","severity":"error","title":"key not found","location":{"file":"/__quae_rules__/absent_path.cue","line":11,"col":3},"primary":*"reasons":[{"type":"key_missing",*}]},"help":"*has keys: *"} (glob)
 [1]
 ```
 
@@ -98,7 +98,7 @@ $ cat << 'EOF' |
 11 |         signals: user_confirmed: true
    |         \x1b[31m^^^^^^^\x1b[0m key "signals" not found in input at path <root> (escaped)
    |
-   = help: input.<root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
+   = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
 [1]
 ```
 
@@ -125,7 +125,7 @@ error[E0201]: key not found
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found in input at path <root>
    |
-   = help: input.<root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
+   = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
 [1]
 ```
 
@@ -151,7 +151,7 @@ error[E0201]: key not found
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found in input at path <root>
    |
-   = help: input.<root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
+   = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
 [1]
 ```
 
@@ -171,7 +171,7 @@ $ cat << 'EOF' |
 > }
 > EOF
 > QUAE_FORMAT=json quae explain absent-path --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global 2>&1
-{"code":"E0201","severity":"error","title":"key not found","location":{"file":"/__quae_rules__/absent_path.cue","line":11,"col":3},"primary":*"reasons":[{"type":"key_missing",*}]},"help":"input.*has keys: *"} (glob)
+{"code":"E0201","severity":"error","title":"key not found","location":{"file":"/__quae_rules__/absent_path.cue","line":11,"col":3},"primary":*"reasons":[{"type":"key_missing",*}]},"help":"*has keys: *"} (glob)
 [1]
 ```
 
@@ -197,7 +197,7 @@ $ cat << 'EOF' |
 11 |         signals: user_confirmed: true
    |         \x1b[31m^^^^^^^\x1b[0m key "signals" not found in input at path <root> (escaped)
    |
-   = help: input.<root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
+   = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
 [1]
 ```
 

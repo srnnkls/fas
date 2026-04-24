@@ -302,7 +302,7 @@ func absentKeyDiagnostic(f *ast.Field, name string, parent cue.Value, path []str
 				},
 			},
 		},
-		Help: fmt.Sprintf("input.%s has keys: %s", joinPath(path), strings.Join(available, ", ")),
+		Help: fmt.Sprintf("%s has keys: %s", joinPath(path), strings.Join(available, ", ")),
 	}
 }
 

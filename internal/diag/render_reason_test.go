@@ -431,7 +431,7 @@ func TestRenderReason_KeyMissing_WithSuggestion(t *testing.T) {
 				},
 			},
 		},
-		Help: "input.<root> has keys: flag, forced",
+		Help: "<root> has keys: flag, forced",
 	}
 
 	got := diag.Render(d, src)
@@ -466,10 +466,10 @@ func TestRenderReason_KeyMissing_EmptyParent(t *testing.T) {
 				},
 			},
 		},
-		// The localize path sets Help to "input.<path> has keys: " (empty
+		// The localize path sets Help to "<path> has keys: " (empty
 		// list) when no keys are available; the renderer should replace
 		// that with the empty-struct phrasing.
-		Help: "input.<root> has keys: ",
+		Help: "<root> has keys: ",
 	}
 
 	got := diag.Render(d, src)
@@ -480,7 +480,7 @@ func TestRenderReason_KeyMissing_EmptyParent(t *testing.T) {
 	if strings.Contains(got, "= hint:") {
 		t.Errorf("empty-parent case should not emit a hint line.\noutput:\n%s", got)
 	}
-	if strings.Contains(got, "= help: input.<root> has keys: ") {
+	if strings.Contains(got, "= help: <root> has keys: ") {
 		t.Errorf("legacy has-keys help should be replaced.\noutput:\n%s", got)
 	}
 }
