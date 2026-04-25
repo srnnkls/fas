@@ -67,18 +67,18 @@ func TestRender_SingleLabelGolden(t *testing.T) {
 		Primary: diag.Label{
 			Pos: pos,
 			Len: 5,
-			Msg: `key "flags" not found in input at path tool_input`,
+			Msg: `key "flags" not found at tool_input`,
 		},
-		Help: "input.tool_input has keys: command, file_path",
+		Help: "tool_input has keys: command, file_path",
 	}
 
 	want := "error[E0201]: key not found\n" +
 		"  --> tests/policies/git.cue:12:17\n" +
 		"   |\n" +
 		"12 |     tool_input: flags: force: true\n" +
-		`   |                 ^^^^^ key "flags" not found in input at path tool_input` + "\n" +
+		`   |                 ^^^^^ key "flags" not found at tool_input` + "\n" +
 		"   |\n" +
-		"   = help: input.tool_input has keys: command, file_path\n"
+		"   = help: tool_input has keys: command, file_path\n"
 
 	got := diag.Render(d, src)
 	if got != want {

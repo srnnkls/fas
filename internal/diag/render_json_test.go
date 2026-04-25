@@ -133,7 +133,7 @@ func TestRenderJSON_SchemaFields(t *testing.T) {
 		Primary: diag.Label{
 			Pos: newTestPos(t, "retry.cue", []int{0}, 21),
 			Len: 3,
-			Msg: "expected int",
+			Msg: "want: int",
 			Reasons: []diag.Reason{
 				diag.KindMismatch{Want: cue.IntKind, Got: cue.StringKind, Actual: `"five"`},
 			},

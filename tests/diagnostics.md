@@ -36,7 +36,8 @@ The minimal-form rules documented in scope.md F7-F12 apply throughout:
 - Conditional `want:` — emitted only when the caret span is not already the
   literal constraint (the "cheap/strong gate" from F7; see
   `feedback_diag_no_restate.md`).
-- Per-Reason text formatting — `KindMismatch` → `expected X, got Y: Z`;
+- Per-Reason text formatting — `KindMismatch` → `want: X, got: Z` (Z is the
+  concrete actual value, which already shows its kind);
   `BoundViolation` → `V violates op B (off by N)`;
   `DisjunctionFailed` no-close-arm → `got V — no arm was close` + `= note:
   tried arms:`.
@@ -80,7 +81,7 @@ error[E0201]: key not found
   --> /__quae_rules__/absent_path.cue:11:3
    |
 11 |         signals: user_confirmed: true
-   |         ^^^^^^^ key "signals" not found in input at path <root>
+   |         ^^^^^^^ key "signals" not found at <root>
    |
    = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
 [1]
@@ -110,7 +111,7 @@ error[E0201]: key not found
   --> /__quae_rules__/key_missing_hint.cue:10:15
    |
 10 |         tool_input: command: "ls"
-   |                     ^^^^^^^ key "command" not found in input at path tool_input
+   |                     ^^^^^^^ key "command" not found at tool_input
    |
    = help: tool_input has keys: commnd, parsed
    = hint: did you mean "commnd"?
@@ -183,8 +184,10 @@ error[E0301]: leaf constraint failed
 The `kind_mismatch` rule requires `tool_input.command: _int` (hidden-sibling
 alias for `int`). A string input is kind-disjoint from `int`, so localize
 short-circuits to `kindMismatchDiagnostic` and builds an E0303 with a
-`KindMismatch` Reason. The caret row reads `expected <Want>, got <Got>:
-<Actual>` per scope.md Ex 5.
+`KindMismatch` Reason. The caret row reads `want: <Want>, got: <Actual>` —
+the actual literal carries its own kind, so the rendering drops the redundant
+`<Got>` kind word and aligns with the `want:`/`got:` label pairs used by the
+rest of the leaf-failure surface.
 
 ```scrut
 $ cat << 'EOF' |
@@ -201,7 +204,7 @@ error[E0303]: type mismatch
   --> /__quae_rules__/kind_mismatch.cue:13:24
    |
 13 |         tool_input: command: _int
-   |                              ^^^^ expected int, got string: "ls"
+   |                              ^^^^ want: int, got: "ls"
 [1]
 ```
 
@@ -378,7 +381,7 @@ error[E0201]: key not found
   --> /__quae_rules__/absent_path.cue:11:3
    |
 11 |         signals: user_confirmed: true
-   |         ^^^^^^^ key "signals" not found in input at path <root>
+   |         ^^^^^^^ key "signals" not found at <root>
    |
    = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
 rule_id: leaf-regex
@@ -392,7 +395,7 @@ error[E0201]: key not found
   --> /__quae_rules__/leaf_regex.cue:12:15
    |
 12 |         tool_input: command: =~"^rm "
-   |                     ^^^^^^^ key "command" not found in input at path tool_input
+   |                     ^^^^^^^ key "command" not found at tool_input
    |
    = help: tool_input has keys: file_path
 ```
