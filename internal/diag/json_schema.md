@@ -53,5 +53,5 @@ Every Reason object carries a stable snake_case `"type"` tag. Seven variants:
 ## Example
 
 ```json
-{"code":"E0303","severity":"error","title":"type mismatch","location":{"file":"retry.cue","line":8,"col":21},"primary":{"pos":{"line":8,"col":21,"len":3},"msg":"expected int","reasons":[{"type":"kind_mismatch","want":"int","got":"string","actual":"\"five\""}]},"notes":[{"pos":{"line":8,"col":21,"len":3},"msg":"introduced here","reasons":[{"type":"provenance","span":{"file":"stdlib/nums.cue","line":7,"col":17,"length":3},"snippet":"\u003e=0"}]}],"help":"no value of kind `string` can satisfy a constraint of kind `int`"}
+{"code":"E0303","severity":"error","title":"type mismatch","location":{"file":"retry.cue","line":8,"col":21},"primary":{"pos":{"line":8,"col":21,"len":3},"msg":"want: int","reasons":[{"type":"kind_mismatch","want":"int","got":"string","actual":"\"five\""}]},"notes":[{"pos":{"line":8,"col":21,"len":3},"msg":"introduced here","reasons":[{"type":"provenance","span":{"file":"stdlib/nums.cue","line":7,"col":17,"length":3},"snippet":"\u003e=0"}]}],"help":"no value of kind `string` can satisfy a constraint of kind `int`"}
 ```

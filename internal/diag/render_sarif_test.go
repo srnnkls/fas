@@ -148,7 +148,7 @@ func TestRenderSARIF_RuleIDAndMessage(t *testing.T) {
 		Code:     "E0301",
 		Severity: diag.SeverityError,
 		Title:    "kind mismatch",
-		Primary:  diag.Label{Pos: pos, Len: 2, Msg: "expected string, got int"},
+		Primary:  diag.Label{Pos: pos, Len: 2, Msg: "want: string, got: 1"},
 	}
 	doc := decodeSARIF(t, diag.RenderSARIF([]diag.Diagnostic{d}))
 	r := firstResult(t, doc)
@@ -164,7 +164,7 @@ func TestRenderSARIF_RuleIDAndMessage(t *testing.T) {
 	if !strings.Contains(text, "kind mismatch") {
 		t.Errorf("message.text must contain title; got %q", text)
 	}
-	if !strings.Contains(text, "expected string, got int") {
+	if !strings.Contains(text, "want: string, got: 1") {
 		t.Errorf("message.text must contain primary label msg; got %q", text)
 	}
 }

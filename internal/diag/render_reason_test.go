@@ -12,8 +12,11 @@ import (
 )
 
 // TestRenderReason_KindMismatch: a Label carrying a KindMismatch renders the
-// primary caret row with "expected <want>, got <got>: <actual>" — kind names
-// canonicalised via the diag→string map, not Go's cue.Kind integer form.
+// primary caret row with "want: <want>, got: <actual>" — kind names
+// canonicalised via the diag→string map, not Go's cue.Kind integer form. The
+// got side carries the concrete actual value (e.g. `"five"`) rather than its
+// kind, since the literal already shows the kind and the redundant word
+// breaks the want:/got: label parallelism.
 func TestRenderReason_KindMismatch(t *testing.T) {
 	pos := newPos(t, "r.cue", 0)
 	src := fakeSource{entries: map[token.Pos]fakeEntry{
@@ -34,7 +37,7 @@ func TestRenderReason_KindMismatch(t *testing.T) {
 	}
 
 	got := diag.Render(d, src)
-	want := `expected int, got string: "five"`
+	want := `want: int, got: "five"`
 	if !strings.Contains(got, want) {
 		t.Errorf("output missing %q.\noutput:\n%s", want, got)
 	}
@@ -457,7 +460,7 @@ func TestRenderReason_KeyMissing_EmptyParent(t *testing.T) {
 		Primary: diag.Label{
 			Pos: pos,
 			Len: 9,
-			Msg: `key "container" not found in input at path <root>`,
+			Msg: `key "container" not found at <root>`,
 			Reasons: []diag.Reason{
 				diag.KeyMissing{
 					Key:           "container",

@@ -75,7 +75,7 @@ func walkStruct(node ast.Expr, ruleCur, inputCur cue.Value, path []string, yield
 		// Literal-arm disjunctions own their own narrative via ranked arms
 		// (E0401 + DisjunctionFailed). Pure kind-union disjunctions
 		// (`int | string`) defer to the leaf-level KindMismatch path so
-		// "expected int|string, got bool" stays a single E0303 reason
+		// "want: int|string, got: false" stays a single E0303 reason
 		// rather than three useless arm rankings.
 		if b, ok := f.Value.(*ast.BinaryExpr); ok && b.Op == token.OR && hasConcreteArm(ruleNext) {
 			if ruleNext.Subsume(next, cue.Final(), cue.Schema()) == nil {
@@ -307,7 +307,7 @@ func absentKeyDiagnostic(f *ast.Field, name string, parent cue.Value, path []str
 		Primary: diag.Label{
 			Pos: f.Label.Pos(),
 			Len: len(name),
-			Msg: fmt.Sprintf("key %q not found in input at path %s", name, joinPath(path)),
+			Msg: fmt.Sprintf("key %q not found at %s", name, joinPath(path)),
 			Reasons: []diag.Reason{
 				diag.KeyMissing{
 					Key:           name,

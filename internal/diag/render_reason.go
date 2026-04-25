@@ -60,8 +60,7 @@ func renderReasonText(r Reason, labelMsg string) reasonRender {
 	switch v := r.(type) {
 	case KindMismatch:
 		return reasonRender{
-			msg: fmt.Sprintf("expected %s, got %s: %s",
-				kindText(v.Want), kindText(v.Got), v.Actual),
+			msg: fmt.Sprintf("want: %s, got: %s", kindText(v.Want), v.Actual),
 		}
 	case BoundViolation:
 		msg := fmt.Sprintf("%s violates %s %s", v.Actual, v.Op, v.Bound)

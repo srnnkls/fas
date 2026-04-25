@@ -96,7 +96,7 @@ $ cat << 'EOF' |
   --> \x1b[2m/__quae_rules__/absent_path.cue:11:3\x1b[0m (escaped)
    |
 11 |         signals: user_confirmed: true
-   |         \x1b[31m^^^^^^^\x1b[0m key "signals" not found in input at path <root> (escaped)
+   |         \x1b[31m^^^^^^^\x1b[0m key "signals" not found at <root> (escaped)
    |
    = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
 [1]
@@ -123,7 +123,7 @@ error[E0201]: key not found
   --> /__quae_rules__/absent_path.cue:11:3
    |
 11 |         signals: user_confirmed: true
-   |         ^^^^^^^ key "signals" not found in input at path <root>
+   |         ^^^^^^^ key "signals" not found at <root>
    |
    = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
 [1]
@@ -149,7 +149,7 @@ error[E0201]: key not found
   --> /__quae_rules__/absent_path.cue:11:3
    |
 11 |         signals: user_confirmed: true
-   |         ^^^^^^^ key "signals" not found in input at path <root>
+   |         ^^^^^^^ key "signals" not found at <root>
    |
    = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
 [1]
@@ -195,7 +195,7 @@ $ cat << 'EOF' |
   --> \x1b[2m/__quae_rules__/absent_path.cue:11:3\x1b[0m (escaped)
    |
 11 |         signals: user_confirmed: true
-   |         \x1b[31m^^^^^^^\x1b[0m key "signals" not found in input at path <root> (escaped)
+   |         \x1b[31m^^^^^^^\x1b[0m key "signals" not found at <root> (escaped)
    |
    = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
 [1]
