@@ -240,8 +240,14 @@ error[E0401]: no disjunction arm matched
 
 Same rule shape, but the input `tool_name: "Rea"` is Levenshtein 1 from
 `"Read"`. The top arm's score lands at or above `ScoreKindMatch`, so the
-renderer names the closest arm on the primary row and emits one secondary
-caret frame per arm (sorted by score descending).
+renderer names the closest arm on the primary row and lists the runner-up
+arms (rank order, descending score) in a `= note: other ranked arms:`
+footer. Per-arm caret frames are not emitted: today's localize gate fires
+only for literal-on-field disjunctions where every arm is already visible
+in the same source line, so a second caret pass would point at locations
+the reader can already see. The data path still carries full Span info per
+arm — JSON / SARIF surface it intact for tools that want to inspect arm
+positions independently.
 
 ```scrut
 $ cat << 'EOF' |
@@ -259,15 +265,7 @@ error[E0401]: no disjunction arm matched
    |
 10 |         tool_name:       "Read" | "Write" | "Edit"
    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^ got "Rea" — closest arm was "Read"
-   |
-10 |         tool_name:       "Read" | "Write" | "Edit"
-   |                          ^^^^^^ "Read"
-   |
-10 |         tool_name:       "Read" | "Write" | "Edit"
-   |                                             ^^^^^^ "Edit"
-   |
-10 |         tool_name:       "Read" | "Write" | "Edit"
-   |                                   ^^^^^^^ "Write"
+   = note: other ranked arms: "Edit", "Write"
 [1]
 ```
 
