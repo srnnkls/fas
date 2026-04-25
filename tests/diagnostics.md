@@ -21,6 +21,8 @@ Fixture rules live under `tests/diagnostics_rules*/`:
   `Suggestion` footer).
 - `tests/diagnostics_rules_disjunction_close/` — E0401 with a close arm
   (ranked `closest arm was X` primary).
+- `tests/diagnostics_rules_disjunction_ref/` — E0401 reached via a
+  hidden-sibling definition rather than a literal-on-field disjunction.
 - `tests/diagnostics_rules_broken_scope/` — load-time E0501.
 - `tests/diagnostics_rules_broken_cross/` — load-time E0502.
 
@@ -242,12 +244,11 @@ Same rule shape, but the input `tool_name: "Rea"` is Levenshtein 1 from
 `"Read"`. The top arm's score lands at or above `ScoreKindMatch`, so the
 renderer names the closest arm on the primary row and lists the runner-up
 arms (rank order, descending score) in a `= note: other ranked arms:`
-footer. Per-arm caret frames are not emitted: today's localize gate fires
-only for literal-on-field disjunctions where every arm is already visible
-in the same source line, so a second caret pass would point at locations
-the reader can already see. The data path still carries full Span info per
-arm — JSON / SARIF surface it intact for tools that want to inspect arm
-positions independently.
+footer. Per-arm caret frames are not emitted: every arm is already visible
+in the same source line the primary underlines, so a second caret pass
+would point at locations the reader can already see. The data path still
+carries full Span info per arm — JSON / SARIF surface it intact for tools
+that want to inspect arm positions independently.
 
 ```scrut
 $ cat << 'EOF' |
@@ -261,10 +262,42 @@ $ cat << 'EOF' |
 > EOF
 > quae explain disjunction-close --config tests/diagnostics_rules_disjunction_close --global-config /tmp/quae-nonexistent-global 2>&1
 error[E0401]: no disjunction arm matched
-  --> /__quae_rules__/disjunction_close.cue:10:20
+  --> /__quae_rules__/disjunction_close.cue:11:20
    |
-10 |         tool_name:       "Read" | "Write" | "Edit"
+11 |         tool_name:       "Read" | "Write" | "Edit"
    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^ got "Rea" — closest arm was "Read"
+   = note: other ranked arms: "Edit", "Write"
+[1]
+```
+
+## E0401 — disjunction via reference, ranked arms
+
+Same shape as the literal close-arm case, but the disjunction lives in a
+hidden-sibling definition (`_#ToolKind`) and the field references it.
+`localize` follows the reference via `cue.Dereference`, finds the underlying
+`OrOp` value, and ranks its arms — so the diagnostic fires E0401 with
+`closest arm was X` on the primary row and a `= note: other ranked arms:`
+footer, just like the literal case. The primary span underlines the
+reference (`_#ToolKind`) at its use site; arm `Span`s in the data layer
+point at the definition site (line 10 here), which JSON / SARIF surface
+unchanged.
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Rea",
+>   "tool_input": {"file_path": "/tmp/f"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> quae explain disjunction-ref --config tests/diagnostics_rules_disjunction_ref --global-config /tmp/quae-nonexistent-global 2>&1
+error[E0401]: no disjunction arm matched
+  --> /__quae_rules__/disjunction_ref.cue:15:20
+   |
+15 |         tool_name:       _#ToolKind
+   |                          ^^^^^^^^^^ got "Rea" — closest arm was "Read"
    = note: other ranked arms: "Edit", "Write"
 [1]
 ```

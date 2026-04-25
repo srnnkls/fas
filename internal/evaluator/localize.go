@@ -86,6 +86,26 @@ func walkStruct(node ast.Expr, ruleCur, inputCur cue.Value, path []string, yield
 			}
 			continue
 		}
+		// Referenced disjunctions: f.Value is an Ident or SelectorExpr that
+		// resolves to an OrOp once we follow the reference. ruleNext.Expr()
+		// alone returns the SelectorOp resolution path, so we Dereference
+		// first and pull arms from the underlying disjunction value. Each
+		// arm's Pos() points at its definition site, possibly in a different
+		// file from f.Value. The hasConcreteArm gate keeps pure kind-union
+		// references on the KindMismatch path. Skips the literal-on-field
+		// case which the prior branch already handled.
+		if _, isBinExpr := f.Value.(*ast.BinaryExpr); !isBinExpr {
+			deref := cue.Dereference(ruleNext)
+			if op, operands := deref.Expr(); op == cue.OrOp && hasConcreteArm(deref) {
+				if ruleNext.Subsume(next, cue.Final(), cue.Schema()) == nil {
+					continue
+				}
+				if !yield(referencedDisjunctionDiagnostic(f, ruleNext, next, operands)) {
+					return false
+				}
+				continue
+			}
+		}
 		// Short-circuit the leaf so no second diagnostic follows.
 		if kindsDisjoint(ruleNext.IncompleteKind(), next.Kind()) {
 			if !yield(kindMismatchDiagnostic(f, ruleNext, next)) {
@@ -501,6 +521,29 @@ func disjunctionDiagnostic(expr *ast.BinaryExpr, ruleNext, actual cue.Value) dia
 		},
 	}
 	d.Notes = append(d.Notes, provenanceNotes(ruleNext, expr.Pos().Filename())...)
+	return d
+}
+
+// referencedDisjunctionDiagnostic is the f.Value-is-a-reference variant of
+// disjunctionDiagnostic. The primary span underlines the reference site
+// (e.g. `_#ToolKind`), while arms come from ruleNext.Expr() — each arm's
+// Pos() points at its definition rather than at f.Value. Provenance notes
+// surface the cross-file origin so the reader can find the disjunction's
+// source even though the rendered text frame stays at the reference.
+func referencedDisjunctionDiagnostic(f *ast.Field, ruleNext, actual cue.Value, operands []cue.Value) diag.Diagnostic {
+	ranked := rankArmValues(operands, actual, renderValue)
+	d := diag.Diagnostic{
+		Code:     diag.E0401.Code,
+		Severity: diag.SeverityError,
+		Title:    "no disjunction arm matched",
+		Primary: diag.Label{
+			Pos:     f.Value.Pos(),
+			Len:     exprLen(f.Value),
+			Msg:     "no arm subsumes " + renderValue(actual),
+			Reasons: []diag.Reason{diag.DisjunctionFailed{Arms: ranked}},
+		},
+	}
+	d.Notes = append(d.Notes, provenanceNotes(ruleNext, f.Value.Pos().Filename())...)
 	return d
 }
 
