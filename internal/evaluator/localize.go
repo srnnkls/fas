@@ -527,9 +527,13 @@ func disjunctionDiagnostic(expr *ast.BinaryExpr, ruleNext, actual cue.Value) dia
 // referencedDisjunctionDiagnostic is the f.Value-is-a-reference variant of
 // disjunctionDiagnostic. The primary span underlines the reference site
 // (e.g. `_#ToolKind`), while arms come from ruleNext.Expr() — each arm's
-// Pos() points at its definition rather than at f.Value. Provenance notes
-// surface the cross-file origin so the reader can find the disjunction's
-// source even though the rendered text frame stays at the reference.
+// Pos() points at its definition rather than at f.Value. A `want:` Note
+// follows the wantNoteMsg gate so the reader sees the expanded disjunction
+// (`"Read" | "Write" | "Edit"`) under the reference's caret — without it,
+// the arms would only appear distributed across the closest-arm primary
+// and the runner-up footer. Provenance notes surface the cross-file origin
+// so the reader can find the disjunction's source even though the rendered
+// text frame stays at the reference.
 func referencedDisjunctionDiagnostic(f *ast.Field, ruleNext, actual cue.Value, operands []cue.Value) diag.Diagnostic {
 	ranked := rankArmValues(operands, actual, renderValue)
 	d := diag.Diagnostic{
@@ -542,6 +546,13 @@ func referencedDisjunctionDiagnostic(f *ast.Field, ruleNext, actual cue.Value, o
 			Msg:     "no arm subsumes " + renderValue(actual),
 			Reasons: []diag.Reason{diag.DisjunctionFailed{Arms: ranked}},
 		},
+	}
+	if msg, ok := wantNoteMsg(f.Value, ruleNext); ok {
+		d.Notes = append(d.Notes, diag.Label{
+			Pos: f.Value.Pos(),
+			Len: exprLen(f.Value),
+			Msg: msg,
+		})
 	}
 	d.Notes = append(d.Notes, provenanceNotes(ruleNext, f.Value.Pos().Filename())...)
 	return d
