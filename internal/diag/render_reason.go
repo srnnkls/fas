@@ -220,10 +220,12 @@ func renderDisjunctionFailed(v DisjunctionFailed, labelMsg string) reasonRender 
 	return out
 }
 
-// extractActualPrefix pulls a "got <actual>" substring out of the Label's
+// extractActualPrefix pulls a "got: <actual>" substring out of the Label's
 // Msg. Handles the two shapes currently emitted by localize: the legacy
 // "no arm subsumes X" produced by disjunctionDiagnostic, and a plain
-// "got X" already in the right shape. Empty Msg yields empty prefix.
+// "got: X" already in the right shape. Empty Msg yields empty prefix. The
+// colon matches the punctuation used by KindMismatch and RegexMismatch so
+// every diagnostic surface uses the same `got:` framing.
 func extractActualPrefix(msg string) string {
 	msg = strings.TrimSpace(msg)
 	if msg == "" {
@@ -231,7 +233,7 @@ func extractActualPrefix(msg string) string {
 	}
 	const legacy = "no arm subsumes "
 	if after, ok := strings.CutPrefix(msg, legacy); ok {
-		return "got " + after
+		return "got: " + after
 	}
 	return msg
 }

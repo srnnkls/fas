@@ -255,7 +255,7 @@ error[E0401]: no disjunction arm matched
   --> /__quae_rules__/disjunction.cue:10:20
    |
 10 |         tool_name:       "Read" | "Write" | "Edit"
-   |                          ^^^^^^^^^^^^^^^^^^^^^^^^^ got "Bash" — no arm was close
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^^^ got: "Bash" — no arm was close
    = note: tried arms: "Read", "Edit", "Write"
 [1]
 ```
@@ -287,7 +287,7 @@ error[E0401]: no disjunction arm matched
   --> /__quae_rules__/disjunction_close.cue:11:20
    |
 11 |         tool_name:       "Read" | "Write" | "Edit"
-   |                          ^^^^^^^^^^^^^^^^^^^^^^^^^ got "Rea" — closest arm was "Read"
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^^^ got: "Rea" — closest arm was "Read"
    = note: other ranked arms: "Edit", "Write"
 [1]
 ```
@@ -299,7 +299,11 @@ hidden-sibling definition (`_#ToolKind`) and the field references it.
 `localize` follows the reference via `cue.Dereference`, finds the underlying
 `OrOp` value, and ranks its arms — so the diagnostic fires E0401 with
 `closest arm was X` on the primary row and a `= note: other ranked arms:`
-footer, just like the literal case. The primary span underlines the
+footer, just like the literal case. Because the caret underlines the
+reference name (not the arm body), an aligned `want:` row prints the
+expanded disjunction so the reader can see what the field admits without
+chasing the definition — matching the want:/got: rule that fires for any
+reference constraint (E0301, E0303). The primary span underlines the
 reference (`_#ToolKind`) at its use site; arm `Span`s in the data layer
 point at the definition site (line 10 here), which JSON / SARIF surface
 unchanged.
@@ -319,7 +323,8 @@ error[E0401]: no disjunction arm matched
   --> /__quae_rules__/disjunction_ref.cue:15:20
    |
 15 |         tool_name:       _#ToolKind
-   |                          ^^^^^^^^^^ got "Rea" — closest arm was "Read"
+   |                          ^^^^^^^^^^ got: "Rea" — closest arm was "Read"
+   |                          want: "Read" | "Write" | "Edit"
    = note: other ranked arms: "Edit", "Write"
 [1]
 ```
