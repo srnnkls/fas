@@ -23,6 +23,9 @@ Fixture rules live under `tests/diagnostics_rules*/`:
   (ranked `closest arm was X` primary).
 - `tests/diagnostics_rules_disjunction_ref/` — E0401 reached via a
   hidden-sibling definition rather than a literal-on-field disjunction.
+- `tests/diagnostics_rules_provenance/` — E0301 with a cross-file conjunct
+  imported from the stdlib (`path.#systemInCommand`); exercises the
+  Provenance footer.
 - `tests/diagnostics_rules_broken_scope/` — load-time E0501.
 - `tests/diagnostics_rules_broken_cross/` — load-time E0502.
 
@@ -46,19 +49,6 @@ The minimal-form rules documented in scope.md F7-F12 apply throughout:
 - Same-span label collapse — the source line prints once, subsequent
   messages stack aligned under the same caret column.
 - `KeyMissing.Suggestion` non-empty → `= hint: did you mean "X"?` footer.
-
-### Deferred
-
-- **Provenance footer in text output.** `provenanceNotes` walks cross-file
-  conjuncts and emits `Provenance` Labels with an invalid `Pos` (the Span
-  is the payload). `orderedLabels` drops labels whose `Pos` doesn't
-  resolve via `SourceCache.LineAt`, so the Text renderer currently skips
-  these entries even though `--format=json` surfaces them intact. Until
-  the renderer grows a dedicated Provenance fold that bypasses `LineAt`,
-  a Provenance golden cannot match byte-for-byte. `tests/diagnostics_rules_*`
-  still exercises the data path via the non-text format tests in the
-  future `tests/diagnostics_formats.md` (T18). Target footer shape per
-  scope.md Ex 5: `= note: constraint introduced at <file:line:col>`.
 
 ## E0201 — absent path segment (no hint path)
 
@@ -178,6 +168,38 @@ error[E0301]: leaf constraint failed
    |
 11 |         tool_input: retry_count: _int & <=10
    |                                  ^^^^^^^^^^^ want: int & <=10
+[1]
+```
+
+## E0301 — provenance footer (cross-file conjunct)
+
+The `provenance` rule constrains `tool_input.command` via a stdlib-defined
+regex (`path.#systemInCommand`). When the input fails the constraint, the
+localize walker harvests cross-file conjuncts on `ruleNext` and emits one
+`Provenance` Note per stdlib-origin conjunct. The text renderer surfaces
+each Provenance Note as a `= note: constraint introduced at <file:line:col>`
+footer, bypassing the `SourceCache.LineAt` filter that the caret-frame
+pipeline applies — the Span carries the coordinates directly, no
+`token.Pos` exists for these synthetic Notes.
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "ls /home"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> quae explain provenance --config tests/diagnostics_rules_provenance --global-config /tmp/quae-nonexistent-global 2>&1
+error[E0301]: leaf constraint failed
+  --> /__quae_rules__/provenance.cue:19:24
+   |
+19 |         tool_input: command: path.#systemInCommand
+   |                              ^^^^^^^^^^^^^^^^^^^^^ got: "ls /home"
+   |                              want: =~"(^|[^A-Za-z0-9_])/(etc|sys|proc|boot|dev)(/|$|[^A-Za-z0-9_])"
+   = note: constraint introduced at /__quae_rules__/cue.mod/pkg/github.com/srnnkls/quae/cue/path/path.cue:42:1
 [1]
 ```
 

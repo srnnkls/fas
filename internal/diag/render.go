@@ -213,6 +213,8 @@ func buildRenderData(d Diagnostic, src SourceCache, palette Palette) renderData 
 		}
 	}
 
+	footers = append(footers, provenanceFooters(d)...)
+
 	gutter := len(strconv.Itoa(maxLineNum))
 
 	return renderData{
@@ -356,6 +358,14 @@ func orderedLabels(d Diagnostic, src SourceCache) []resolvedLabel {
 	})
 
 	for _, n := range d.Notes {
+		// Provenance-only Notes carry their coordinates inside the Span
+		// payload, not as a token.Pos. They surface as footers via
+		// provenanceFooters and never participate in the caret-frame
+		// pipeline — skip them here so they aren't filtered as
+		// invalid-Pos and silently dropped.
+		if isProvenanceOnly(n) {
+			continue
+		}
 		nl, nn, nc, nok := src.LineAt(n.Pos)
 		out = append(out, resolvedLabel{
 			label: n, line: nl, lineNum: nn, col: nc, ok: nok,
@@ -365,6 +375,42 @@ func orderedLabels(d Diagnostic, src SourceCache) []resolvedLabel {
 	slices.SortStableFunc(out, func(a, b resolvedLabel) int {
 		return a.lineNum - b.lineNum
 	})
+	return out
+}
+
+// isProvenanceOnly reports whether n's Reasons are all Provenance entries.
+// Such Notes carry their coordinates in the Span payload (Pos is invalid)
+// and the renderer surfaces them as footers, not as caret frames.
+func isProvenanceOnly(n Label) bool {
+	if len(n.Reasons) == 0 {
+		return false
+	}
+	for _, r := range n.Reasons {
+		if _, ok := r.(Provenance); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// provenanceFooters extracts "= note: constraint introduced at <f:l:c>"
+// footers from any Provenance Reasons on the Diagnostic's Notes. The
+// underlying Note Labels carry the Span as the payload and an invalid
+// token.Pos, so they bypass the SourceCache.LineAt filter that the caret-
+// frame path applies — Provenance is metadata about constraint origin and
+// never wants a caret of its own.
+func provenanceFooters(d Diagnostic) []string {
+	var out []string
+	for _, n := range d.Notes {
+		for _, r := range n.Reasons {
+			p, ok := r.(Provenance)
+			if !ok {
+				continue
+			}
+			rr := renderProvenance(p)
+			out = append(out, rr.footers...)
+		}
+	}
 	return out
 }
 
