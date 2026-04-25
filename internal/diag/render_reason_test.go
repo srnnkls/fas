@@ -529,6 +529,48 @@ func TestRenderReason_Provenance(t *testing.T) {
 	}
 }
 
+// TestRenderReason_Provenance_NoPos: the evaluator emits Provenance Notes with
+// the Span as the payload and a zero token.Pos (NoPos). The renderer must still
+// surface the footer — bypassing the SourceCache.LineAt filter that drops
+// other invalid-Pos labels — because the Span itself carries every coordinate
+// the footer needs. This pins the production code path that
+// `provenanceNotes` exercises.
+func TestRenderReason_Provenance_NoPos(t *testing.T) {
+	pos := newPos(t, "r.cue", 0)
+	src := fakeSource{entries: map[token.Pos]fakeEntry{
+		pos: {line: "x: int & stdlib.Positive", lineNum: 8, col: 4},
+	}}
+
+	d := diag.Diagnostic{
+		Code:     "E0303",
+		Severity: diag.SeverityError,
+		Title:    "type mismatch",
+		Primary: diag.Label{
+			Pos: pos,
+			Len: 20,
+			Reasons: []diag.Reason{
+				diag.KindMismatch{Want: cue.IntKind, Got: cue.StringKind, Actual: `"three"`},
+			},
+		},
+		Notes: []diag.Label{
+			{
+				// Pos intentionally zero — mirrors provenanceNotes() output.
+				Reasons: []diag.Reason{
+					diag.Provenance{
+						Span: diag.Span{File: "stdlib/nums.cue", Line: 7, Col: 17},
+					},
+				},
+			},
+		},
+	}
+
+	got := diag.Render(d, src)
+	want := "= note: constraint introduced at stdlib/nums.cue:7:17"
+	if !strings.Contains(got, want) {
+		t.Errorf("provenance footer missing %q.\noutput:\n%s", want, got)
+	}
+}
+
 // TestRenderReason_MultiReasonLabel: a Label with 2+ Reasons renders the first
 // on the caret row and subsequent entries as aligned message rows under the
 // same caret (T10 same-span collapse semantics).
