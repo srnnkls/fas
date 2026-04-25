@@ -48,6 +48,21 @@ func (c *FileCache) LineAt(pos token.Pos) (line string, lineNum int, col int, ok
 	return lines[lineNum-1], lineNum, col, true
 }
 
+// LineAtSpan resolves a (file, line, col) DTO triple — used by the renderer's
+// FromArm frames, whose Spans are carried as plain coordinates rather than
+// token.Pos handles. Returns the source line plus the same line/col echoed
+// back (col passes through unchanged; the renderer applies expandTabs).
+func (c *FileCache) LineAtSpan(filename string, lineNum, col int) (line string, resolvedLine int, resolvedCol int, ok bool) {
+	if filename == "" || lineNum <= 0 {
+		return "", 0, 0, false
+	}
+	lines, loaded := c.load(filename)
+	if !loaded || lineNum > len(lines) {
+		return "", 0, 0, false
+	}
+	return lines[lineNum-1], lineNum, col, true
+}
+
 func (c *FileCache) load(filename string) ([]string, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
