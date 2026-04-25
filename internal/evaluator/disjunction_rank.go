@@ -63,6 +63,51 @@ func rankArms(arms []ast.Expr, ruleVal cue.Value, input cue.Value) []diag.ArmRes
 	return results
 }
 
+// rankArmValues is the cue.Value-input variant of rankArms, used when the
+// disjunction is reached via a reference (Ident / SelectorExpr) rather than
+// as a literal BinaryExpr on the field. armVals come straight from
+// ruleNext.Expr() so each arm's Pos() points at its definition site —
+// possibly in a different file from f.Value. Span/score model is otherwise
+// identical to the AST path.
+func rankArmValues(armVals []cue.Value, input cue.Value, render func(cue.Value) string) []diag.ArmResult {
+	inputKind := concreteOrIncompleteKind(input)
+	results := make([]diag.ArmResult, 0, len(armVals))
+	for _, armVal := range armVals {
+		rendered := render(armVal)
+		results = append(results, diag.ArmResult{
+			Arm:   rendered,
+			Span:  cueValueSpan(armVal, rendered),
+			Inner: nil,
+			Score: scoreArm(armVal, input, inputKind),
+		})
+	}
+	sort.SliceStable(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+	return results
+}
+
+// cueValueSpan derives a serializable Span from a cue.Value's source
+// position. Length is the rendered form's byte width (≥ 1) since cue.Value
+// has no End()-equivalent for arbitrary expressions. Falls back to a
+// position-less Span when Pos() is invalid.
+func cueValueSpan(v cue.Value, rendered string) diag.Span {
+	pos := v.Pos()
+	length := len(rendered)
+	if length <= 0 {
+		length = 1
+	}
+	if !pos.IsValid() {
+		return diag.Span{Length: length}
+	}
+	return diag.Span{
+		File:   pos.Filename(),
+		Line:   pos.Line(),
+		Col:    pos.Column(),
+		Length: length,
+	}
+}
+
 // scoreArm computes the closeness score of a single arm against the input.
 // Returns 0 when no kind overlap exists; otherwise base ScoreKindMatch plus
 // optional structural and value-distance bonuses per the tier table.
