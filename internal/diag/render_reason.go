@@ -165,12 +165,27 @@ func trimRegexEcho(expanded string, visualCol, budget int) (trimmed string, care
 }
 
 // renderDisjunctionFailed produces the primary "closest arm was X" or flat
-// "no arm was close" summary plus per-arm frames or an arms-footer note.
+// "no arm was close" summary plus an arms-footer note in either path.
+//
+// We deliberately do NOT emit per-arm caret frames. Today only literal-on-
+// field disjunctions (`f.Value` an `*ast.BinaryExpr` with `token.OR`) trigger
+// arm ranking — every arm is therefore visible in the same source line the
+// primary already underlines. A second pass of carets pointing back at each
+// literal arm just labels what the reader can already see. The ranking
+// information that matters (the design.md:353-355 mitigation against arm-
+// ranking misranking) is preserved as a `= note: other ranked arms:` footer
+// listing arms 2..N in rank order.
+//
+// JSON / SARIF still serialise the full Arms slice with Span data, so a
+// future change extending arm ranking to non-literal cases (where arm
+// positions point to a referenced definition the reader cannot see in the
+// immediate source) can re-introduce the frame emission without touching
+// the data model.
 func renderDisjunctionFailed(v DisjunctionFailed, labelMsg string) reasonRender {
 	actualPrefix := extractActualPrefix(labelMsg)
 
 	if len(v.Arms) == 0 || v.Arms[0].Score < scoreKindMatch {
-		// No-close-arm case: flat summary, arms footer, suppress ranked frames.
+		// No-close-arm case: flat summary plus the full arms list.
 		msg := "no arm was close"
 		if actualPrefix != "" {
 			msg = actualPrefix + " — " + msg
@@ -187,34 +202,22 @@ func renderDisjunctionFailed(v DisjunctionFailed, labelMsg string) reasonRender 
 		}
 	}
 
-	// Happy path: name the closest arm.
+	// Happy path: name the closest arm; surface runner-up arms in rank
+	// order via a footer. Skip the closest (already named on the primary).
 	primary := "closest arm was " + v.Arms[0].Arm
 	if actualPrefix != "" {
 		primary = actualPrefix + " — " + primary
 	}
 
-	// Per-arm frames: each arm's Span seeds a synthetic secondary frame
-	// whose caret sits at the arm's column. Rendered in arm order (already
-	// sorted by Score desc in rankArms).
-	frames := make([]frameData, 0, len(v.Arms))
-	for _, a := range v.Arms {
-		if a.Span.Line <= 0 {
-			continue
+	out := reasonRender{msg: primary}
+	if len(v.Arms) > 1 {
+		others := make([]string, 0, len(v.Arms)-1)
+		for _, a := range v.Arms[1:] {
+			others = append(others, a.Arm)
 		}
-		frames = append(frames, frameData{
-			File:    a.Span.File,
-			LineNum: a.Span.Line,
-			Col:     a.Span.Col,
-			Len:     a.Span.Length,
-			Msg:     a.Arm,
-			FromArm: true,
-		})
+		out.footers = []string{"= note: other ranked arms: " + strings.Join(others, ", ")}
 	}
-
-	return reasonRender{
-		msg:             primary,
-		secondaryFrames: frames,
-	}
+	return out
 }
 
 // extractActualPrefix pulls a "got <actual>" substring out of the Label's
