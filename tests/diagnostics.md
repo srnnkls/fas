@@ -260,14 +260,14 @@ error[E0401]: no disjunction arm matched
 10 |         tool_name:       "Read" | "Write" | "Edit"
    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^ got "Rea" — closest arm was "Read"
    |
-10 | 
-   |                    ^^^^^^ "Read"
+10 |         tool_name:       "Read" | "Write" | "Edit"
+   |                          ^^^^^^ "Read"
    |
-10 | 
-   |                                       ^^^^^^ "Edit"
+10 |         tool_name:       "Read" | "Write" | "Edit"
+   |                                             ^^^^^^ "Edit"
    |
-10 | 
-   |                             ^^^^^^^ "Write"
+10 |         tool_name:       "Read" | "Write" | "Edit"
+   |                                   ^^^^^^^ "Write"
 [1]
 ```
 
