@@ -55,6 +55,10 @@ const defaultProjectRulesDir = ".fas/rules"
 // user-global rules directory when --global-config is omitted.
 const defaultGlobalRulesSubpath = ".config/fas/rules"
 
+// version is overridden at release-build time via -ldflags
+// "-X main.version=v0.1.0". Local `go build` keeps the "dev" sentinel.
+var version = "dev"
+
 func main() {
 	os.Exit(run(os.Stdin, os.Stdout, os.Stderr, os.Args[1:]))
 }
@@ -63,6 +67,13 @@ func main() {
 // intended process exit code instead of calling os.Exit so test harnesses can
 // drive the CLI with bytes.Buffers.
 func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
+	// `--version` short-circuits before any subcommand routing or rule
+	// loading: it's a metadata query, not a request to evaluate anything.
+	if len(args) > 0 && (args[0] == "--version" || args[0] == "-version") {
+		_, _ = fmt.Fprintf(stdout, "fas %s\n", version)
+		return 0
+	}
+
 	// The `explain` subcommand reuses stdin/rule-loading plumbing but owns
 	// its own flag set, rule-id resolution, and exit-code mapping — handle
 	// it before the eval path peels off its optional leading token.
@@ -1062,6 +1073,7 @@ Flags:
                           auto|always|never (default: auto). Has no
                           effect on --format=json|sarif.
   -h, --help              Show this message and exit.
+  --version               Print version and exit.
 
 Subcommands:
   explain <rule_id>       Run a single rule (resolved by rule_id across

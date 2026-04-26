@@ -2,10 +2,19 @@ name: ci
 
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
 
 permissions:
   contents: read
+
+# Cancel in-flight runs on fast follow-up commits to the same branch / PR.
+# Each ref gets its own concurrency group so main and feature branches do
+# not interfere with each other.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CGO_ENABLED: "0"

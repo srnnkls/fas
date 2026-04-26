@@ -641,6 +641,24 @@ func TestRun_Help_ZeroExit(t *testing.T) {
 	}
 }
 
+// TestRun_Version_PrintsAndExitsZero asserts --version short-circuits before
+// rule loading or stdin reads, prints `fas <version>` on stdout, and exits 0.
+// The default version sentinel "dev" appears under `go test`; release builds
+// override it via -X main.version=<tag>.
+func TestRun_Version_PrintsAndExitsZero(t *testing.T) {
+	res := runCLI(t, nil, "--version")
+	if res.exit != 0 {
+		t.Fatalf("--version: exit=%d want 0; stderr=%q", res.exit, res.stderr)
+	}
+	out := string(res.stdout)
+	if !strings.HasPrefix(out, "fas ") {
+		t.Errorf("--version stdout must start with %q; got %q", "fas ", out)
+	}
+	if strings.TrimSpace(out) == "fas" {
+		t.Errorf("--version stdout must carry a version token after %q; got %q", "fas", out)
+	}
+}
+
 // -----------------------------------------------------------------------------
 // Preprocessor integration: parser verbs feed stdlib-style rules
 // -----------------------------------------------------------------------------
