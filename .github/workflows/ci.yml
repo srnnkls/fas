@@ -7,22 +7,49 @@ on:
 permissions:
   contents: read
 
+env:
+  CGO_ENABLED: "0"
+
 jobs:
-  ci:
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+      - run: go test ./...
+
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: make build
-      - run: make test
-      - run: make lint
-      # Install scrut via mise to match the local dev toolchain (mise.toml
-      # pins facebookincubator/scrut). The mise-action wires up PATH for all
-      # tools declared in mise.toml, so subsequent steps see both `scrut` and
-      # the mise-managed `go` binary.
+      - run: go vet ./...
+
+  # Scrut integration tests are bash-driven (heredocs, /tmp paths) and only
+  # supported on Linux/macOS by upstream. Pin to ubuntu-latest and run after
+  # the build matrix so a cross-platform compile failure short-circuits.
+  integration:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - uses: jdx/mise-action@v2
         with:
           experimental: true
-      - run: make test-integration
+      - run: go install ./cmd/fas
+      - run: scrut test -w . tests/policies.md
+      - run: scrut test -w . tests/diagnostics.md
+      - run: scrut test -w . tests/diagnostics_formats.md
