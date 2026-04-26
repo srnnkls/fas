@@ -653,6 +653,27 @@ sibling_ref_ok: {
 	}
 }
 
+// TestRulesModuleRoot_AbsoluteOnHost captures the invariant cue/load relies
+// on: every overlay key must satisfy filepath.IsAbs on the host OS. The
+// loader joins paths under RulesModuleRoot for the rule file, the synthetic
+// module.cue, and the embedded stdlib tree — if the root is not absolute,
+// every joined key fails the overlay's absolute-path check and rule loading
+// breaks before the first compile.
+//
+// On POSIX a bare leading slash is enough; on Windows the path needs a
+// volume prefix (e.g. "C:") for filepath.IsAbs to return true.
+func TestRulesModuleRoot_AbsoluteOnHost(t *testing.T) {
+	if !filepath.IsAbs(config.RulesModuleRoot) {
+		t.Fatalf("RulesModuleRoot %q must be absolute on the host OS",
+			config.RulesModuleRoot)
+	}
+	joined := filepath.Join(config.RulesModuleRoot, "cue.mod", "module.cue")
+	if !filepath.IsAbs(joined) {
+		t.Fatalf("path joined under RulesModuleRoot must stay absolute; got %q",
+			joined)
+	}
+}
+
 // ruleWithID constructs a minimal well-formed deny rule with a given rule_id,
 // used by the ordering test.
 func ruleWithID(id string) string {

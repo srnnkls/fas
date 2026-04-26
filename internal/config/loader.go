@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -72,12 +73,28 @@ type Rule struct {
 }
 
 // RulesModuleRoot is the synthetic module-root directory used by the loader.
-// It must be a distinct, absolute-looking path so CUE's overlay resolver does
-// not confuse it with the real filesystem root. The path itself never touches
+// It must be a distinct, absolute path so CUE's overlay resolver does not
+// confuse it with the real filesystem root. The path itself never touches
 // disk; it only exists inside the in-memory overlay. Exported because CLI
 // tooling (cmd/fas --explain) must prime its source cache with the same
 // virtual prefix the overlay assigns to rule files.
-const RulesModuleRoot = "/__fas_rules__"
+//
+// OS-aware so cue/load's overlay (which requires filepath.IsAbs to return
+// true on the host OS) accepts every joined key. POSIX uses
+// "/__fas_rules__"; Windows uses "<drive>:\__fas_rules__" because Windows
+// requires a volume prefix for filepath.IsAbs to return true.
+var RulesModuleRoot = computeRulesModuleRoot()
+
+func computeRulesModuleRoot() string {
+	if runtime.GOOS != "windows" {
+		return "/__fas_rules__"
+	}
+	vol := filepath.VolumeName(os.TempDir())
+	if vol == "" {
+		vol = "C:"
+	}
+	return vol + `\__fas_rules__`
+}
 
 // rulesModulePath is the synthetic module name assigned to the rules
 // directory. A module prefix is required so the overlay can host both the
