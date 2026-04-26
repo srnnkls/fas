@@ -1,5 +1,7 @@
 # fas
 
+*Code by Decree*
+
 > *fās* • indeclinable noun, neuter; from Proto-Italic \*fasom, from \*feh₂- ("to speak")
 >
 > Pronunciation: /faːs/ (Classical)
