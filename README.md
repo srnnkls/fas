@@ -6,14 +6,25 @@
 >
 > divine law; that which is right, lawful, or permitted by divine decree
 
-*fas* is a policy DSL and runtime built on top of the incredible [CUE](https://cuelang.org/).
+*fas* is a policy DSL and runtime built on top of the incredible
+[CUE](https://cuelang.org/). It declares what an AI coding agent is allowed
+to do — gating, asking, or rewriting Bash commands, file edits, and tool
+calls before they run — using CUE's own structural constraints as the rule
+language. No bolted-on predicate dialect, no embedded scripting; matching
+is plain CUE subsumption, so anything CUE can constrain (regex, bounds,
+list patterns, disjunctions, structural negation) is something *fas* can
+match.
 
-It evaluates AI-coding-agent hook payloads (currently Claude Code) against
-structural CUE rules and emits a vendor-native decision: **allow**, **deny**,
-**ask**, **inject**, or **modify**. Rules are pure CUE — patterns, not
-predicates — so anything CUE can subsume is something *fas* can match.
+*fas* speaks vendor-native hook protocols (currently Claude Code): it reads
+the event JSON on stdin, evaluates every rule against it, and emits a
+decision — allow, deny, ask, inject, or modify — that the host harness
+already knows how to honour. A small embedded stdlib (`cue/hook`,
+`cue/tool`, `cue/path`, `cue/flag`, …) ships with the binary so rules
+compose pre-built constraints (`hook.#PreToolUse & tool.#isBash &
+path.#hasSystemTarget`) instead of restating each harness's hook protocol
+every time.
 
-> **Status: alpha.** APIs, schemas, and CLI surface may change without notice
+> Status: alpha. APIs, schemas, and CLI surface may change without notice
 > until `v0.1.0`. Pinned releases live at
 > [github.com/srnnkls/fas/releases](https://github.com/srnnkls/fas/releases).
 
