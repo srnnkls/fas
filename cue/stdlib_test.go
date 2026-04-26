@@ -16,9 +16,20 @@ import (
 )
 
 // stdlibModuleRoot is the synthetic root the sub-package test harness uses
-// for CUE's load system. A distinct absolute-looking path keeps the overlay
-// from colliding with any real directory in the working tree.
-const stdlibModuleRoot = "/__fas_stdlib_test__"
+// for CUE's load system. A distinct absolute path keeps the overlay from
+// colliding with any real directory in the working tree.
+//
+// OS-aware: cue/load's overlay requires filepath.IsAbs to return true on
+// the host OS. POSIX uses "/__fas_stdlib_test__"; Windows needs a volume
+// prefix.
+var stdlibModuleRoot = computeStdlibModuleRoot()
+
+func computeStdlibModuleRoot() string {
+	if runtime.GOOS != "windows" {
+		return "/__fas_stdlib_test__"
+	}
+	return `C:\__fas_stdlib_test__`
+}
 
 // stdlibModulePath is the synthetic module name assigned to the harness
 // module. The value is arbitrary — CUE only needs a module prefix so the
