@@ -9,22 +9,19 @@
 > divine law; that which is right, lawful, or permitted by divine decree
 
 *fas* is a policy DSL and runtime built on top of the incredible
-[CUE](https://cuelang.org/). It declares what an AI coding agent is allowed
-to do — gating, asking, or rewriting Bash commands, file edits, and tool
-calls before they run — using CUE's own structural constraints as the rule
-language. No bolted-on predicate dialect, no embedded scripting; matching
-is plain CUE subsumption, so anything CUE can constrain (regex, bounds,
-list patterns, disjunctions, structural negation) is something *fas* can
-match.
+[CUE](https://cuelang.org/). It evaluates structured input against rules
+expressed as pure CUE — regex, bounds, list patterns, disjunctions,
+structural negation — and emits a decision: allow, deny, ask, inject, or
+modify. Matching is plain CUE subsumption, so there is no predicate
+dialect and no embedded scripting; the rule language is CUE itself.
 
-*fas* speaks vendor-native hook protocols: it reads the event JSON on
-stdin, evaluates every rule against it, and emits a decision — allow,
-deny, ask, inject, or modify — that the host harness already knows how to
-honour. A small embedded stdlib (`cue/hook`,
-`cue/tool`, `cue/path`, `cue/flag`, …) ships with the binary so rules
+The runtime reads JSON on stdin and writes its decision on stdout. An
+embedded stdlib bundles rule-authoring vocabularies for the domains *fas*
+already knows about — `cue/hook` and `cue/tool` for AI coding agent
+harnesses (`PreToolUse`, `PostToolUse`, …), `cue/path` for filesystem
+patterns, `cue/flag` for command-line flag shapes, and so on — so rules
 compose pre-built constraints (`hook.#PreToolUse & tool.#isBash &
-path.#hasSystemTarget`) instead of restating each harness's hook protocol
-every time.
+path.#hasSystemTarget`) instead of restating each protocol from scratch.
 
 ## Install
 
