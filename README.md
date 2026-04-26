@@ -15,10 +15,10 @@ is plain CUE subsumption, so anything CUE can constrain (regex, bounds,
 list patterns, disjunctions, structural negation) is something *fas* can
 match.
 
-*fas* speaks vendor-native hook protocols (currently Claude Code): it reads
-the event JSON on stdin, evaluates every rule against it, and emits a
-decision — allow, deny, ask, inject, or modify — that the host harness
-already knows how to honour. A small embedded stdlib (`cue/hook`,
+*fas* speaks vendor-native hook protocols: it reads the event JSON on
+stdin, evaluates every rule against it, and emits a decision — allow,
+deny, ask, inject, or modify — that the host harness already knows how to
+honour. A small embedded stdlib (`cue/hook`,
 `cue/tool`, `cue/path`, `cue/flag`, …) ships with the binary so rules
 compose pre-built constraints (`hook.#PreToolUse & tool.#isBash &
 path.#hasSystemTarget`) instead of restating each harness's hook protocol
