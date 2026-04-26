@@ -30,6 +30,8 @@ github.com/protocolbuffers/txtpbfmt v0.0.0-20260217160748-a481f6a22f94 h1:2PC6Ql
 github.com/protocolbuffers/txtpbfmt v0.0.0-20260217160748-a481f6a22f94/go.mod h1:JSbkp0BviKovYYt9XunS95M3mLPibE9bGg+Y95DsEEY=
 github.com/rogpeppe/go-internal v1.14.2-0.20260415112238-aa1b1e25579a h1:603+lC6DvUvp1o5HHzVzBpk9arNOiiEtuK32uqlc7h8=
 github.com/rogpeppe/go-internal v1.14.2-0.20260415112238-aa1b1e25579a/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
+github.com/srnnkls/cue v0.0.0-20260422190311-4661d1740abe h1:HMr1XADLGa9NyKn1BJ2jGHx9aXHKf7SWoxlVgdaTHm4=
+github.com/srnnkls/cue v0.0.0-20260422190311-4661d1740abe/go.mod h1:24NxSBKRdAhn4/pWRzflxsXDsIV122V5PB/ERVioOvo=
 go.yaml.in/yaml/v3 v3.0.4 h1:tfq32ie2Jv2UxXFdLJdh3jXuOzWiL1fo0bu/FbuKpbc=
 go.yaml.in/yaml/v3 v3.0.4/go.mod h1:DhzuOOF2ATzADvBadXxruRBLzYTpT36CKvDb3+aBEFg=
 golang.org/x/mod v0.34.0 h1:xIHgNUUnW6sYkcM5Jleh05DvLOtwc6RitGHbDk4akRI=

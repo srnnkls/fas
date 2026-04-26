@@ -15,7 +15,7 @@ require (
 	golang.org/x/sync v0.20.0 // indirect
 )
 
-replace cuelang.org/go => ../cue
+replace cuelang.org/go => github.com/srnnkls/cue v0.0.0-20260422190311-4661d1740abe
 
 require (
 	cuelang.org/go v0.16.1
