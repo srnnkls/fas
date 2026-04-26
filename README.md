@@ -26,10 +26,6 @@ compose pre-built constraints (`hook.#PreToolUse & tool.#isBash &
 path.#hasSystemTarget`) instead of restating each harness's hook protocol
 every time.
 
-> Status: alpha. APIs, schemas, and CLI surface may change without notice
-> until `v0.1.0`. Pinned releases live at
-> [github.com/srnnkls/fas/releases](https://github.com/srnnkls/fas/releases).
-
 ## Install
 
 Via [mise](https://mise.jdx.dev/):
