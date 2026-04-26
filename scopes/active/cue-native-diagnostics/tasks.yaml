@@ -77,8 +77,8 @@ tasks:
       - internal/diag/codes_test.go
     status: completed
     test_hints:
-      - `quae explain --code E0303` still prints help, exit 0 (code was allocated in v0).
-      - `quae explain --code E0305` exits 2 (no new code exists).
+      - `fas explain --code E0303` still prints help, exit 0 (code was allocated in v0).
+      - `fas explain --code E0305` exits 2 (no new code exists).
       - codes_test still asserts all codes have non-empty, multi-line help.
       - `internal/diag/codes.go:177` codes-list slice unchanged in length (no additions).
 
@@ -352,8 +352,8 @@ tasks:
     subject: Renderer — SARIF 2.1.0 output format
     description: >
       New file `internal/diag/render_sarif.go` emits SARIF 2.1.0 with one
-      `runs[]` per quae invocation, `results[]` per diagnostic. Required
-      fields: `ruleId` (= quae error code), `level` (error/warning/note from
+      `runs[]` per fas invocation, `results[]` per diagnostic. Required
+      fields: `ruleId` (= fas error code), `level` (error/warning/note from
       Severity), `message.text`, `locations[]` (primary), `relatedLocations[]`
       (notes + provenance), `logicalLocations[]` (rule IDs when present).
       Hand-rolled against SARIF JSON schema; no new deps. Include a
@@ -395,21 +395,21 @@ tasks:
     subject: CLI — --format and --color flags + env vars
     description: >
       Add `--format=text|json|sarif` (default text) and `--color=auto|always|
-      never` (default auto) flags to `quae eval` and `quae explain`. Env vars
-      `QUAE_FORMAT`, `QUAE_COLOR`, and the standard `NO_COLOR` are honoured.
+      never` (default auto) flags to `fas eval` and `fas explain`. Env vars
+      `FAS_FORMAT`, `FAS_COLOR`, and the standard `NO_COLOR` are honoured.
       Flag > env var > default. Wire through to the renderer selection.
     files:
-      - cmd/quae/main.go
-      - cmd/quae/main_format_test.go
+      - cmd/fas/main.go
+      - cmd/fas/main_format_test.go
     status: completed
     depends_on: [T13, T14, T15]
     test_hints:
       - `--format=json` emits one JSON object per diagnostic on stderr.
       - `--format=sarif` emits a single SARIF document on stderr.
-      - QUAE_FORMAT=json without flag → same behavior.
-      - QUAE_COLOR=never without flag → no ANSI escapes.
+      - FAS_FORMAT=json without flag → same behavior.
+      - FAS_COLOR=never without flag → no ANSI escapes.
       - NO_COLOR=1 without flag → no ANSI escapes (community convention).
-      - QUAE_COLOR=always + NO_COLOR=1 → QUAE_COLOR wins (quae-specific overrides community).
+      - FAS_COLOR=always + NO_COLOR=1 → FAS_COLOR wins (fas-specific overrides community).
       - `--color=always` + NO_COLOR=1 → flag wins (flag > env).
       - `--format=sarif --color=always` → SARIF unaffected by color (colors are text-only).
       - Unknown format → exit 2, error on stderr.
@@ -443,7 +443,7 @@ tasks:
         - `--color=always` → ANSI escapes present.
         - `--color=never` → no escapes.
         - `NO_COLOR=1` → no escapes.
-        - `QUAE_FORMAT=json` → same as --format=json.
+        - `FAS_FORMAT=json` → same as --format=json.
     files:
       - tests/diagnostics_formats.md
     status: completed

@@ -10,9 +10,9 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
 
-	"github.com/srnnkls/quae/internal/config"
-	"github.com/srnnkls/quae/internal/evaluator"
-	"github.com/srnnkls/quae/internal/pipeline"
+	"github.com/srnnkls/fas/internal/config"
+	"github.com/srnnkls/fas/internal/evaluator"
+	"github.com/srnnkls/fas/internal/pipeline"
 )
 
 // writeRule drops a single .cue rule file into dir, wrapping body in the

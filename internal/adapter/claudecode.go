@@ -13,7 +13,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/srnnkls/quae/internal/envelope"
+	"github.com/srnnkls/fas/internal/envelope"
 )
 
 // ClaudeCode implements Adapter for the Claude Code hook protocol.

@@ -8,7 +8,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
-	"github.com/srnnkls/quae/internal/parser"
+	"github.com/srnnkls/fas/internal/parser"
 )
 
 // Canonical command→verb mapping the Bash parser is expected to honor.

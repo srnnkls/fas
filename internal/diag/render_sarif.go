@@ -91,7 +91,7 @@ func RenderSARIF(diags []Diagnostic) []byte {
 			{
 				Tool: sarifTool{
 					Driver: sarifDriver{
-						Name:    "quae",
+						Name:    "fas",
 						Version: sarifToolVersion,
 					},
 				},

@@ -1,8 +1,8 @@
-# Quae Diagnostics Tests
+# Fas Diagnostics Tests
 
-End-to-end integration tests for the diagnostic surface of the `quae` CLI,
+End-to-end integration tests for the diagnostic surface of the `fas` CLI,
 using [scrut](https://github.com/facebookincubator/scrut). Each block drives
-a specific diagnostic code, `--explain` filter mode, or `quae explain`
+a specific diagnostic code, `--explain` filter mode, or `fas explain`
 subcommand exit path and asserts the exact stdout+stderr the binary emits.
 
 Run with:
@@ -31,7 +31,7 @@ Fixture rules live under `tests/diagnostics_rules*/`:
 
 Each block redirects stderr into stdout (`2>&1`) so scrut — which only
 captures stdout by default — sees the diagnostic stream. The
-`--global-config /tmp/quae-nonexistent-global` trick isolates the suite from
+`--global-config /tmp/fas-nonexistent-global` trick isolates the suite from
 host-global rules.
 
 The minimal-form rules documented in scope.md F7-F12 apply throughout:
@@ -68,9 +68,9 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae explain absent-path --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global 2>&1
+> fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0201]: key not found
-  --> /__quae_rules__/absent_path.cue:11:3
+  --> /__fas_rules__/absent_path.cue:11:3
    |
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found at <root>
@@ -98,9 +98,9 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae explain key-missing-hint --config tests/diagnostics_rules_key_missing_hint --global-config /tmp/quae-nonexistent-global 2>&1
+> fas explain key-missing-hint --config tests/diagnostics_rules_key_missing_hint --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0201]: key not found
-  --> /__quae_rules__/key_missing_hint.cue:10:15
+  --> /__fas_rules__/key_missing_hint.cue:10:15
    |
 10 |         tool_input: command: "ls"
    |                     ^^^^^^^ key "command" not found at tool_input
@@ -127,9 +127,9 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae explain leaf-regex --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global 2>&1
+> fas explain leaf-regex --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0301]: leaf constraint failed
-  --> /__quae_rules__/leaf_regex.cue:12:24
+  --> /__fas_rules__/leaf_regex.cue:12:24
    |
 12 |         tool_input: command: =~"^rm "
    |                              ^^^^^^^^^^^^^^^^^ got: "ls"
@@ -159,9 +159,9 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae explain bound-violation --config tests/diagnostics_rules_bound_violation --global-config /tmp/quae-nonexistent-global 2>&1
+> fas explain bound-violation --config tests/diagnostics_rules_bound_violation --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0301]: leaf constraint failed
-  --> /__quae_rules__/bound_violation.cue:11:35
+  --> /__fas_rules__/bound_violation.cue:11:35
    |
 11 |         tool_input: retry_count: _int & <=10
    |                                         ^^^^ 12 violates <= 10 (off by 2)
@@ -192,14 +192,14 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae explain provenance --config tests/diagnostics_rules_provenance --global-config /tmp/quae-nonexistent-global 2>&1
+> fas explain provenance --config tests/diagnostics_rules_provenance --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0301]: leaf constraint failed
-  --> /__quae_rules__/provenance.cue:19:24
+  --> /__fas_rules__/provenance.cue:19:24
    |
 19 |         tool_input: command: path.#systemInCommand
    |                              ^^^^^^^^^^^^^^^^^^^^^ got: "ls /home"
    |                              want: =~"(^|[^A-Za-z0-9_])/(etc|sys|proc|boot|dev)(/|$|[^A-Za-z0-9_])"
-   = note: constraint introduced at /__quae_rules__/cue.mod/pkg/github.com/srnnkls/quae/cue/path/path.cue:42:1
+   = note: constraint introduced at /__fas_rules__/cue.mod/pkg/github.com/srnnkls/fas/cue/path/path.cue:42:1
 [1]
 ```
 
@@ -223,9 +223,9 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae explain kind-mismatch --config tests/diagnostics_rules_kind_mismatch --global-config /tmp/quae-nonexistent-global 2>&1
+> fas explain kind-mismatch --config tests/diagnostics_rules_kind_mismatch --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0303]: type mismatch
-  --> /__quae_rules__/kind_mismatch.cue:13:24
+  --> /__fas_rules__/kind_mismatch.cue:13:24
    |
 13 |         tool_input: command: _int
    |                              ^^^^ want: int, got: "ls"
@@ -250,9 +250,9 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae explain disjunction --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global 2>&1
+> fas explain disjunction --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0401]: no disjunction arm matched
-  --> /__quae_rules__/disjunction.cue:10:20
+  --> /__fas_rules__/disjunction.cue:10:20
    |
 10 |         tool_name:       "Read" | "Write" | "Edit"
    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^ got: "Bash" — no arm was close
@@ -282,9 +282,9 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae explain disjunction-close --config tests/diagnostics_rules_disjunction_close --global-config /tmp/quae-nonexistent-global 2>&1
+> fas explain disjunction-close --config tests/diagnostics_rules_disjunction_close --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0401]: no disjunction arm matched
-  --> /__quae_rules__/disjunction_close.cue:11:20
+  --> /__fas_rules__/disjunction_close.cue:11:20
    |
 11 |         tool_name:       "Read" | "Write" | "Edit"
    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^ got: "Rea" — closest arm was "Read"
@@ -318,9 +318,9 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae explain disjunction-ref --config tests/diagnostics_rules_disjunction_ref --global-config /tmp/quae-nonexistent-global 2>&1
+> fas explain disjunction-ref --config tests/diagnostics_rules_disjunction_ref --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0401]: no disjunction arm matched
-  --> /__quae_rules__/disjunction_ref.cue:15:20
+  --> /__fas_rules__/disjunction_ref.cue:15:20
    |
 15 |         tool_name:       _#ToolKind
    |                          ^^^^^^^^^^ got: "Rea" — closest arm was "Read"
@@ -345,7 +345,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/diagnostics_rules_broken_scope --global-config /tmp/quae-nonexistent-global 2>&1
+> fas eval --harness claude --config tests/diagnostics_rules_broken_scope --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0501]: rule "uid_rule": unbound identifier "myUnknownVar" in `when`
   --> tests/diagnostics_rules_broken_scope/unbound.cue:6:20
   |
@@ -373,7 +373,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/diagnostics_rules_broken_cross --global-config /tmp/quae-nonexistent-global 2>&1
+> fas eval --harness claude --config tests/diagnostics_rules_broken_cross --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0502]: rule "consumer_rule": cross-rule reference into "base_rule".when from `when`
   --> tests/diagnostics_rules_broken_cross/crossref.cue:14:20
    |
@@ -406,7 +406,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global --explain=fired 2>&1
+> fas eval --harness claude --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global --explain=fired 2>&1
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"wrong tool"}}fired: disjunction (tests/diagnostics_rules/disjunction.cue:disjunction)
 ```
 
@@ -426,17 +426,17 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global --explain=both 2>&1
+> fas eval --harness claude --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global --explain=both 2>&1
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"wrong tool"}}fired: disjunction (tests/diagnostics_rules/disjunction.cue:disjunction)
 rule_id: absent-path
 error[E0301]: leaf constraint failed
-  --> /__quae_rules__/absent_path.cue:10:20
+  --> /__fas_rules__/absent_path.cue:10:20
    |
 10 |         tool_name:       "Bash"
    |                          ^^^^^^ got: "Read"
 rule_id: absent-path
 error[E0201]: key not found
-  --> /__quae_rules__/absent_path.cue:11:3
+  --> /__fas_rules__/absent_path.cue:11:3
    |
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found at <root>
@@ -444,13 +444,13 @@ error[E0201]: key not found
    = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
 rule_id: leaf-regex
 error[E0301]: leaf constraint failed
-  --> /__quae_rules__/leaf_regex.cue:11:20
+  --> /__fas_rules__/leaf_regex.cue:11:20
    |
 11 |         tool_name:       "Bash"
    |                          ^^^^^^ got: "Read"
 rule_id: leaf-regex
 error[E0201]: key not found
-  --> /__quae_rules__/leaf_regex.cue:12:15
+  --> /__fas_rules__/leaf_regex.cue:12:15
    |
 12 |         tool_input: command: =~"^rm "
    |                     ^^^^^^^ key "command" not found at tool_input
@@ -458,7 +458,7 @@ error[E0201]: key not found
    = help: tool_input has keys: file_path
 ```
 
-## `quae explain` exit codes — match, no-match, unknown rule
+## `fas explain` exit codes — match, no-match, unknown rule
 
 Exit 0 when the rule fires, exit 1 when it does not (and a diagnostic is
 emitted on stderr), exit 2 when the rule_id is unknown.
@@ -473,7 +473,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae explain disjunction --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global 2>&1
+> fas explain disjunction --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
 ```
 
 ```scrut
@@ -486,18 +486,18 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae explain nonexistent-rule --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global 2>&1
+> fas explain nonexistent-rule --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
 rule_id "nonexistent-rule" not found in project or global rules
 [2]
 ```
 
-## `quae explain --code E0201` prints help; unknown code exits 2
+## `fas explain --code E0201` prints help; unknown code exits 2
 
 The `--code <code>` fast path prints the registered help for a known error
 code to stdout and exits 0. An unknown code exits 2 with a stderr diagnostic.
 
 ```scrut
-$ quae explain --code E0201
+$ fas explain --code E0201
 E0201
 
 A path segment referenced in the rule does not exist in the input.
@@ -509,7 +509,7 @@ segment broke the chain.
 ```
 
 ```scrut
-$ quae explain --code EXXXX 2>&1
+$ fas explain --code EXXXX 2>&1
 unknown error code "EXXXX"
 [2]
 ```

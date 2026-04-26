@@ -113,12 +113,12 @@ func claudeBashInput(command string) []byte {
 
 // -----------------------------------------------------------------------------
 // Rule fixtures — each is a complete .cue file body. Rule source files cannot
-// `import` the quae stdlib through LoadRules (single-file CompileBytes), so
+// `import` the fas stdlib through LoadRules (single-file CompileBytes), so
 // bodies either stay concrete or inline the stdlib shapes they depend on.
 // -----------------------------------------------------------------------------
 
 // denySystemTargetRule blocks Bash calls whose parsed targets look like a
-// system path. Mirrors cue/quae.cue's #isPreToolUse & #isBash & #hasSystemTarget
+// system path. Mirrors cue/fas.cue's #isPreToolUse & #isBash & #hasSystemTarget
 // composition inline because LoadRules compiles each file in isolation.
 const denySystemTargetRule = `package rules
 
@@ -1192,7 +1192,7 @@ func TestRun_Explain_StdoutCarriesVendorResponse(t *testing.T) {
 // package-level explainToggle between invocations.
 //
 // Guards against a leak of evaluator's package-level explainToggle across
-// in-process run() invocations. runCLI shares the quae binary's process,
+// in-process run() invocations. runCLI shares the fas binary's process,
 // so if run() calls SetExplainEnabled(true) on --explain but never calls
 // SetExplainEnabled(false) when the flag is absent, a subsequent
 // no-flag invocation in the same test process would still have explain
@@ -1374,10 +1374,10 @@ func TestRun_Explain_Fired_DoesNotInterfereWithBlockingDecision(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// QUAE_EXPLAIN env var (T8) — env fallback for the --explain flag
+// FAS_EXPLAIN env var (T8) — env fallback for the --explain flag
 // -----------------------------------------------------------------------------
 //
-// QUAE_EXPLAIN accepts truthy values (1, true, yes; case-insensitive) and, when
+// FAS_EXPLAIN accepts truthy values (1, true, yes; case-insensitive) and, when
 // set, enables the same behavior as --explain=missed. The explicit --explain
 // flag always wins when both are set (even if the flag's value is a stricter
 // or broader filter than the env-var default of `missed`). Non-truthy values
@@ -1387,12 +1387,12 @@ func TestRun_Explain_Fired_DoesNotInterfereWithBlockingDecision(t *testing.T) {
 // All tests use t.Setenv so env state is isolated per-test and automatically
 // restored on teardown — no leakage across the rest of TestRun_* can occur.
 
-// TestRun_QuaeExplain_TruthyEnablesMissed covers the baseline contract:
-// QUAE_EXPLAIN=1 with no --explain flag should behave exactly like passing
+// TestRun_FasExplain_TruthyEnablesMissed covers the baseline contract:
+// FAS_EXPLAIN=1 with no --explain flag should behave exactly like passing
 // --explain=missed. A non-firing rule must surface its E0201 diagnostic on
 // stderr, and the vendor response on stdout must remain intact.
-func TestRun_QuaeExplain_TruthyEnablesMissed(t *testing.T) {
-	t.Setenv("QUAE_EXPLAIN", "1")
+func TestRun_FasExplain_TruthyEnablesMissed(t *testing.T) {
+	t.Setenv("FAS_EXPLAIN", "1")
 
 	projectDir := writeRuleFiles(t, map[string]string{
 		"flags-miss.cue": missingKeyRule,
@@ -1417,18 +1417,18 @@ func TestRun_QuaeExplain_TruthyEnablesMissed(t *testing.T) {
 		t.Errorf("permissionDecision=%q, want %q", got, want)
 	}
 	if len(res.stderr) == 0 {
-		t.Fatalf("QUAE_EXPLAIN=1 must enable missed diagnostics; stderr is empty")
+		t.Fatalf("FAS_EXPLAIN=1 must enable missed diagnostics; stderr is empty")
 	}
 	if !strings.Contains(string(res.stderr), "E0201") {
-		t.Errorf("stderr should carry E0201 when QUAE_EXPLAIN=1; got %q", res.stderr)
+		t.Errorf("stderr should carry E0201 when FAS_EXPLAIN=1; got %q", res.stderr)
 	}
 }
 
-// TestRun_QuaeExplain_FlagWinsOverEnv asserts that --explain=both combined
-// with QUAE_EXPLAIN=1 produces `both` output (fired rule_id AND missed
+// TestRun_FasExplain_FlagWinsOverEnv asserts that --explain=both combined
+// with FAS_EXPLAIN=1 produces `both` output (fired rule_id AND missed
 // E-code), NOT just `missed`. The flag is authoritative.
-func TestRun_QuaeExplain_FlagWinsOverEnv(t *testing.T) {
-	t.Setenv("QUAE_EXPLAIN", "1")
+func TestRun_FasExplain_FlagWinsOverEnv(t *testing.T) {
+	t.Setenv("FAS_EXPLAIN", "1")
 
 	projectDir := writeRuleFiles(t, map[string]string{
 		"ask.cue":        askOnBashRule,
@@ -1461,13 +1461,13 @@ func TestRun_QuaeExplain_FlagWinsOverEnv(t *testing.T) {
 	}
 }
 
-// TestRun_QuaeExplain_FlagWinsOverEnv_MoreRestrictive is the negative form of
-// the precedence check: QUAE_EXPLAIN=1 (which would enable `missed`) combined
+// TestRun_FasExplain_FlagWinsOverEnv_MoreRestrictive is the negative form of
+// the precedence check: FAS_EXPLAIN=1 (which would enable `missed`) combined
 // with --explain=fired must produce fired-only output. If the implementation
 // OR'd env+flag filters instead of letting the flag win, we'd see E0201 in
 // stderr. Pins that the flag wins even when its filter is STRICTER than env.
-func TestRun_QuaeExplain_FlagWinsOverEnv_MoreRestrictive(t *testing.T) {
-	t.Setenv("QUAE_EXPLAIN", "1")
+func TestRun_FasExplain_FlagWinsOverEnv_MoreRestrictive(t *testing.T) {
+	t.Setenv("FAS_EXPLAIN", "1")
 
 	projectDir := writeRuleFiles(t, map[string]string{
 		"ask.cue":        askOnBashRule,
@@ -1495,17 +1495,17 @@ func TestRun_QuaeExplain_FlagWinsOverEnv_MoreRestrictive(t *testing.T) {
 	// Missed E-code must NOT leak through. If the env widened the filter,
 	// this would trip.
 	if strings.Contains(stderrStr, "E0201") {
-		t.Errorf("--explain=fired with QUAE_EXPLAIN=1 must suppress missed diagnostics (flag wins); got E0201 in stderr=%q",
+		t.Errorf("--explain=fired with FAS_EXPLAIN=1 must suppress missed diagnostics (flag wins); got E0201 in stderr=%q",
 			stderrStr)
 	}
 }
 
-// TestRun_QuaeExplain_FalsyDisabled covers QUAE_EXPLAIN=0. The env var is
+// TestRun_FasExplain_FalsyDisabled covers FAS_EXPLAIN=0. The env var is
 // present but non-truthy, so stderr must remain empty for a non-firing rule.
 // This distinguishes "env falsy" from "env unset" (separate test below) so a
 // bug that treated any non-empty value as truthy would trip here.
-func TestRun_QuaeExplain_FalsyDisabled(t *testing.T) {
-	t.Setenv("QUAE_EXPLAIN", "0")
+func TestRun_FasExplain_FalsyDisabled(t *testing.T) {
+	t.Setenv("FAS_EXPLAIN", "0")
 
 	projectDir := writeRuleFiles(t, map[string]string{
 		"flags-miss.cue": missingKeyRule,
@@ -1524,30 +1524,30 @@ func TestRun_QuaeExplain_FalsyDisabled(t *testing.T) {
 		t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
 	}
 	if len(res.stderr) != 0 {
-		t.Errorf("QUAE_EXPLAIN=0 must keep stderr empty (explain disabled); got %q",
+		t.Errorf("FAS_EXPLAIN=0 must keep stderr empty (explain disabled); got %q",
 			res.stderr)
 	}
 }
 
-// TestRun_QuaeExplain_UnsetDisabled confirms the zero-cost default: when the
+// TestRun_FasExplain_UnsetDisabled confirms the zero-cost default: when the
 // env var is not present in the environment at all, stderr stays empty. This
 // tests the UNSET case specifically (os.LookupEnv returns ok=false), as
 // distinct from the empty-string case covered in NonTruthyVariants.
 // Implementations that use os.LookupEnv to distinguish unset-vs-empty must
 // still treat unset as disabled.
-func TestRun_QuaeExplain_UnsetDisabled(t *testing.T) {
-	// Take ownership of QUAE_EXPLAIN: record prior, remove it, restore on
+func TestRun_FasExplain_UnsetDisabled(t *testing.T) {
+	// Take ownership of FAS_EXPLAIN: record prior, remove it, restore on
 	// cleanup. t.Setenv("") is NOT unset (LookupEnv still returns ok=true), so
 	// we use os.Unsetenv directly and manage restoration ourselves.
-	prior, had := os.LookupEnv("QUAE_EXPLAIN")
-	if err := os.Unsetenv("QUAE_EXPLAIN"); err != nil {
+	prior, had := os.LookupEnv("FAS_EXPLAIN")
+	if err := os.Unsetenv("FAS_EXPLAIN"); err != nil {
 		t.Fatalf("os.Unsetenv: %v", err)
 	}
 	t.Cleanup(func() {
 		if had {
-			_ = os.Setenv("QUAE_EXPLAIN", prior)
+			_ = os.Setenv("FAS_EXPLAIN", prior)
 		} else {
-			_ = os.Unsetenv("QUAE_EXPLAIN")
+			_ = os.Unsetenv("FAS_EXPLAIN")
 		}
 	})
 
@@ -1568,17 +1568,17 @@ func TestRun_QuaeExplain_UnsetDisabled(t *testing.T) {
 		t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
 	}
 	if len(res.stderr) != 0 {
-		t.Errorf("QUAE_EXPLAIN unset must keep stderr empty; got %q", res.stderr)
+		t.Errorf("FAS_EXPLAIN unset must keep stderr empty; got %q", res.stderr)
 	}
 }
 
-// TestRun_QuaeExplain_TruthyVariants is the table-driven case for the truthy
+// TestRun_FasExplain_TruthyVariants is the table-driven case for the truthy
 // set: 1, true, yes, TRUE (case-insensitive). Each must enable the env
 // fallback. Using distinct tempdirs per subtest prevents rule-cache crosstalk.
-func TestRun_QuaeExplain_TruthyVariants(t *testing.T) {
-	// Parent-level guard: a host-exported QUAE_EXPLAIN must not bleed into
+func TestRun_FasExplain_TruthyVariants(t *testing.T) {
+	// Parent-level guard: a host-exported FAS_EXPLAIN must not bleed into
 	// the first subtest before its own t.Setenv runs.
-	t.Setenv("QUAE_EXPLAIN", "")
+	t.Setenv("FAS_EXPLAIN", "")
 
 	cases := []struct {
 		name string
@@ -1593,7 +1593,7 @@ func TestRun_QuaeExplain_TruthyVariants(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("QUAE_EXPLAIN", tc.val)
+			t.Setenv("FAS_EXPLAIN", tc.val)
 
 			projectDir := writeRuleFiles(t, map[string]string{
 				"flags-miss.cue": missingKeyRule,
@@ -1612,26 +1612,26 @@ func TestRun_QuaeExplain_TruthyVariants(t *testing.T) {
 				t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
 			}
 			if !strings.Contains(string(res.stderr), "E0201") {
-				t.Errorf("QUAE_EXPLAIN=%q must enable missed diagnostics (E0201); stderr=%q",
+				t.Errorf("FAS_EXPLAIN=%q must enable missed diagnostics (E0201); stderr=%q",
 					tc.val, res.stderr)
 			}
 		})
 	}
 }
 
-// TestRun_QuaeExplain_NonTruthyVariants is the table-driven case for non-truthy
+// TestRun_FasExplain_NonTruthyVariants is the table-driven case for non-truthy
 // values. Each must leave the fallback off, producing empty stderr. Guards
 // against sloppy truthiness logic that might treat any non-empty value as on,
 // or lowercase-only matching that would miss TRUE/YES but accept "bogus".
 //
 // The filter-mode words ("fired", "missed", "both") are included as NON-truthy
 // to pin that the env var is a truthiness flag, NOT a filter-mode channel — a
-// naive implementation that reused --explain's Set() parser on $QUAE_EXPLAIN
+// naive implementation that reused --explain's Set() parser on $FAS_EXPLAIN
 // would wrongly treat these as valid filter modes and enable explain.
-func TestRun_QuaeExplain_NonTruthyVariants(t *testing.T) {
-	// Parent-level guard: a host-exported QUAE_EXPLAIN must not bleed into
+func TestRun_FasExplain_NonTruthyVariants(t *testing.T) {
+	// Parent-level guard: a host-exported FAS_EXPLAIN must not bleed into
 	// the first subtest before its own t.Setenv runs.
-	t.Setenv("QUAE_EXPLAIN", "")
+	t.Setenv("FAS_EXPLAIN", "")
 
 	cases := []struct {
 		name string
@@ -1650,7 +1650,7 @@ func TestRun_QuaeExplain_NonTruthyVariants(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("QUAE_EXPLAIN", tc.val)
+			t.Setenv("FAS_EXPLAIN", tc.val)
 
 			projectDir := writeRuleFiles(t, map[string]string{
 				"flags-miss.cue": missingKeyRule,
@@ -1669,7 +1669,7 @@ func TestRun_QuaeExplain_NonTruthyVariants(t *testing.T) {
 				t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
 			}
 			if len(res.stderr) != 0 {
-				t.Errorf("QUAE_EXPLAIN=%q must leave explain disabled; got stderr=%q",
+				t.Errorf("FAS_EXPLAIN=%q must leave explain disabled; got stderr=%q",
 					tc.val, res.stderr)
 			}
 		})
@@ -1686,17 +1686,17 @@ func normalizeTempPaths(b []byte, projectDir, globalDir string) []byte {
 	return out
 }
 
-// TestRun_QuaeExplain_EquivalentToMissedFlag is the H1 equivalence anchor:
-// QUAE_EXPLAIN=1 and --explain=missed must produce byte-identical stderr
+// TestRun_FasExplain_EquivalentToMissedFlag is the H1 equivalence anchor:
+// FAS_EXPLAIN=1 and --explain=missed must produce byte-identical stderr
 // given identical input and rule contents. Tempdir paths (project AND global)
 // are normalized out before the comparison so the two runs' distinct
 // t.TempDir()s don't trivially diverge on path prefix.
 //
 // This is the env-first, then flag-first ordering. Its sibling
-// TestRun_QuaeExplain_EquivalentToMissedFlag_ReverseOrder swaps the order to
+// TestRun_FasExplain_EquivalentToMissedFlag_ReverseOrder swaps the order to
 // prove symmetry — neither ordering should be able to mask a sticky-toggle
 // bug in the evaluator's package-level state.
-func TestRun_QuaeExplain_EquivalentToMissedFlag(t *testing.T) {
+func TestRun_FasExplain_EquivalentToMissedFlag(t *testing.T) {
 	stdin := claudeBashInput("ls")
 
 	// Run A: env-driven.
@@ -1704,7 +1704,7 @@ func TestRun_QuaeExplain_EquivalentToMissedFlag(t *testing.T) {
 		"flags-miss.cue": missingKeyRule,
 	})
 	envGlobalDir := emptyRulesDir(t)
-	t.Setenv("QUAE_EXPLAIN", "1")
+	t.Setenv("FAS_EXPLAIN", "1")
 	envRun := runCLI(t, stdin,
 		"eval",
 		"--harness", "claude",
@@ -1717,7 +1717,7 @@ func TestRun_QuaeExplain_EquivalentToMissedFlag(t *testing.T) {
 
 	// Run B: flag-driven — unset env here so the comparison is strictly
 	// env-only vs flag-only.
-	t.Setenv("QUAE_EXPLAIN", "")
+	t.Setenv("FAS_EXPLAIN", "")
 	flagProjectDir := writeRuleFiles(t, map[string]string{
 		"flags-miss.cue": missingKeyRule,
 	})
@@ -1736,7 +1736,7 @@ func TestRun_QuaeExplain_EquivalentToMissedFlag(t *testing.T) {
 	envNorm := normalizeTempPaths(envRun.stderr, envProjectDir, envGlobalDir)
 	flagNorm := normalizeTempPaths(flagRun.stderr, flagProjectDir, flagGlobalDir)
 	if !bytes.Equal(envNorm, flagNorm) {
-		t.Errorf("QUAE_EXPLAIN=1 stderr must match --explain=missed stderr;\n env=%s\n flag=%s",
+		t.Errorf("FAS_EXPLAIN=1 stderr must match --explain=missed stderr;\n env=%s\n flag=%s",
 			envNorm, flagNorm)
 	}
 
@@ -1749,18 +1749,18 @@ func TestRun_QuaeExplain_EquivalentToMissedFlag(t *testing.T) {
 	}
 }
 
-// TestRun_QuaeExplain_EquivalentToMissedFlag_ReverseOrder swaps the execution
+// TestRun_FasExplain_EquivalentToMissedFlag_ReverseOrder swaps the execution
 // order of the equivalence test: flag FIRST, then env-only. Proves symmetry.
 // If the evaluator had a sticky-toggle bug (e.g. explainToggle latches once
 // set and never resets), the original env-first ordering could mask it —
 // a flag-driven second run would re-enable via flag and hide the leak. This
 // variant's second run relies solely on env-driven enablement, so any sticky
 // state from the first run cannot paper over an env-path regression.
-func TestRun_QuaeExplain_EquivalentToMissedFlag_ReverseOrder(t *testing.T) {
+func TestRun_FasExplain_EquivalentToMissedFlag_ReverseOrder(t *testing.T) {
 	stdin := claudeBashInput("ls")
 
 	// Run A: flag-driven. Env explicitly cleared so enablement is flag-only.
-	t.Setenv("QUAE_EXPLAIN", "")
+	t.Setenv("FAS_EXPLAIN", "")
 	flagProjectDir := writeRuleFiles(t, map[string]string{
 		"flags-miss.cue": missingKeyRule,
 	})
@@ -1781,7 +1781,7 @@ func TestRun_QuaeExplain_EquivalentToMissedFlag_ReverseOrder(t *testing.T) {
 		"flags-miss.cue": missingKeyRule,
 	})
 	envGlobalDir := emptyRulesDir(t)
-	t.Setenv("QUAE_EXPLAIN", "1")
+	t.Setenv("FAS_EXPLAIN", "1")
 	envRun := runCLI(t, stdin,
 		"eval",
 		"--harness", "claude",
@@ -1795,7 +1795,7 @@ func TestRun_QuaeExplain_EquivalentToMissedFlag_ReverseOrder(t *testing.T) {
 	flagNorm := normalizeTempPaths(flagRun.stderr, flagProjectDir, flagGlobalDir)
 	envNorm := normalizeTempPaths(envRun.stderr, envProjectDir, envGlobalDir)
 	if !bytes.Equal(flagNorm, envNorm) {
-		t.Errorf("reverse-order: --explain=missed stderr must match QUAE_EXPLAIN=1 stderr;\n flag=%s\n env=%s",
+		t.Errorf("reverse-order: --explain=missed stderr must match FAS_EXPLAIN=1 stderr;\n flag=%s\n env=%s",
 			flagNorm, envNorm)
 	}
 	if !strings.Contains(string(flagRun.stderr), "E0201") {
@@ -1806,13 +1806,13 @@ func TestRun_QuaeExplain_EquivalentToMissedFlag_ReverseOrder(t *testing.T) {
 	}
 }
 
-// TestRun_QuaeExplain_FlagMissedWinsOverEnv is the H2 mirror to
-// TestRun_QuaeExplain_FlagWinsOverEnv: --explain=missed combined with
-// QUAE_EXPLAIN=1 must produce missed-only output (no fired trace). A bug
+// TestRun_FasExplain_FlagMissedWinsOverEnv is the H2 mirror to
+// TestRun_FasExplain_FlagWinsOverEnv: --explain=missed combined with
+// FAS_EXPLAIN=1 must produce missed-only output (no fired trace). A bug
 // where env-driven enablement widens a restrictive flag (e.g. env OR flag
 // instead of flag-wins) would leak the fired rule_id into stderr.
-func TestRun_QuaeExplain_FlagMissedWinsOverEnv(t *testing.T) {
-	t.Setenv("QUAE_EXPLAIN", "1")
+func TestRun_FasExplain_FlagMissedWinsOverEnv(t *testing.T) {
+	t.Setenv("FAS_EXPLAIN", "1")
 
 	projectDir := writeRuleFiles(t, map[string]string{
 		"ask.cue":        askOnBashRule,
@@ -1841,27 +1841,27 @@ func TestRun_QuaeExplain_FlagMissedWinsOverEnv(t *testing.T) {
 	// (or env's enablement OR'd with flag's filter to yield fired output),
 	// this would trip.
 	if strings.Contains(stderrStr, "ask-bash") {
-		t.Errorf("--explain=missed with QUAE_EXPLAIN=1 must suppress fired traces (flag wins); got `ask-bash` in stderr=%q",
+		t.Errorf("--explain=missed with FAS_EXPLAIN=1 must suppress fired traces (flag wins); got `ask-bash` in stderr=%q",
 			stderrStr)
 	}
 }
 
-// TestRun_QuaeExplain_EnvResetsBetweenRuns mirrors T7's ToggleResetsBetweenRuns
-// for the env-driven path: a first run enables explain via QUAE_EXPLAIN=1, a
+// TestRun_FasExplain_EnvResetsBetweenRuns mirrors T7's ToggleResetsBetweenRuns
+// for the env-driven path: a first run enables explain via FAS_EXPLAIN=1, a
 // second run in the same process with env cleared (and no flag) must produce
 // empty stderr. Guards against env-driven enablement leaking into subsequent
 // run() invocations as sticky state (e.g. if the implementation reads
-// QUAE_EXPLAIN once into a package-level latch and never clears it on
+// FAS_EXPLAIN once into a package-level latch and never clears it on
 // subsequent calls where the env is no longer truthy).
-func TestRun_QuaeExplain_EnvResetsBetweenRuns(t *testing.T) {
+func TestRun_FasExplain_EnvResetsBetweenRuns(t *testing.T) {
 	projectDir := writeRuleFiles(t, map[string]string{
 		"flags-miss.cue": missingKeyRule,
 	})
 	globalDir := emptyRulesDir(t)
 	stdin := claudeBashInput("ls")
 
-	// First run: QUAE_EXPLAIN=1 → stderr should carry a diagnostic.
-	t.Setenv("QUAE_EXPLAIN", "1")
+	// First run: FAS_EXPLAIN=1 → stderr should carry a diagnostic.
+	t.Setenv("FAS_EXPLAIN", "1")
 	first := runCLI(t, stdin,
 		"eval",
 		"--harness", "claude",
@@ -1872,13 +1872,13 @@ func TestRun_QuaeExplain_EnvResetsBetweenRuns(t *testing.T) {
 		t.Fatalf("first run exit=%d want 0; stderr=%s", first.exit, first.stderr)
 	}
 	if len(first.stderr) == 0 {
-		t.Fatalf("first run (QUAE_EXPLAIN=1) should emit diagnostics; got empty stderr")
+		t.Fatalf("first run (FAS_EXPLAIN=1) should emit diagnostics; got empty stderr")
 	}
 
 	// Second run: env cleared, no flag → stderr must be empty. If the CLI
 	// latched enablement from the first run's env and never reset, localize
 	// would keep firing here.
-	t.Setenv("QUAE_EXPLAIN", "")
+	t.Setenv("FAS_EXPLAIN", "")
 	second := runCLI(t, stdin,
 		"eval",
 		"--harness", "claude",
@@ -1889,7 +1889,7 @@ func TestRun_QuaeExplain_EnvResetsBetweenRuns(t *testing.T) {
 		t.Fatalf("second run exit=%d want 0; stderr=%s", second.exit, second.stderr)
 	}
 	if len(second.stderr) != 0 {
-		t.Errorf("second run (QUAE_EXPLAIN cleared, no flag) must have empty stderr; env-leak detected. stderr=%q",
+		t.Errorf("second run (FAS_EXPLAIN cleared, no flag) must have empty stderr; env-leak detected. stderr=%q",
 			second.stderr)
 	}
 
@@ -1906,17 +1906,17 @@ func TestRun_QuaeExplain_EnvResetsBetweenRuns(t *testing.T) {
 		t.Fatalf("third run exit=%d want 0; stderr=%s", third.exit, third.stderr)
 	}
 	if len(third.stderr) != 0 {
-		t.Errorf("third run (QUAE_EXPLAIN cleared, no flag) must have empty stderr; env-leak detected. stderr=%q",
+		t.Errorf("third run (FAS_EXPLAIN cleared, no flag) must have empty stderr; env-leak detected. stderr=%q",
 			third.stderr)
 	}
 }
 
 // -----------------------------------------------------------------------------
-// quae explain <rule_id> subcommand (T9)
+// fas explain <rule_id> subcommand (T9)
 // -----------------------------------------------------------------------------
 //
-// `quae explain <rule_id> < input.json` runs ONE named rule against the stdin
-// input. Unlike `quae eval`, the subcommand uses the exit code to encode
+// `fas explain <rule_id> < input.json` runs ONE named rule against the stdin
+// input. Unlike `fas eval`, the subcommand uses the exit code to encode
 // match/no-match:
 //
 //   exit 0 → rule matched; stderr empty; stdout empty (no --render yet)
@@ -1929,7 +1929,7 @@ func TestRun_QuaeExplain_EnvResetsBetweenRuns(t *testing.T) {
 // implementer should document this choice.
 
 // explainCmdRuleGlobalOnly is a match-on-Bash rule with rule_id `global-only`.
-// Used to assert `quae explain` resolves rule_id against the global set.
+// Used to assert `fas explain` resolves rule_id against the global set.
 const explainCmdRuleGlobalOnly = `package rules
 
 rule: {
@@ -2132,7 +2132,7 @@ func TestRun_ExplainCmd_MalformedStdin_ExitTwo(t *testing.T) {
 
 // TestRun_ExplainCmd_DiagnosticPrintedWithoutExplainFlag pins the implicit
 // explain-on contract: the subcommand always renders its no-match diagnostic,
-// even without --explain. Contrast with `quae eval` where the absent flag
+// even without --explain. Contrast with `fas eval` where the absent flag
 // yields empty stderr on non-match.
 func TestRun_ExplainCmd_DiagnosticPrintedWithoutExplainFlag(t *testing.T) {
 	projectDir := writeRuleFiles(t, map[string]string{
@@ -2304,7 +2304,7 @@ func TestRun_ExplainCmd_AmbiguousRuleID_ProjectWins(t *testing.T) {
 // TestRun_ExplainCmd_DenyRule_StillExitsZeroOnMatch pins the contract boundary
 // between T7's --explain (which never flips exit code — eval decision stands)
 // and T9's explain subcommand (which DOES use exit code for match/no-match).
-// A deny-rule that matches the input yields exit 0 from `quae explain` — the
+// A deny-rule that matches the input yields exit 0 from `fas explain` — the
 // match succeeded; the deny decision is irrelevant to the subcommand's exit.
 func TestRun_ExplainCmd_DenyRule_StillExitsZeroOnMatch(t *testing.T) {
 	projectDir := writeRuleFiles(t, map[string]string{
@@ -2337,7 +2337,7 @@ func TestRun_ExplainCmd_DenyRule_StillExitsZeroOnMatch(t *testing.T) {
 
 // TestRun_ExplainCmd_DoesNotLeakToggleIntoEval is the leak guard: the explain
 // subcommand flips the evaluator's package-level explain toggle on internally
-// (to render diagnostics on no-match). A subsequent `quae eval` without
+// (to render diagnostics on no-match). A subsequent `fas eval` without
 // --explain in the same process must NOT see leaked diagnostics on stderr.
 // Mirrors TestRun_Explain_ToggleResetsBetweenRuns for the subcommand entry.
 func TestRun_ExplainCmd_DoesNotLeakToggleIntoEval(t *testing.T) {
@@ -2363,7 +2363,7 @@ func TestRun_ExplainCmd_DoesNotLeakToggleIntoEval(t *testing.T) {
 		t.Fatalf("first (explain subcmd) should emit diagnostics; got empty stderr")
 	}
 
-	// Second: run `quae eval` without --explain. Stderr must stay empty —
+	// Second: run `fas eval` without --explain. Stderr must stay empty —
 	// otherwise the subcommand leaked its toggle into the eval path.
 	second := runCLI(t, stdin,
 		"eval",
@@ -2379,7 +2379,7 @@ func TestRun_ExplainCmd_DoesNotLeakToggleIntoEval(t *testing.T) {
 			second.stderr)
 	}
 
-	// Third: positive control — run `quae eval --explain=missed` on the same
+	// Third: positive control — run `fas eval --explain=missed` on the same
 	// rule set. Stderr MUST be non-empty, proving the eval path is capable of
 	// emitting diagnostics when the flag is set. If run 2 was empty because of
 	// a broken pipeline (not a sealed toggle), this run would also be empty.
@@ -2399,7 +2399,7 @@ func TestRun_ExplainCmd_DoesNotLeakToggleIntoEval(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// T10: `quae explain --code <code>` — offline help lookup
+// T10: `fas explain --code <code>` — offline help lookup
 // -----------------------------------------------------------------------------
 
 // stdinMustNotBeRead is a reader whose Read always fails. Passing it as stdin

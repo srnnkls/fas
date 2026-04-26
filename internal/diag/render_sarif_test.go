@@ -7,7 +7,7 @@ import (
 
 	"cuelang.org/go/cue/token"
 
-	"github.com/srnnkls/quae/internal/diag"
+	"github.com/srnnkls/fas/internal/diag"
 )
 
 // decodeSARIF parses the hand-rolled SARIF bytes into a generic map so tests
@@ -75,7 +75,7 @@ func TestRenderSARIF_TopLevelShape(t *testing.T) {
 	if !ok {
 		t.Fatalf("runs[0].tool.driver missing: %v", tool)
 	}
-	if got, want := driver["name"], "quae"; got != want {
+	if got, want := driver["name"], "fas"; got != want {
 		t.Errorf("tool.driver.name = %v, want %q", got, want)
 	}
 	if _, ok := driver["version"].(string); !ok {
@@ -140,7 +140,7 @@ func TestRenderSARIF_LevelMapping(t *testing.T) {
 	}
 }
 
-// TestRenderSARIF_RuleIDAndMessage: ruleId is the quae code and message.text
+// TestRenderSARIF_RuleIDAndMessage: ruleId is the fas code and message.text
 // carries the title (plus primary label Msg when present).
 func TestRenderSARIF_RuleIDAndMessage(t *testing.T) {
 	pos := newPos(t, "r.cue", 0)

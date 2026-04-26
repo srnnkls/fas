@@ -1,6 +1,6 @@
 # Diagnostic JSON schema
 
-`quae --format=json` emits newline-delimited JSON (ND-JSON) — one
+`fas --format=json` emits newline-delimited JSON (ND-JSON) — one
 `Diagnostic` object per line, each terminated by `\n`. The schema is
 pinned by the field order below; consumers may depend on both key names
 and their emission order.
@@ -9,7 +9,7 @@ and their emission order.
 
 | Key        | Type                | Required | Notes                                                        |
 |------------|---------------------|----------|--------------------------------------------------------------|
-| `code`     | string              | yes      | Quae error code, e.g. `"E0301"`.                             |
+| `code`     | string              | yes      | Fas error code, e.g. `"E0301"`.                             |
 | `severity` | string              | yes      | One of `"error"`, `"warning"`, `"note"`.                     |
 | `title`    | string              | yes      | Human-readable title; matches the text-renderer title line.  |
 | `location` | object              | yes      | `{file, line, col}` of the primary label.                    |

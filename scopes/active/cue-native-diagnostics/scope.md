@@ -8,7 +8,7 @@ issue_type: Feature
 
 ## Goal
 
-Turn quae's diagnostics from "Rust-style string-formatted messages" into **CUE-native inference reports**: carry the structured reason a subsumption failed (kind mismatch, bound violation, regex divergence, failed conjunct, ranked disjunction arms, constraint provenance) in the diagnostic itself, and let the renderer present each reason idiomatically. The typed reason tree also enables JSON / SARIF output for LSP and CI consumption, and a color-TTY path for terminal readability — all from one source of truth.
+Turn fas's diagnostics from "Rust-style string-formatted messages" into **CUE-native inference reports**: carry the structured reason a subsumption failed (kind mismatch, bound violation, regex divergence, failed conjunct, ranked disjunction arms, constraint provenance) in the diagnostic itself, and let the renderer present each reason idiomatically. The typed reason tree also enables JSON / SARIF output for LSP and CI consumption, and a color-TTY path for terminal readability — all from one source of truth.
 
 This scope assumes the prior `diag-errors` scope (v0, flat `Label.Msg` model) has shipped. It is the "path (b)" choice from the design exploration: rather than improving the hand-formatted strings, we extend the model.
 
@@ -38,7 +38,7 @@ Consequence: rendered output restates information the reader can already see (ti
 | `internal/evaluator/localize.go` | 66-127 | Rewrite leaf path via `cue.Value.Expr()` decomposition; emit Reasons |
 | `internal/evaluator/localize.go` | 129-152 | Disjunction with ranked arms (closeness heuristic) |
 | `internal/evaluator/localize.go` | 92-104 | Absent-key did-you-mean (Levenshtein over listKeys) |
-| `cmd/quae/main.go` | — | `--format=text|json|sarif` flag; color/NO_COLOR gating |
+| `cmd/fas/main.go` | — | `--format=text|json|sarif` flag; color/NO_COLOR gating |
 | `tests/diagnostics.md` | all | Rewrite goldens to minimal (post-"no restate") form |
 | `tests/diagnostics_formats.md` (NEW) | — | Scrut for JSON + SARIF + color output |
 
@@ -122,10 +122,10 @@ Consequence: rendered output restates information the reader can already see (ti
 - **F10 — SARIF output (`--format=sarif`).** Emits SARIF 2.1.0 with `runs[].results[]` per diagnostic, `logicalLocations` for rule IDs, `relatedLocations` for provenance entries. Hand-rolled emitter (no new deps).
 - **F11 — Color TTY.** When stdout/stderr is a TTY and `NO_COLOR` is unset, emit ANSI color: severity-word colored (red/yellow/cyan), caret line colored, file:line:col dimmed. `--color=auto|always|never` flag overrides detection.
 - **F12 — CLI surface.**
-  - `--format=text|json|sarif` on `quae eval` and `quae explain` (default `text`).
-  - `QUAE_FORMAT` env var mirrors the flag.
+  - `--format=text|json|sarif` on `fas eval` and `fas explain` (default `text`).
+  - `FAS_FORMAT` env var mirrors the flag.
   - `--color=auto|always|never` on both commands.
-  - `QUAE_COLOR` env var mirrors the flag; the standard `NO_COLOR` env (community convention) forces disable. No separate `QUAE_NO_COLOR` — `QUAE_COLOR=never` is the quae-specific override.
+  - `FAS_COLOR` env var mirrors the flag; the standard `NO_COLOR` env (community convention) forces disable. No separate `QUAE_NO_COLOR` — `FAS_COLOR=never` is the fas-specific override.
 - **F13 — Per-rule diagnostic policy (inherited from v0, made explicit).** A single rule whose `when` has multiple independent mismatches yields multiple diagnostics. The policy:
   - **One diagnostic per failing yield point** — an absent path segment (E0201), a failed leaf (E0301/E0302/E0303/E0304), or a failed disjunction at a leaf (E0401).
   - **Siblings are independent.** Two absent keys under the same parent → two E0201 diagnostics.
@@ -154,25 +154,25 @@ Consequence: rendered output restates information the reader can already see (ti
 
 ### Acceptance criteria
 
-- [ ] **Given** a rule with `tool_input: command: =~"^rm "` and input `command: "ls"`, **when** `quae explain` runs, **then** output omits "constraint not satisfied" and `want: =~"^rm "` (both carried by title+carets), shows only `got: "ls"`, and has the source line printed exactly once (no 3× stacking).
-- [ ] **Given** the same rule but constraint is a reference `tool_input: command: #DangerousCmds`, **when** `quae explain` runs, **then** `want:` *is* shown with the expanded constraint.
-- [ ] **Given** a rule `count: int & >=5 & <=10` and input `count: 3`, **when** `quae explain` runs, **then** output underlines the `>=5` conjunct specifically (not the whole `int & >=5 & <=10`), message reads `3 violates >= 5 (off by 2)`. Label carries exactly one `ConjunctFailed` entry in `Reasons`.
-- [ ] **Given** a rule `x: string & =~"^[a-z]+$" & strings.MinRunes(5)` and input `x: "AB"`, **when** `quae explain` runs, **then** the Label's `Reasons` slice contains two `ConjunctFailed` entries (regex, then min-runes, source order); primary caret row carries the regex failure message, a stacked aligned row beneath carries the min-runes failure message (T10 collapse); JSON emits `label.reasons` as a 2-element array.
-- [ ] **Given** the same rule but only one conjunct fails (input `x: "abcdefg"` passes min-runes, fails some other check), **when** `quae explain` runs, **then** `Reasons` has length 1 and only one message row renders.
-- [ ] **Given** a rule `tool_name: "Bash" | "Read" | "Write"` and input `tool_name: "Rd"`, **when** `quae explain` runs, **then** primary message reads "closest arm was `\"Read\"`" (Levenshtein-closest).
-- [ ] **Given** a rule requiring `flags.force` and input has keys `flag`, `forced`, **when** `quae explain` runs, **then** E0201 footer shows `= hint: did you mean "flag"?` (closest by edit distance).
-- [ ] **Given** a rule field constrained by `int & stdlib.Positive` where `Positive` is `>=0` defined in `stdlib/nums.cue`, **when** `quae explain` runs, **then** diagnostic footer shows `= note: constraint introduced at stdlib/nums.cue:<line>`.
-- [ ] **Given** input `count: "five"` against `count: int`, **when** `quae explain` runs, **then** diagnostic is E0303 with primary message `expected int, got string: "five"` (Want kind name, Got kind name, then the concrete value).
-- [ ] **Given** `quae eval --format=json < input.json`, **when** a rule fails, **then** stderr contains one JSON object per diagnostic with `code`, `severity`, `primary`, `reason.type`, `reason.*` fields.
-- [ ] **Given** `quae eval --format=sarif < input.json`, **when** a rule fails, **then** stderr contains a SARIF 2.1.0 document validatable against the published schema.
-- [ ] **Given** `quae eval --explain` from a TTY with `NO_COLOR` unset, **when** run, **then** output contains ANSI color codes for severity, caret, and location.
+- [ ] **Given** a rule with `tool_input: command: =~"^rm "` and input `command: "ls"`, **when** `fas explain` runs, **then** output omits "constraint not satisfied" and `want: =~"^rm "` (both carried by title+carets), shows only `got: "ls"`, and has the source line printed exactly once (no 3× stacking).
+- [ ] **Given** the same rule but constraint is a reference `tool_input: command: #DangerousCmds`, **when** `fas explain` runs, **then** `want:` *is* shown with the expanded constraint.
+- [ ] **Given** a rule `count: int & >=5 & <=10` and input `count: 3`, **when** `fas explain` runs, **then** output underlines the `>=5` conjunct specifically (not the whole `int & >=5 & <=10`), message reads `3 violates >= 5 (off by 2)`. Label carries exactly one `ConjunctFailed` entry in `Reasons`.
+- [ ] **Given** a rule `x: string & =~"^[a-z]+$" & strings.MinRunes(5)` and input `x: "AB"`, **when** `fas explain` runs, **then** the Label's `Reasons` slice contains two `ConjunctFailed` entries (regex, then min-runes, source order); primary caret row carries the regex failure message, a stacked aligned row beneath carries the min-runes failure message (T10 collapse); JSON emits `label.reasons` as a 2-element array.
+- [ ] **Given** the same rule but only one conjunct fails (input `x: "abcdefg"` passes min-runes, fails some other check), **when** `fas explain` runs, **then** `Reasons` has length 1 and only one message row renders.
+- [ ] **Given** a rule `tool_name: "Bash" | "Read" | "Write"` and input `tool_name: "Rd"`, **when** `fas explain` runs, **then** primary message reads "closest arm was `\"Read\"`" (Levenshtein-closest).
+- [ ] **Given** a rule requiring `flags.force` and input has keys `flag`, `forced`, **when** `fas explain` runs, **then** E0201 footer shows `= hint: did you mean "flag"?` (closest by edit distance).
+- [ ] **Given** a rule field constrained by `int & stdlib.Positive` where `Positive` is `>=0` defined in `stdlib/nums.cue`, **when** `fas explain` runs, **then** diagnostic footer shows `= note: constraint introduced at stdlib/nums.cue:<line>`.
+- [ ] **Given** input `count: "five"` against `count: int`, **when** `fas explain` runs, **then** diagnostic is E0303 with primary message `expected int, got string: "five"` (Want kind name, Got kind name, then the concrete value).
+- [ ] **Given** `fas eval --format=json < input.json`, **when** a rule fails, **then** stderr contains one JSON object per diagnostic with `code`, `severity`, `primary`, `reason.type`, `reason.*` fields.
+- [ ] **Given** `fas eval --format=sarif < input.json`, **when** a rule fails, **then** stderr contains a SARIF 2.1.0 document validatable against the published schema.
+- [ ] **Given** `fas eval --explain` from a TTY with `NO_COLOR` unset, **when** run, **then** output contains ANSI color codes for severity, caret, and location.
 - [ ] **Given** the same command with `NO_COLOR=1`, **when** run, **then** output contains no ANSI codes.
 - [ ] **Given** `--format=text` + `--color=never` + same inputs, **when** run twice, **then** output is byte-identical.
 - [ ] **Given** a non-firing rule with `explainEnabled=false`, **when** `Evaluate` runs, **then** no Reason construction occurs (verified via a `testing.AllocsPerRun` or explicit hook counter).
-- [ ] **Given** input `command: "rm -xf $(cat /etc/passwd | base64 | tr …)"` (80+ chars) failing regex `=~"^rm -rf "`, **when** `quae explain` runs, **then** the `= input` echo renders as a single line ≤ 60 chars with `…` trim markers and the caret correctly aligned under the divergence byte (offset 4 in the original input; offset is preserved, display position compensates for the prefix trim).
-- [ ] **Given** input `tool_name: "XYZ123"` against disjunction `"Bash" | "Read" | "Write" | "Edit"` (all kinds string — actually kind-matched, but no arm within distance 2), **when** `quae explain` runs, **then** ranked caret frames still render (kind matches → `Score ≥ ScoreKindMatch`).
-- [ ] **Given** input `tool_name: true` (bool) against the same string disjunction, **when** `quae explain` runs, **then** no ranked caret frames render; output is a flat summary "got `true` — no arm was close" plus a footer `= note: tried arms: "Bash", "Read", "Write", "Edit"`.
-- [ ] **Given** a rule requiring `container.port` and input `{}` (empty struct at the parent path), **when** `quae explain` runs, **then** E0201 footer reads `= help: parent at <root> is an empty struct` (not `has keys: ` with an empty list) and no `= hint:` line appears.
+- [ ] **Given** input `command: "rm -xf $(cat /etc/passwd | base64 | tr …)"` (80+ chars) failing regex `=~"^rm -rf "`, **when** `fas explain` runs, **then** the `= input` echo renders as a single line ≤ 60 chars with `…` trim markers and the caret correctly aligned under the divergence byte (offset 4 in the original input; offset is preserved, display position compensates for the prefix trim).
+- [ ] **Given** input `tool_name: "XYZ123"` against disjunction `"Bash" | "Read" | "Write" | "Edit"` (all kinds string — actually kind-matched, but no arm within distance 2), **when** `fas explain` runs, **then** ranked caret frames still render (kind matches → `Score ≥ ScoreKindMatch`).
+- [ ] **Given** input `tool_name: true` (bool) against the same string disjunction, **when** `fas explain` runs, **then** no ranked caret frames render; output is a flat summary "got `true` — no arm was close" plus a footer `= note: tried arms: "Bash", "Read", "Write", "Edit"`.
+- [ ] **Given** a rule requiring `container.port` and input `{}` (empty struct at the parent path), **when** `fas explain` runs, **then** E0201 footer reads `= help: parent at <root> is an empty struct` (not `has keys: ` with an empty list) and no `= hint:` line appears.
 - [ ] **Given** a rule's `f.Value` is a literal `int & >=0` and the resolved `ruleNext.Expr()` formats to the same `int & >=0`, **when** the constraint fails, **then** `want:` is NOT emitted (stronger gate returns formatted-equal).
 - [ ] **Given** a rule's `f.Value` is `int` and unification with a stdlib import narrowed `ruleNext` such that formatted Expr is `int & >=0`, **when** the constraint fails, **then** `want:` IS emitted with the expanded form `int & >=0`.
 - [ ] **Given** a single rule whose `when` has two absent keys under the same parent AND a leaf regex failure, **when** `Evaluate --explain` runs, **then** exactly three diagnostics are emitted for that rule (two E0201, one E0301), in source-walk order, with no dedup and no cap.
@@ -192,7 +192,7 @@ throughout (see `feedback_diag_no_restate.md`).
 
 **Ex. 1 — Regex divergence (`RegexMismatch`)**
 
-Rule snippet at `/__quae_rules__/bash_guard.cue`:
+Rule snippet at `/__fas_rules__/bash_guard.cue`:
 ```
 15 |     tool_input: command: =~"^rm -rf "
 ```
@@ -201,7 +201,7 @@ Input: `{"tool_input":{"command":"rm -xf /tmp"}}`
 Target output:
 ```
 error[E0301]: leaf constraint failed
-  --> /__quae_rules__/bash_guard.cue:15:26
+  --> /__fas_rules__/bash_guard.cue:15:26
    |
 15 |     tool_input: command: =~"^rm -rf "
    |                          ^^^^^^^^^^^^ got: "rm -xf /tmp"
@@ -217,7 +217,7 @@ by the primary caret row).
 
 **Ex. 2 — Conjunct decomposition + bound distance (`ConjunctFailed` ⊃ `BoundViolation`)**
 
-Rule snippet at `/__quae_rules__/limits.cue`:
+Rule snippet at `/__fas_rules__/limits.cue`:
 ```
  8 |     retry_count: int & >=5 & <=10 & !=7
 ```
@@ -226,7 +226,7 @@ Input: `{"retry_count":12}`
 Target output:
 ```
 error[E0301]: leaf constraint failed
-  --> /__quae_rules__/limits.cue:8:30
+  --> /__fas_rules__/limits.cue:8:30
    |
  8 |     retry_count: int & >=5 & <=10 & !=7
    |                              ^^^^ 12 violates <= 10 (off by 2)
@@ -240,7 +240,7 @@ No "constraint not satisfied" restatement.
 
 **Ex. 3 — Ranked disjunction arms (`DisjunctionFailed`)**
 
-Rule snippet at `/__quae_rules__/tool_gate.cue`:
+Rule snippet at `/__fas_rules__/tool_gate.cue`:
 ```
 10 |     tool_name: "Bash" | "Read" | "Write" | "Edit"
 ```
@@ -249,7 +249,7 @@ Input: `{"tool_name":"Rd"}`
 Target output:
 ```
 error[E0401]: no disjunction arm matched
-  --> /__quae_rules__/tool_gate.cue:10:14
+  --> /__fas_rules__/tool_gate.cue:10:14
    |
 10 |     tool_name: "Bash" | "Read" | "Write" | "Edit"
    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ got "Rd" — closest arm was "Read"
@@ -268,7 +268,7 @@ deterministically. Top 3 arms shown (cap configurable, rendered default = 3).
 
 **Ex. 4 — Did-you-mean for absent key (`KeyMissing.Suggestion`)**
 
-Rule snippet at `/__quae_rules__/confirm.cue`:
+Rule snippet at `/__fas_rules__/confirm.cue`:
 ```
 12 |     flags: force: true
 ```
@@ -277,7 +277,7 @@ Input: `{"flag":true,"forced":false}`
 Target output:
 ```
 error[E0201]: key not found
-  --> /__quae_rules__/confirm.cue:12:5
+  --> /__fas_rules__/confirm.cue:12:5
    |
 12 |     flags: force: true
    |     ^^^^^ key "flags" not found in input at path <root>
@@ -293,7 +293,7 @@ is within distance 2.
 
 **Ex. 5 — Kind mismatch (`E0303` + `KindMismatch`) with cross-file provenance (`Provenance`)**
 
-Rule snippet at `/__quae_rules__/retry.cue`:
+Rule snippet at `/__fas_rules__/retry.cue`:
 ```
  8 |     retry: count: int & stdlib.Positive
 ```
@@ -303,7 +303,7 @@ Input: `{"retry":{"count":"three"}}`
 Target output:
 ```
 error[E0303]: type mismatch
-  --> /__quae_rules__/retry.cue:8:21
+  --> /__fas_rules__/retry.cue:8:21
    |
  8 |     retry: count: int & stdlib.Positive
    |                   ^^^^^^^^^^^^^^^^^^^^^ expected int, got string: "three"
@@ -325,7 +325,7 @@ explaining the lattice disjointness.
 ### Commands
 
 ```
-go test ./internal/diag/... ./internal/evaluator/... ./cmd/quae/...
+go test ./internal/diag/... ./internal/evaluator/... ./cmd/fas/...
 go test ./...
 scrut test tests/diagnostics.md           # existing goldens, rewritten to minimal form
 scrut test tests/diagnostics_formats.md   # NEW — JSON / SARIF / color surfaces

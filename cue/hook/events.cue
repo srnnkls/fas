@@ -1,16 +1,16 @@
 // Package hook defines the canonical names and per-event shapes for every
-// hook Claude Code dispatches to quae. Definitions here are standalone
+// hook Claude Code dispatches to fas. Definitions here are standalone
 // constraints — they pin hook_event_name to a single literal and add per-event
 // required fields without referencing the broader #Input schema, so the
-// `hook` package stays free of a cycle against `quae`.
+// `hook` package stays free of a cycle against `fas`.
 //
 // Rule authors compose these with other sub-package constraints:
 //
 //	when: hook.#PreToolUse & tool.#isBash & path.#hasSystemTarget
 package hook
 
-// #HookEventName enumerates every hook event quae evaluates. Retyping
-// quae.#Input.hook_event_name against this disjunction turns typos like
+// #HookEventName enumerates every hook event fas evaluates. Retyping
+// fas.#Input.hook_event_name against this disjunction turns typos like
 // "PreToolUsex" into load-time failures instead of silent policy misses.
 #HookEventName: "PreToolUse" | "PostToolUse" | "UserPromptSubmit" | "Stop" | "SubagentStart" | "Notification"
 

@@ -31,28 +31,28 @@ rule: {
 }
 `
 
-// runFormatCLI is a thin wrapper around runCLI that pre-clears QUAE_* env vars
+// runFormatCLI is a thin wrapper around runCLI that pre-clears FAS_* env vars
 // so inherited state from the ambient shell never leaks into a test. Each
 // call re-establishes a clean env; individual tests set specific vars via
 // t.Setenv before invoking.
 func runFormatCLI(t *testing.T, stdin []byte, args ...string) runResult {
 	t.Helper()
-	t.Setenv("QUAE_FORMAT", "")
-	t.Setenv("QUAE_COLOR", "")
+	t.Setenv("FAS_FORMAT", "")
+	t.Setenv("FAS_COLOR", "")
 	t.Setenv("NO_COLOR", "")
 	return runCLI(t, stdin, args...)
 }
 
 // runFormatCLIRaw is the runCLI variant that preserves whatever env the
 // caller has already configured via t.Setenv. Used by tests that must
-// explicitly set QUAE_* or NO_COLOR before invoking.
+// explicitly set FAS_* or NO_COLOR before invoking.
 func runFormatCLIRaw(t *testing.T, stdin []byte, args ...string) runResult {
 	t.Helper()
 	return runCLI(t, stdin, args...)
 }
 
 // -----------------------------------------------------------------------------
-// --format=json on `quae eval`
+// --format=json on `fas eval`
 // -----------------------------------------------------------------------------
 
 // TestRun_FormatJSON_EmitsNDJSON: each line on stderr parses as a JSON
@@ -163,16 +163,16 @@ func TestRun_FormatText_Default(t *testing.T) {
 	}
 }
 
-// TestRun_QuaeFormatEnv_JSON: QUAE_FORMAT=json without the flag produces
+// TestRun_FasFormatEnv_JSON: FAS_FORMAT=json without the flag produces
 // the same JSON shape as --format=json.
-func TestRun_QuaeFormatEnv_JSON(t *testing.T) {
+func TestRun_FasFormatEnv_JSON(t *testing.T) {
 	projectDir := writeRuleFiles(t, map[string]string{
 		"fmt.cue": formatTestRule,
 	})
 	globalDir := emptyRulesDir(t)
 
-	t.Setenv("QUAE_FORMAT", "json")
-	t.Setenv("QUAE_COLOR", "")
+	t.Setenv("FAS_FORMAT", "json")
+	t.Setenv("FAS_COLOR", "")
 	t.Setenv("NO_COLOR", "")
 
 	res := runFormatCLIRaw(t, claudeBashInput("ls"),
@@ -193,12 +193,12 @@ func TestRun_QuaeFormatEnv_JSON(t *testing.T) {
 		}
 		var obj map[string]any
 		if err := json.Unmarshal([]byte(line), &obj); err != nil {
-			t.Fatalf("QUAE_FORMAT=json: line %d not JSON: %v\nline=%q", i, err, line)
+			t.Fatalf("FAS_FORMAT=json: line %d not JSON: %v\nline=%q", i, err, line)
 		}
 	}
 }
 
-// TestRun_FlagWinsOverEnv_Format: --format=text with QUAE_FORMAT=json →
+// TestRun_FlagWinsOverEnv_Format: --format=text with FAS_FORMAT=json →
 // flag wins (text output, not JSON).
 func TestRun_FlagWinsOverEnv_Format(t *testing.T) {
 	projectDir := writeRuleFiles(t, map[string]string{
@@ -206,8 +206,8 @@ func TestRun_FlagWinsOverEnv_Format(t *testing.T) {
 	})
 	globalDir := emptyRulesDir(t)
 
-	t.Setenv("QUAE_FORMAT", "json")
-	t.Setenv("QUAE_COLOR", "")
+	t.Setenv("FAS_FORMAT", "json")
+	t.Setenv("FAS_COLOR", "")
 	t.Setenv("NO_COLOR", "")
 
 	res := runFormatCLIRaw(t, claudeBashInput("ls"),
@@ -224,7 +224,7 @@ func TestRun_FlagWinsOverEnv_Format(t *testing.T) {
 	}
 	s := string(res.stderr)
 	if strings.HasPrefix(strings.TrimSpace(s), "{") {
-		t.Errorf("--format=text should win over QUAE_FORMAT=json; stderr=%q", s)
+		t.Errorf("--format=text should win over FAS_FORMAT=json; stderr=%q", s)
 	}
 	if !strings.Contains(s, "E0201") {
 		t.Errorf("expected text-format E0201 header; stderr=%q", s)
@@ -311,8 +311,8 @@ func TestRun_NoColorEnv_SuppressesANSI(t *testing.T) {
 	globalDir := emptyRulesDir(t)
 
 	t.Setenv("NO_COLOR", "1")
-	t.Setenv("QUAE_COLOR", "")
-	t.Setenv("QUAE_FORMAT", "")
+	t.Setenv("FAS_COLOR", "")
+	t.Setenv("FAS_FORMAT", "")
 
 	res := runFormatCLIRaw(t, claudeBashInput("ls"),
 		"eval",
@@ -327,17 +327,17 @@ func TestRun_NoColorEnv_SuppressesANSI(t *testing.T) {
 	}
 }
 
-// TestRun_QuaeColorWinsOverNoColor: QUAE_COLOR=always with NO_COLOR=1 →
-// quae-specific env wins, ANSI present.
-func TestRun_QuaeColorWinsOverNoColor(t *testing.T) {
+// TestRun_FasColorWinsOverNoColor: FAS_COLOR=always with NO_COLOR=1 →
+// fas-specific env wins, ANSI present.
+func TestRun_FasColorWinsOverNoColor(t *testing.T) {
 	projectDir := writeRuleFiles(t, map[string]string{
 		"fmt.cue": formatTestRule,
 	})
 	globalDir := emptyRulesDir(t)
 
-	t.Setenv("QUAE_COLOR", "always")
+	t.Setenv("FAS_COLOR", "always")
 	t.Setenv("NO_COLOR", "1")
-	t.Setenv("QUAE_FORMAT", "")
+	t.Setenv("FAS_FORMAT", "")
 
 	res := runFormatCLIRaw(t, claudeBashInput("ls"),
 		"eval",
@@ -348,7 +348,7 @@ func TestRun_QuaeColorWinsOverNoColor(t *testing.T) {
 	)
 
 	if !strings.Contains(string(res.stderr), "\x1b[") {
-		t.Errorf("QUAE_COLOR=always must override NO_COLOR=1; stderr=%q",
+		t.Errorf("FAS_COLOR=always must override NO_COLOR=1; stderr=%q",
 			res.stderr)
 	}
 }
@@ -362,8 +362,8 @@ func TestRun_ColorFlagWinsOverNoColor(t *testing.T) {
 	globalDir := emptyRulesDir(t)
 
 	t.Setenv("NO_COLOR", "1")
-	t.Setenv("QUAE_COLOR", "")
-	t.Setenv("QUAE_FORMAT", "")
+	t.Setenv("FAS_COLOR", "")
+	t.Setenv("FAS_FORMAT", "")
 
 	res := runFormatCLIRaw(t, claudeBashInput("ls"),
 		"eval",
@@ -435,10 +435,10 @@ func TestRun_UnknownFormat_Exit2(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// `quae explain` subcommand — flags work identically
+// `fas explain` subcommand — flags work identically
 // -----------------------------------------------------------------------------
 
-// TestRun_Explain_FormatJSON: `quae explain <rule_id> --format=json` emits
+// TestRun_Explain_FormatJSON: `fas explain <rule_id> --format=json` emits
 // JSON-per-diagnostic on stderr when the rule does not match.
 func TestRun_Explain_FormatJSON(t *testing.T) {
 	projectDir := writeRuleFiles(t, map[string]string{
@@ -471,7 +471,7 @@ func TestRun_Explain_FormatJSON(t *testing.T) {
 	}
 }
 
-// TestRun_Explain_ColorNever: `quae explain --color=never` strips ANSI.
+// TestRun_Explain_ColorNever: `fas explain --color=never` strips ANSI.
 func TestRun_Explain_ColorNever(t *testing.T) {
 	projectDir := writeRuleFiles(t, map[string]string{
 		"fmt.cue": formatTestRule,
@@ -492,7 +492,7 @@ func TestRun_Explain_ColorNever(t *testing.T) {
 	}
 }
 
-// TestRun_Explain_ColorAlways: `quae explain --color=always` emits ANSI.
+// TestRun_Explain_ColorAlways: `fas explain --color=always` emits ANSI.
 func TestRun_Explain_ColorAlways(t *testing.T) {
 	projectDir := writeRuleFiles(t, map[string]string{
 		"fmt.cue": formatTestRule,

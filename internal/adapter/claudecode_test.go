@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/srnnkls/quae/internal/adapter"
-	"github.com/srnnkls/quae/internal/envelope"
+	"github.com/srnnkls/fas/internal/adapter"
+	"github.com/srnnkls/fas/internal/envelope"
 )
 
 // ccResponse mirrors the Claude Code PreToolUse hook response shape. The

@@ -1,7 +1,7 @@
 package rules
 
 import (
-	"github.com/srnnkls/quae/cue/path"
+	"github.com/srnnkls/fas/cue/path"
 )
 
 // Rule constrains tool_input.command via a stdlib-defined regex

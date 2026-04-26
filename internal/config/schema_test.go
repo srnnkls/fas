@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/srnnkls/quae/internal/config"
+	"github.com/srnnkls/fas/internal/config"
 )
 
 func TestValidateInput_AcceptsWellFormedPreToolUse(t *testing.T) {

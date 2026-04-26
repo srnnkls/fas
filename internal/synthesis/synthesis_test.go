@@ -7,10 +7,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/srnnkls/quae/internal/config"
-	"github.com/srnnkls/quae/internal/envelope"
-	"github.com/srnnkls/quae/internal/evaluator"
-	"github.com/srnnkls/quae/internal/synthesis"
+	"github.com/srnnkls/fas/internal/config"
+	"github.com/srnnkls/fas/internal/envelope"
+	"github.com/srnnkls/fas/internal/evaluator"
+	"github.com/srnnkls/fas/internal/synthesis"
 )
 
 // -----------------------------------------------------------------------------

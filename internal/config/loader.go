@@ -15,8 +15,8 @@ import (
 	"cuelang.org/go/cue/ast"
 	"cuelang.org/go/cue/load"
 
-	quaecue "github.com/srnnkls/quae/cue"
-	"github.com/srnnkls/quae/internal/diag"
+	fascue "github.com/srnnkls/fas/cue"
+	"github.com/srnnkls/fas/internal/diag"
 )
 
 // ActionKind identifies which gate or effect an action represents.
@@ -75,14 +75,14 @@ type Rule struct {
 // It must be a distinct, absolute-looking path so CUE's overlay resolver does
 // not confuse it with the real filesystem root. The path itself never touches
 // disk; it only exists inside the in-memory overlay. Exported because CLI
-// tooling (cmd/quae --explain) must prime its source cache with the same
+// tooling (cmd/fas --explain) must prime its source cache with the same
 // virtual prefix the overlay assigns to rule files.
-const RulesModuleRoot = "/__quae_rules__"
+const RulesModuleRoot = "/__fas_rules__"
 
 // rulesModulePath is the synthetic module name assigned to the rules
 // directory. A module prefix is required so the overlay can host both the
 // rule file and the embedded stdlib via `cue.mod/pkg/...`.
-const rulesModulePath = "quae.local/rules@v0"
+const rulesModulePath = "fas.local/rules@v0"
 
 // LoadRules reads `*.cue` files from dir, iterates every top-level non-hidden
 // field in each file, unifies each against the `#Rule` schema, and returns the
@@ -96,8 +96,8 @@ const rulesModulePath = "quae.local/rules@v0"
 // naming both the file and the offending field.
 //
 // Each rule file is compiled inside a synthetic CUE module whose
-// `cue.mod/pkg/` tree hosts the embedded quae stdlib, so rule authors may
-// write `import "github.com/srnnkls/quae/cue/hook"` (etc.) and reference
+// `cue.mod/pkg/` tree hosts the embedded fas stdlib, so rule authors may
+// write `import "github.com/srnnkls/fas/cue/hook"` (etc.) and reference
 // `hook.#PreToolUse`, `path.#hasSystemTarget`, and friends. Rule files that
 // do not import the stdlib are unaffected.
 func LoadRules(dir string) ([]Rule, error) {
@@ -228,7 +228,7 @@ func extractFileRules(ruleDef cue.Value, fileVal cue.Value, rulePath string) ([]
 // compileRuleFile evaluates a rule file with stdlib imports resolved.
 //
 // Rule files are compiled inside a synthetic CUE module whose overlay maps
-// the user's rule file plus a `cue.mod/pkg/github.com/srnnkls/quae/cue/`
+// the user's rule file plus a `cue.mod/pkg/github.com/srnnkls/fas/cue/`
 // tree populated from the embedded stdlib. When the rule file has no stdlib
 // import, CUE still resolves fine — the overlay's pkg tree is simply unused.
 func compileRuleFile(ctx *cue.Context, rulePath string, src []byte, stdlib map[string]load.Source) (cue.Value, error) {
@@ -292,8 +292,8 @@ func wrapFieldLoadError(rulePath, field string, err error) error {
 	return diag.NewDiagError(d, nil, err)
 }
 
-// buildStdlibOverlay materializes the embedded quae stdlib inside the
-// synthetic module's `cue.mod/pkg/github.com/srnnkls/quae/cue/` tree so
+// buildStdlibOverlay materializes the embedded fas stdlib inside the
+// synthetic module's `cue.mod/pkg/github.com/srnnkls/fas/cue/` tree so
 // every sub-package import (`.../cue/hook`, `.../cue/tool`, `.../cue/path`,
 // `.../cue/escalation`, `.../cue/action`, `.../cue/flag`) resolves from any
 // rule file.
@@ -310,7 +310,7 @@ func buildStdlibOverlay() (map[string]load.Source, error) {
 		filepath.FromSlash(stdlibOverlayImportPath),
 	)
 	overlay := map[string]load.Source{}
-	stdlib := quaecue.StdlibFS()
+	stdlib := fascue.StdlibFS()
 	err := fs.WalkDir(stdlib, ".", func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -336,17 +336,17 @@ func buildStdlibOverlay() (map[string]load.Source, error) {
 		return nil, err
 	}
 	if len(overlay) == 0 {
-		return nil, errors.New("embedded quae stdlib is empty")
+		return nil, errors.New("embedded fas stdlib is empty")
 	}
 	return overlay, nil
 }
 
 // stdlibOverlayImportPath is the module-qualified import-path prefix each
 // sub-package is reachable under. Rule authors write
-// `import "github.com/srnnkls/quae/cue/hook"` (and so on); the overlay maps
+// `import "github.com/srnnkls/fas/cue/hook"` (and so on); the overlay maps
 // every embedded file to a path under this prefix so CUE's loader resolves
 // the sub-directories as sibling packages.
-const stdlibOverlayImportPath = "github.com/srnnkls/quae/cue"
+const stdlibOverlayImportPath = "github.com/srnnkls/fas/cue"
 
 // sanitizeVirtualRuleName rewrites a rule filename so it bypasses CUE's
 // build-tag filename suffixes (`_tool.cue`, `_test.cue`) which would

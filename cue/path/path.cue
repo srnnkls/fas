@@ -9,7 +9,7 @@ import (
 )
 
 // #SystemPrefixes is the canonical list of read-only system directories
-// quae treats as "never-touch" targets.
+// fas treats as "never-touch" targets.
 #SystemPrefixes: ["/etc", "/sys", "/proc", "/boot", "/dev"]
 
 // #systemTarget matches a single path string that begins with one of

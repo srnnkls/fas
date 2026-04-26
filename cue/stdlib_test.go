@@ -12,18 +12,18 @@ import (
 	"cuelang.org/go/cue/cuecontext"
 	"cuelang.org/go/cue/load"
 
-	quaecue "github.com/srnnkls/quae/cue"
+	fascue "github.com/srnnkls/fas/cue"
 )
 
 // stdlibModuleRoot is the synthetic root the sub-package test harness uses
 // for CUE's load system. A distinct absolute-looking path keeps the overlay
 // from colliding with any real directory in the working tree.
-const stdlibModuleRoot = "/__quae_stdlib_test__"
+const stdlibModuleRoot = "/__fas_stdlib_test__"
 
 // stdlibModulePath is the synthetic module name assigned to the harness
 // module. The value is arbitrary — CUE only needs a module prefix so the
 // overlay can host sibling sub-packages under `cue.mod/pkg/...`.
-const stdlibModulePath = "quae.test/stdlib@v0"
+const stdlibModulePath = "fas.test/stdlib@v0"
 
 // subPkg identifies one of the shipped sub-packages by its relative path
 // under cue/ (e.g. "hook", "flag"). The test harness uses it to build an
@@ -40,14 +40,14 @@ const (
 )
 
 // stdlibOverlay stages every embedded CUE file under the test module's
-// `cue.mod/pkg/github.com/srnnkls/quae/cue/` tree so load.Instances can
+// `cue.mod/pkg/github.com/srnnkls/fas/cue/` tree so load.Instances can
 // resolve each sub-package by its canonical import path.
 func stdlibOverlay(t *testing.T) map[string]load.Source {
 	t.Helper()
 
 	pkgRoot := filepath.Join(
 		stdlibModuleRoot, "cue.mod", "pkg",
-		filepath.FromSlash(quaecue.StdlibImportPathPrefix),
+		filepath.FromSlash(fascue.StdlibImportPathPrefix),
 	)
 	overlay := map[string]load.Source{
 		filepath.Join(stdlibModuleRoot, "cue.mod", "module.cue"): load.FromString(
@@ -59,7 +59,7 @@ func stdlibOverlay(t *testing.T) map[string]load.Source {
 		filepath.Join(stdlibModuleRoot, "root.cue"): load.FromString("package root\n"),
 	}
 
-	stdlib := quaecue.StdlibFS()
+	stdlib := fascue.StdlibFS()
 	err := fs.WalkDir(stdlib, ".", func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -90,7 +90,7 @@ func loadSubPkg(t *testing.T, ctx *cue.Context, sp subPkg) cue.Value {
 	t.Helper()
 
 	overlay := stdlibOverlay(t)
-	importPath := quaecue.StdlibImportPathPrefix + "/" + string(sp)
+	importPath := fascue.StdlibImportPathPrefix + "/" + string(sp)
 
 	cfg := &load.Config{
 		Dir:        stdlibModuleRoot,

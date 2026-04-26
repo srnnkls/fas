@@ -11,9 +11,9 @@ import (
 	"cuelang.org/go/cue/cuecontext"
 	"cuelang.org/go/cue/token"
 
-	"github.com/srnnkls/quae/internal/config"
-	"github.com/srnnkls/quae/internal/diag"
-	"github.com/srnnkls/quae/internal/evaluator"
+	"github.com/srnnkls/fas/internal/config"
+	"github.com/srnnkls/fas/internal/diag"
+	"github.com/srnnkls/fas/internal/evaluator"
 )
 
 // -----------------------------------------------------------------------------

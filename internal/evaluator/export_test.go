@@ -5,8 +5,8 @@ import (
 
 	"cuelang.org/go/cue"
 
-	"github.com/srnnkls/quae/internal/config"
-	"github.com/srnnkls/quae/internal/diag"
+	"github.com/srnnkls/fas/internal/config"
+	"github.com/srnnkls/fas/internal/diag"
 )
 
 // LocalizeForTest exposes the unexported localize iterator to black-box

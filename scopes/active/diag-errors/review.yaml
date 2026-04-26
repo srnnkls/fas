@@ -139,7 +139,7 @@ batch_reviews:
           style: pass
         issues: { critical: 0, high: 0, medium: 1, low: 1 }
         fix:
-          - resolved: [M1 writeUsage documents QUAE_EXPLAIN in a new Environment block]
+          - resolved: [M1 writeUsage documents FAS_EXPLAIN in a new Environment block]
           - deferred: [L1 isTruthyEnv style uniformity]
       - id: code-reviewer-claude-T9
         status: completed
@@ -173,7 +173,7 @@ batch_reviews:
       subagents ran with no conflicts because each scoped its edits
       narrowly: T8 touched cliOptions area + isTruthyEnv; T9 touched the
       top-of-run dispatch + new runExplain/findRuleByID. Post-review fixes
-      were applied directly to main.go (writeUsage QUAE_EXPLAIN
+      were applied directly to main.go (writeUsage FAS_EXPLAIN
       Environment block + positional-first & implicit-explain guidance;
       ErrInvalidInput sentinel check in runExplain) rather than spawning
       another loop. All 24 combined T8+T9 tests pass; full suite green.
@@ -278,40 +278,40 @@ batch_reviews:
 deferred_issues:
   - batch: 6
     severity: medium
-    file: cmd/quae/main.go
-    description: "`quae explain --harness claude myrule` (flag-before-positional) is rejected by the `strings.HasPrefix(args[0], \"-\")` guard. Documented in writeUsage as positional-first; consider walking args for the first non-flag token in a follow-up."
+    file: cmd/fas/main.go
+    description: "`fas explain --harness claude myrule` (flag-before-positional) is rejected by the `strings.HasPrefix(args[0], \"-\")` guard. Documented in writeUsage as positional-first; consider walking args for the first non-flag token in a follow-up."
   - batch: 6
     severity: low
-    file: cmd/quae/main.go
+    file: cmd/fas/main.go
     description: isTruthyEnv uses `v == \"1\"` literal for digit branch and strings.EqualFold for word forms — minor asymmetry, tests pin exact behavior
   - batch: 6
     severity: low
-    file: cmd/quae/main.go
+    file: cmd/fas/main.go
     description: flag duplication between runExplain's private FlagSet and parseFlags (harness/config/global-config); consolidate with a shared registerCommonFlags helper after T9 lands
   - batch: 6
     severity: low
-    file: cmd/quae/main.go
+    file: cmd/fas/main.go
     description: findRuleByID is variadic `...[]config.Rule` but both call sites pass at most two; positional `(project, global []config.Rule)` would make project-wins self-documenting
 
   - batch: 5
     severity: medium
-    file: cmd/quae/main.go
+    file: cmd/fas/main.go
     description: rule_id prefix for missed diagnostics printed as separate line rather than attached as a Note inside evaluator/localize.go — fractures "one renderer" invariant; consider moving into Diagnostic.Notes in a follow-up
   - batch: 5
     severity: medium
-    file: cmd/quae/main.go
+    file: cmd/fas/main.go
     description: fired traces are hand-rolled plaintext ("fired: <id> (<source>)") rather than routed through diag.Render; inconsistent visual style across --explain output
   - batch: 5
     severity: low
-    file: cmd/quae/main.go
+    file: cmd/fas/main.go
     description: explainOff const declared but only used as iota zero value; either reference it in the enabled-check or drop
   - batch: 5
     severity: low
-    file: cmd/quae/main.go
+    file: cmd/fas/main.go
     description: renderExplain takes ruleSets variadic but every caller passes exactly two slices; variadic hides arity
   - batch: 5
     severity: low
-    file: cmd/quae/main_test.go
+    file: cmd/fas/main_test.go
     description: no smoke test pins token.Pos.Filename spelling — if CUE overlay path changes upstream, tests pass while --explain degrades
 
   - batch: 4

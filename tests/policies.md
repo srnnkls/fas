@@ -1,14 +1,14 @@
-# Quae Policy Tests
+# Fas Policy Tests
 
-End-to-end integration tests for the `quae eval` CLI using [scrut](https://github.com/facebookincubator/scrut).
-Each block pipes a Claude Code hook event into `quae eval --harness claude` and asserts the exact response JSON.
+End-to-end integration tests for the `fas eval` CLI using [scrut](https://github.com/facebookincubator/scrut).
+Each block pipes a Claude Code hook event into `fas eval --harness claude` and asserts the exact response JSON.
 
 Run with:
 ```bash
 scrut test -w . tests/policies.md
 ```
 
-The `--global-config /tmp/quae-nonexistent-global` flag points at a path that does not exist so host-level
+The `--global-config /tmp/fas-nonexistent-global` flag points at a path that does not exist so host-level
 rules never leak into the suite; only rules under `tests/policies/` participate.
 
 ## System Path Protection
@@ -29,7 +29,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"System path blocked"}} (no-eol)
 ```
 
@@ -45,7 +45,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"System path blocked"}} (no-eol)
 ```
 
@@ -61,7 +61,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"System path blocked"}} (no-eol)
 ```
 
@@ -77,7 +77,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```
 
@@ -98,7 +98,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Git --no-verify is not permitted; commit/push hooks must run"}} (no-eol)
 ```
 
@@ -114,7 +114,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Git --no-verify is not permitted; commit/push hooks must run"}} (no-eol)
 ```
 
@@ -130,7 +130,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Git --no-verify is not permitted; commit/push hooks must run"}} (no-eol)
 ```
 
@@ -146,7 +146,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```
 
@@ -167,7 +167,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Recursive deletion of the home directory is blocked"}} (no-eol)
 ```
 
@@ -183,7 +183,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Recursive deletion of the home directory is blocked"}} (no-eol)
 ```
 
@@ -199,7 +199,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```
 
@@ -220,7 +220,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Refusing to stage a likely secret file"}} (no-eol)
 ```
 
@@ -236,7 +236,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Refusing to stage a likely secret file"}} (no-eol)
 ```
 
@@ -252,7 +252,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Refusing to stage a likely secret file"}} (no-eol)
 ```
 
@@ -268,7 +268,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```
 
@@ -289,7 +289,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"System path blocked"}} (no-eol)
 ```
 
@@ -305,7 +305,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"System path blocked"}} (no-eol)
 ```
 
@@ -321,7 +321,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```
 
@@ -345,7 +345,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Refusing to signal the init process"}} (no-eol)
 ```
 
@@ -361,7 +361,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Refusing to signal the init process"}} (no-eol)
 ```
 
@@ -377,7 +377,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```
 
@@ -397,7 +397,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```
 
@@ -413,7 +413,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```
 
@@ -429,7 +429,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```
 
@@ -452,7 +452,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Changing permissions on runtime directories is blocked"}} (no-eol)
 ```
 
@@ -468,7 +468,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Changing permissions on runtime directories is blocked"}} (no-eol)
 ```
 
@@ -484,7 +484,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```
 
@@ -506,7 +506,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Moving system log files conceals audit evidence"}} (no-eol)
 ```
 
@@ -522,7 +522,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Moving system log files conceals audit evidence"}} (no-eol)
 ```
 
@@ -538,7 +538,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```
 
@@ -561,7 +561,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Writing to system paths via tee is blocked"}} (no-eol)
 ```
 
@@ -577,7 +577,7 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Writing to system paths via tee is blocked"}} (no-eol)
 ```
 
@@ -593,6 +593,6 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae eval --harness claude --config tests/policies --global-config /tmp/quae-nonexistent-global 2>/dev/null
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```

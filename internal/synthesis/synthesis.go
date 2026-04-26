@@ -28,9 +28,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/srnnkls/quae/internal/config"
-	"github.com/srnnkls/quae/internal/envelope"
-	"github.com/srnnkls/quae/internal/evaluator"
+	"github.com/srnnkls/fas/internal/config"
+	"github.com/srnnkls/fas/internal/envelope"
+	"github.com/srnnkls/fas/internal/evaluator"
 )
 
 // Synthesize reduces matches into a single OutputEnvelope. See the package

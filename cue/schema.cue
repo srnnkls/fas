@@ -1,14 +1,14 @@
-// Package quae holds the core schema types rule loaders and signal
+// Package fas holds the core schema types rule loaders and signal
 // evaluators consume. Per-tool matchers, flag constraints, and hook-event
 // shapes live in sub-packages (cue/hook, cue/tool, cue/path, cue/flag, ...).
 //
 // Rule authors no longer import this package directly — they import each
-// sub-package they need. The file stays in the `quae` package so
+// sub-package they need. The file stays in the `fas` package so
 // ValidateInput and LoadRules can keep compiling it via `cue.CompileBytes`
 // without relying on the module loader.
-package quae
+package fas
 
-// #HookEventName enumerates every hook event quae evaluates. Retyping
+// #HookEventName enumerates every hook event fas evaluates. Retyping
 // #Input.hook_event_name against this disjunction turns typos like
 // "PreToolUsex" into load-time failures instead of silent policy misses.
 //

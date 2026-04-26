@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/srnnkls/quae/internal/config"
-	"github.com/srnnkls/quae/internal/diag"
+	"github.com/srnnkls/fas/internal/config"
+	"github.com/srnnkls/fas/internal/diag"
 )
 
 // unwrapToDiagError recovers a *diag.DiagError value from err, no matter how

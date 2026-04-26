@@ -9,7 +9,7 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
 
-	"github.com/srnnkls/quae/internal/config"
+	"github.com/srnnkls/fas/internal/config"
 )
 
 // writeRuleFile is a small helper for staging fixture .cue files.

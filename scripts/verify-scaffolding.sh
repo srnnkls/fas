@@ -2,13 +2,13 @@
 #
 # verify-scaffolding.sh
 #
-# Asserts the invariants of T1 project scaffolding for the `quae` repo.
+# Asserts the invariants of T1 project scaffolding for the `fas` repo.
 # Exits non-zero on the first failed assertion so this script can gate CI
 # and serve as a regression check against future structural drift.
 #
 # Invariants asserted:
 #   - go.mod at repo root
-#   - Package tree: cmd/quae, internal/{adapter,config,evaluator,parser,synthesis}
+#   - Package tree: cmd/fas, internal/{adapter,config,evaluator,parser,synthesis}
 #   - Each package directory contains >= 1 .go file
 #   - Makefile or justfile at repo root
 #   - Build tool exposes `build`, `test`, `lint` targets (reachable via dry-run)
@@ -45,7 +45,7 @@ fi
 # --- directory tree ----------------------------------------------------------
 
 required_dirs=(
-  "cmd/quae"
+  "cmd/fas"
   "internal/adapter"
   "internal/config"
   "internal/evaluator"

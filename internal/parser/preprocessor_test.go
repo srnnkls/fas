@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/srnnkls/quae/internal/parser"
+	"github.com/srnnkls/fas/internal/parser"
 )
 
 // cloneInput deep-copies a map[string]any (one level of nested maps is enough

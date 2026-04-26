@@ -72,7 +72,7 @@ taxonomy:
     rationale: >
       Touches: internal/diag (Reason type, renderer dispatch, JSON/SARIF/color
       formatters), internal/evaluator/localize.go (Expr walk, per-reason
-      extraction, arm ranking, provenance), cmd/quae/main.go (--format,
+      extraction, arm ranking, provenance), cmd/fas/main.go (--format,
       --color flags + env vars), tests/diagnostics.md (golden rewrites),
       tests/diagnostics_formats.md (new). Does NOT touch: adapter, envelope,
       parser, pipeline, synthesis, cue/schema.cue, the Subsume fast path
@@ -143,7 +143,7 @@ gates:
   - name: no_new_codes
     description: >
       `internal/diag/codes.go` codes-list slice is unchanged in length
-      after this scope (zero additions). `quae explain --code E0305`
+      after this scope (zero additions). `fas explain --code E0305`
       still exits 2 (no new code allocated). Existing codes E0301/E0302/
       E0303/E0304 continue to print non-empty, multi-line help.
     must_pass: true
@@ -199,7 +199,7 @@ audit:
       (5) KindMismatch output — canonical format is
       `expected <Want>, got <Got>: <Actual>`; added `Actual string` field
       to the variant. Acceptance criterion and example-5 aligned.
-      (6) QUAE_NO_COLOR — dropped; the scope commits only to QUAE_COLOR
+      (6) QUAE_NO_COLOR — dropped; the scope commits only to FAS_COLOR
       and NO_COLOR (community convention).
   - timestamp: 2026-04-24
     action: reviewed

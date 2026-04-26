@@ -11,14 +11,14 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
 
-	quaecue "github.com/srnnkls/quae/cue"
+	fascue "github.com/srnnkls/fas/cue"
 )
 
 // compileSchema returns the compiled #Rule / #Input / #Action etc.
 // namespace from the embedded schema.cue.
 func compileSchema(t *testing.T) (*cue.Context, cue.Value) {
 	t.Helper()
-	src := quaecue.SchemaSource()
+	src := fascue.SchemaSource()
 	if len(src) == 0 {
 		t.Fatal("SchemaSource() returned empty bytes; //go:embed wiring is broken")
 	}

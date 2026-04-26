@@ -6,13 +6,13 @@ import (
 
 	"cuelang.org/go/cue"
 
-	quaecue "github.com/srnnkls/quae/cue"
+	fascue "github.com/srnnkls/fas/cue"
 )
 
 // SchemaSource returns the bytes of the embedded `schema.cue` file so other
 // packages can reuse the shipped schema without re-reading it from disk.
 func SchemaSource() []byte {
-	return quaecue.SchemaSource()
+	return fascue.SchemaSource()
 }
 
 // ValidateInput unifies raw adapter JSON against the `#Input` CUE schema as a

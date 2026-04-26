@@ -9,7 +9,7 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/token"
 
-	"github.com/srnnkls/quae/internal/diag"
+	"github.com/srnnkls/fas/internal/diag"
 )
 
 // ---------------------------------------------------------------------------

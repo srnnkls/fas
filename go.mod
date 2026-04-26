@@ -1,4 +1,4 @@
-module github.com/srnnkls/quae
+module github.com/srnnkls/fas
 
 go 1.26.2
 

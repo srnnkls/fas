@@ -28,10 +28,10 @@ func SchemaSource() []byte {
 }
 
 // StdlibFS returns the embedded filesystem containing every CUE source
-// shipped with quae: the core schema.cue plus every sub-package (hook/,
+// shipped with fas: the core schema.cue plus every sub-package (hook/,
 // tool/, path/, escalation/, action/, flag/). Callers mount it into a
 // `cue/load` overlay so rule files can resolve
-// `import "github.com/srnnkls/quae/cue/<sub>"` without touching disk.
+// `import "github.com/srnnkls/fas/cue/<sub>"` without touching disk.
 //
 // The returned fs.FS roots at the `cue/` directory: entries look like
 // `schema.cue`, `hook/events.cue`, and `flag/rm.cue`.
@@ -43,4 +43,4 @@ func StdlibFS() fs.FS {
 // is reachable under. A rule author writes
 // `import "<StdlibImportPathPrefix>/hook"` (and so on) to pull in the hook,
 // tool, path, escalation, action, or flag sub-package.
-const StdlibImportPathPrefix = "github.com/srnnkls/quae/cue"
+const StdlibImportPathPrefix = "github.com/srnnkls/fas/cue"

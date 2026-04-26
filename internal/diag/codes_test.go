@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/srnnkls/quae/internal/diag"
+	"github.com/srnnkls/fas/internal/diag"
 )
 
 // expectedCodes enumerates every error code the registry must declare.

@@ -9,9 +9,9 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
 
-	"github.com/srnnkls/quae/internal/config"
-	"github.com/srnnkls/quae/internal/diag"
-	"github.com/srnnkls/quae/internal/evaluator"
+	"github.com/srnnkls/fas/internal/config"
+	"github.com/srnnkls/fas/internal/diag"
+	"github.com/srnnkls/fas/internal/evaluator"
 )
 
 // -----------------------------------------------------------------------------
@@ -48,7 +48,7 @@ func TestProvenance_CrossFileConjunct_ProducesEntry(t *testing.T) {
 	if err := os.WriteFile(rulePath, []byte(`package rules
 
 import (
-	"github.com/srnnkls/quae/cue/path"
+	"github.com/srnnkls/fas/cue/path"
 )
 
 myrule: {

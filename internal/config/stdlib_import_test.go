@@ -11,8 +11,8 @@ import (
 	"cuelang.org/go/cue/cuecontext"
 	cueerrors "cuelang.org/go/cue/errors"
 
-	"github.com/srnnkls/quae/internal/config"
-	"github.com/srnnkls/quae/internal/evaluator"
+	"github.com/srnnkls/fas/internal/config"
+	"github.com/srnnkls/fas/internal/evaluator"
 )
 
 // writeStdlibRuleFile stages a rule file and returns its absolute path so
@@ -56,9 +56,9 @@ func TestLoadRules_RuleCanImportPathHasSystemTarget(t *testing.T) {
 	src := `package rules
 
 import (
-	"github.com/srnnkls/quae/cue/hook"
-	"github.com/srnnkls/quae/cue/tool"
-	"github.com/srnnkls/quae/cue/path"
+	"github.com/srnnkls/fas/cue/hook"
+	"github.com/srnnkls/fas/cue/tool"
+	"github.com/srnnkls/fas/cue/path"
 )
 
 system_path: {
@@ -114,9 +114,9 @@ func TestLoadRules_RuleCanImportFlagConstraints(t *testing.T) {
 	src := `package rules
 
 import (
-	"github.com/srnnkls/quae/cue/hook"
-	"github.com/srnnkls/quae/cue/tool"
-	"github.com/srnnkls/quae/cue/flag"
+	"github.com/srnnkls/fas/cue/hook"
+	"github.com/srnnkls/fas/cue/tool"
+	"github.com/srnnkls/fas/cue/flag"
 )
 
 rm_force: {
@@ -212,9 +212,9 @@ func TestLoadRules_RuleCanUseTypedEvent(t *testing.T) {
 	src := `package rules
 
 import (
-	"github.com/srnnkls/quae/cue/hook"
-	"github.com/srnnkls/quae/cue/tool"
-	"github.com/srnnkls/quae/cue/path"
+	"github.com/srnnkls/fas/cue/hook"
+	"github.com/srnnkls/fas/cue/tool"
+	"github.com/srnnkls/fas/cue/path"
 )
 
 typed_system_path: {
@@ -280,7 +280,7 @@ typed_system_path: {
 func TestLoadRules_TypedUserPromptSubmit_EnforcesPrompt(t *testing.T) {
 	src := `package rules
 
-import "github.com/srnnkls/quae/cue/hook"
+import "github.com/srnnkls/fas/cue/hook"
 
 typed_prompt: {
 	when: hook.#UserPromptSubmit
@@ -329,7 +329,7 @@ typed_prompt: {
 func TestLoadRules_InvalidStdlibReference_ErrorsWithContext(t *testing.T) {
 	src := `package rules
 
-import "github.com/srnnkls/quae/cue/path"
+import "github.com/srnnkls/fas/cue/path"
 
 bad_ref: {
 	when: path.#nonexistentDef

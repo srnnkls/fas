@@ -5,7 +5,7 @@ import (
 
 	"cuelang.org/go/cue"
 
-	"github.com/srnnkls/quae/internal/diag"
+	"github.com/srnnkls/fas/internal/diag"
 )
 
 // maxProvenanceEntries caps Provenance footer notes per diagnostic. The

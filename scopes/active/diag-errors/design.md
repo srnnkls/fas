@@ -108,7 +108,7 @@ to silently not fire; the diagnostic shows which segment broke the chain.`,
 }
 ```
 
-`quae explain --code E0201` prints the help. Good for users who don't remember what a code means.
+`fas explain --code E0201` prints the help. Good for users who don't remember what a code means.
 
 ## Renderer
 
@@ -211,7 +211,7 @@ func Evaluate(rules []Rule, input cue.Value) ([]Match, []Diagnostic, error) {
 }
 ```
 
-Fast path: the CLI never flips explain on, `localize` is never invoked, `diags` is nil — one `Subsume` call per rule, same cost as today. Explain path: the CLI flips it on once at startup (via `--explain`, `QUAE_EXPLAIN`, or the `explain` subcommand), the walk runs on non-match, diagnostics accumulate.
+Fast path: the CLI never flips explain on, `localize` is never invoked, `diags` is nil — one `Subsume` call per rule, same cost as today. Explain path: the CLI flips it on once at startup (via `--explain`, `FAS_EXPLAIN`, or the `explain` subcommand), the walk runs on non-match, diagnostics accumulate.
 
 Debug activation is a package-level toggle (`explainEnabled()`), not an API parameter. The three-lane signature stays clean; activation is a process-lifecycle concern (one setting per invocation), not something every call site should plumb through.
 
@@ -304,21 +304,21 @@ When `Subsume` fails on a disjunction:
 Three entry points, same renderer:
 
 ```
-quae eval --explain=missed < input.json
+fas eval --explain=missed < input.json
   → stdout: vendor response
   → stderr: diagnostics (one per non-firing rule)
 
-QUAE_EXPLAIN=1 quae eval < input.json
+FAS_EXPLAIN=1 fas eval < input.json
   → same as --explain=missed
 
-quae explain my_rule_id < input.json
+fas explain my_rule_id < input.json
   → runs only my_rule_id
   → stdout: empty (or matched response if requested via --render)
   → stderr: diagnostic if no match
   → exit 0 on match, 1 on no-match, 2 on engine error
 ```
 
-Flag parsing added in `cmd/quae/main.go` alongside existing flags. `explain` subcommand is a new case in the dispatch at the top of `run`.
+Flag parsing added in `cmd/fas/main.go` alongside existing flags. `explain` subcommand is a new case in the dispatch at the top of `run`.
 
 ## Migration: `ruleLoadError` → `diag.Diagnostic`
 

@@ -1,9 +1,9 @@
 package rules
 
 import (
-	"github.com/srnnkls/quae/cue/hook"
-	"github.com/srnnkls/quae/cue/path"
-	"github.com/srnnkls/quae/cue/tool"
+	"github.com/srnnkls/fas/cue/hook"
+	"github.com/srnnkls/fas/cue/path"
+	"github.com/srnnkls/fas/cue/tool"
 )
 
 // `tee` is the canonical vector for writing to privileged files without a

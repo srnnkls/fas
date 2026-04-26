@@ -8,7 +8,7 @@ import (
 	"cuelang.org/go/cue/ast"
 	"cuelang.org/go/cue/cuecontext"
 
-	"github.com/srnnkls/quae/internal/diag"
+	"github.com/srnnkls/fas/internal/diag"
 )
 
 // Score tier constants per AD-3. Strictly monotonic so a kind match always

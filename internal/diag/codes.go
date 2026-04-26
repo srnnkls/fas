@@ -24,17 +24,17 @@ action's required fields against the rule definition.`,
 
 var E0102 = CodeInfo{
 	Code: "E0102",
-	Help: `The ` + "`then.kind`" + ` value names an action that quae does not recognize.
+	Help: `The ` + "`then.kind`" + ` value names an action that fas does not recognize.
 
 Action kinds are a closed set registered at compile time. A typo
-(` + "`blok`" + ` instead of ` + "`block`" + `) or an action from a newer quae release
+(` + "`blok`" + ` instead of ` + "`block`" + `) or an action from a newer fas release
 will both produce this code. Check the spelling against the action
-catalog and the version of quae you are running.`,
+catalog and the version of fas you are running.`,
 }
 
 var E0103 = CodeInfo{
 	Code: "E0103",
-	Help: `A top-level field in the rule file uses a name reserved by quae.
+	Help: `A top-level field in the rule file uses a name reserved by fas.
 
 Names like ` + "`then`" + `, ` + "`when`" + `, ` + "`meta`" + ` and a handful of others are part of
 the rule schema and cannot be redefined as user rules. Rename the
@@ -133,7 +133,7 @@ var E0402 = CodeInfo{
 	Help: `A disjunction uses a CUE default mark under pattern-match semantics.
 
 Default marks (` + "`*`" + `) change which arm wins when an input is ambiguous.
-Under quae's closed-world pattern matching the notion of a "default"
+Under fas's closed-world pattern matching the notion of a "default"
 arm is ill-defined; remove the mark and let the arms stand on their
 own merits.`,
 }
@@ -145,7 +145,7 @@ var E0501 = CodeInfo{
 	Help: `An identifier in the rule does not resolve to any visible binding.
 
 Rules may only reference fields declared within the rule itself or
-values exported from the quae standard library. A typo or a
+values exported from the fas standard library. A typo or a
 reference to something not in scope surfaces here; check the name
 against the local declarations and the available stdlib imports.`,
 }

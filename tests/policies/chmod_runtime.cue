@@ -1,9 +1,9 @@
 package rules
 
 import (
-	"github.com/srnnkls/quae/cue/hook"
-	"github.com/srnnkls/quae/cue/path"
-	"github.com/srnnkls/quae/cue/tool"
+	"github.com/srnnkls/fas/cue/hook"
+	"github.com/srnnkls/fas/cue/path"
+	"github.com/srnnkls/fas/cue/tool"
 )
 
 // Socket files and PID files in /run are owned by system daemons; widening

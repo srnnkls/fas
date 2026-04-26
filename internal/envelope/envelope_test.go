@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/srnnkls/quae/internal/envelope"
+	"github.com/srnnkls/fas/internal/envelope"
 )
 
 func TestCategoryOrdering(t *testing.T) {

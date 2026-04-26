@@ -52,7 +52,7 @@ taxonomy:
     rationale: >
       Touches: internal/diag (new), internal/config/loader.go (migration),
       internal/config/lint.go (emit diagnostics), internal/evaluator/
-      (Explain + localize), cmd/quae/main.go (CLI wiring), tests/diagnostics.md
+      (Explain + localize), cmd/fas/main.go (CLI wiring), tests/diagnostics.md
       (new). Does NOT touch: internal/adapter, internal/envelope,
       internal/parser, internal/pipeline, internal/synthesis, cue/schema.cue.
 
@@ -96,7 +96,7 @@ gates:
 
   - name: production_zero_cost
     description: >
-      Evaluator fast path (no --explain, no QUAE_EXPLAIN, no explain
+      Evaluator fast path (no --explain, no FAS_EXPLAIN, no explain
       subcommand) performs exactly one Subsume call per rule. Benchmark
       baseline not regressed.
     must_pass: true

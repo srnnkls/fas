@@ -7,7 +7,7 @@ import (
 
 	"cuelang.org/go/cue/ast"
 
-	"github.com/srnnkls/quae/internal/config"
+	"github.com/srnnkls/fas/internal/config"
 )
 
 // TestLoadRules_WhenSyntax_Populated pins the contract that decoding a rule

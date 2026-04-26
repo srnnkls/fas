@@ -11,9 +11,9 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
 
-	"github.com/srnnkls/quae/internal/config"
-	"github.com/srnnkls/quae/internal/evaluator"
-	"github.com/srnnkls/quae/internal/parser"
+	"github.com/srnnkls/fas/internal/config"
+	"github.com/srnnkls/fas/internal/evaluator"
+	"github.com/srnnkls/fas/internal/parser"
 )
 
 // mustWriteRule drops a single .cue rule file into dir, with the given body
@@ -269,8 +269,8 @@ func TestEvaluate_MatchProducesAction(t *testing.T) {
 // constraints, not just concrete struct equality.
 //
 // The rule files inline the stdlib constraint bodies (they cannot `import`
-// the quae stdlib via LoadRules's single-file CompileBytes pipeline). The
-// shapes are exact copies of cue/quae.cue and cue/flags/rm.cue, so these
+// the fas stdlib via LoadRules's single-file CompileBytes pipeline). The
+// shapes are exact copies of cue/fas.cue and cue/flags/rm.cue, so these
 // tests exercise the same evaluator behaviour the real stdlib relies on.
 // -----------------------------------------------------------------------------
 

@@ -1,8 +1,8 @@
-# Quae Diagnostic Format Tests
+# Fas Diagnostic Format Tests
 
 End-to-end integration tests for the `--format` and `--color` surface of the
-`quae` CLI, using [scrut](https://github.com/facebookincubator/scrut). Each
-block feeds the same input fixture into `quae explain` and asserts either
+`fas` CLI, using [scrut](https://github.com/facebookincubator/scrut). Each
+block feeds the same input fixture into `fas explain` and asserts either
 the exact serialized output (text, JSON, SARIF) or the presence/absence of
 ANSI escape sequences. Goldens mirror `tests/diagnostics.md` style; the
 fixtures under `tests/diagnostics_rules*/` are reused verbatim.
@@ -16,7 +16,7 @@ Cross-cutting conventions:
 
 - `2>&1` redirects the diagnostic stream (stderr) into stdout so scrut can
   capture it — matches the base `tests/diagnostics.md` suite.
-- `--global-config /tmp/quae-nonexistent-global` isolates the run from host
+- `--global-config /tmp/fas-nonexistent-global` isolates the run from host
   rules (same trick as the base suite).
 - ANSI escapes in goldens are written as `\x1b[...]` with the scrut
   `(escaped)` marker on the relevant line; scrut decodes the literal
@@ -49,15 +49,15 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae explain absent-path --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global --format=json 2>&1
-{"code":"E0201","severity":"error","title":"key not found","location":{"file":"/__quae_rules__/absent_path.cue","line":11,"col":3},"primary":*"reasons":[{"type":"key_missing",*}]},"help":"*has keys: *"} (glob)
+> fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global --format=json 2>&1
+{"code":"E0201","severity":"error","title":"key not found","location":{"file":"/__fas_rules__/absent_path.cue","line":11,"col":3},"primary":*"reasons":[{"type":"key_missing",*}]},"help":"*has keys: *"} (glob)
 [1]
 ```
 
 ## `--format=sarif` emits a SARIF 2.1.0 document
 
 `RenderSARIF` emits a single SARIF 2.1.0 JSON document. The golden anchors
-`$schema`, `version: "2.1.0"`, `tool.driver.name: "quae"`, and a non-empty
+`$schema`, `version: "2.1.0"`, `tool.driver.name: "fas"`, and a non-empty
 `results[]` carrying the `ruleId` for the failing rule.
 
 ```scrut
@@ -70,8 +70,8 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae explain absent-path --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global --format=sarif 2>&1
-{"$schema":"https://json.schemastore.org/sarif-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"quae","version":*}},"results":[{"ruleId":"E0201","level":"error",*}]}]} (glob)
+> fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global --format=sarif 2>&1
+{"$schema":"https://json.schemastore.org/sarif-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"fas","version":*}},"results":[{"ruleId":"E0201","level":"error",*}]}]} (glob)
 [1]
 ```
 
@@ -91,9 +91,9 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae explain absent-path --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global --color=always 2>&1
+> fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global --color=always 2>&1
 \x1b[31merror\x1b[0m[E0201]: key not found (escaped)
-  --> \x1b[2m/__quae_rules__/absent_path.cue:11:3\x1b[0m (escaped)
+  --> \x1b[2m/__fas_rules__/absent_path.cue:11:3\x1b[0m (escaped)
    |
 11 |         signals: user_confirmed: true
    |         \x1b[31m^^^^^^^\x1b[0m key "signals" not found at <root> (escaped)
@@ -118,9 +118,9 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae explain absent-path --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global --color=never 2>&1
+> fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global --color=never 2>&1
 error[E0201]: key not found
-  --> /__quae_rules__/absent_path.cue:11:3
+  --> /__fas_rules__/absent_path.cue:11:3
    |
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found at <root>
@@ -132,7 +132,7 @@ error[E0201]: key not found
 ## `NO_COLOR=1` (community convention) suppresses ANSI with no explicit flag
 
 `ResolveColorMode` honours the `NO_COLOR` env var whenever `--color` is
-absent and `QUAE_COLOR` is unset. The output matches `--color=never`.
+absent and `FAS_COLOR` is unset. The output matches `--color=never`.
 
 ```scrut
 $ cat << 'EOF' |
@@ -144,9 +144,9 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> NO_COLOR=1 quae explain absent-path --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global 2>&1
+> NO_COLOR=1 fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0201]: key not found
-  --> /__quae_rules__/absent_path.cue:11:3
+  --> /__fas_rules__/absent_path.cue:11:3
    |
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found at <root>
@@ -155,9 +155,9 @@ error[E0201]: key not found
 [1]
 ```
 
-## `QUAE_FORMAT=json` (env var, no flag) matches `--format=json`
+## `FAS_FORMAT=json` (env var, no flag) matches `--format=json`
 
-`resolveFormat` consults `QUAE_FORMAT` only when `--format` is absent. Setting
+`resolveFormat` consults `FAS_FORMAT` only when `--format` is absent. Setting
 the env to `json` produces the same ND-JSON shape as `--format=json`.
 
 ```scrut
@@ -170,14 +170,14 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> QUAE_FORMAT=json quae explain absent-path --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global 2>&1
-{"code":"E0201","severity":"error","title":"key not found","location":{"file":"/__quae_rules__/absent_path.cue","line":11,"col":3},"primary":*"reasons":[{"type":"key_missing",*}]},"help":"*has keys: *"} (glob)
+> FAS_FORMAT=json fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
+{"code":"E0201","severity":"error","title":"key not found","location":{"file":"/__fas_rules__/absent_path.cue","line":11,"col":3},"primary":*"reasons":[{"type":"key_missing",*}]},"help":"*has keys: *"} (glob)
 [1]
 ```
 
-## `QUAE_COLOR=always` beats `NO_COLOR=1` (quae-specific wins)
+## `FAS_COLOR=always` beats `NO_COLOR=1` (fas-specific wins)
 
-`resolveColor` precedence: the quae-specific `QUAE_COLOR` overrides the
+`resolveColor` precedence: the fas-specific `FAS_COLOR` overrides the
 community `NO_COLOR` when both are set. ANSI escapes are present.
 
 ```scrut
@@ -190,9 +190,9 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> QUAE_COLOR=always NO_COLOR=1 quae explain absent-path --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global 2>&1
+> FAS_COLOR=always NO_COLOR=1 fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
 \x1b[31merror\x1b[0m[E0201]: key not found (escaped)
-  --> \x1b[2m/__quae_rules__/absent_path.cue:11:3\x1b[0m (escaped)
+  --> \x1b[2m/__fas_rules__/absent_path.cue:11:3\x1b[0m (escaped)
    |
 11 |         signals: user_confirmed: true
    |         \x1b[31m^^^^^^^\x1b[0m key "signals" not found at <root> (escaped)
@@ -217,8 +217,8 @@ $ cat << 'EOF' |
 >   "cwd": "/tmp"
 > }
 > EOF
-> quae explain absent-path --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global --format=sarif --color=always 2>&1
-{"$schema":"https://json.schemastore.org/sarif-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"quae","version":*}},"results":[{"ruleId":"E0201","level":"error",*}]}]} (glob)
+> fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global --format=sarif --color=always 2>&1
+{"$schema":"https://json.schemastore.org/sarif-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"fas","version":*}},"results":[{"ruleId":"E0201","level":"error",*}]}]} (glob)
 [1]
 ```
 
@@ -228,11 +228,11 @@ $ cat << 'EOF' |
 byte-identical output across runs. The block runs the same invocation
 twice, diffs the captures in-shell, and asserts equality. Scrut has no
 native "run twice and compare" primitive, so the guard lives inline —
-the exact output the `quae explain` produced isn't re-asserted here
+the exact output the `fas explain` produced isn't re-asserted here
 (already covered upstream); only stability across invocations is.
 
 ```scrut
-$ IN='{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls"},"session_id":"test","cwd":"/tmp"}'; A=$(echo "$IN" | quae explain absent-path --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global --format=json 2>&1); B=$(echo "$IN" | quae explain absent-path --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global --format=json 2>&1); [ "$A" = "$B" ] && echo "json: byte-identical"
+$ IN='{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls"},"session_id":"test","cwd":"/tmp"}'; A=$(echo "$IN" | fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global --format=json 2>&1); B=$(echo "$IN" | fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global --format=json 2>&1); [ "$A" = "$B" ] && echo "json: byte-identical"
 json: byte-identical
 ```
 
@@ -243,6 +243,6 @@ Same contract as the JSON determinism guard, but for the SARIF renderer.
 so two runs always emit the same byte sequence.
 
 ```scrut
-$ IN='{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls"},"session_id":"test","cwd":"/tmp"}'; A=$(echo "$IN" | quae explain absent-path --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global --format=sarif 2>&1); B=$(echo "$IN" | quae explain absent-path --config tests/diagnostics_rules --global-config /tmp/quae-nonexistent-global --format=sarif 2>&1); [ "$A" = "$B" ] && echo "sarif: byte-identical"
+$ IN='{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls"},"session_id":"test","cwd":"/tmp"}'; A=$(echo "$IN" | fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global --format=sarif 2>&1); B=$(echo "$IN" | fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global --format=sarif 2>&1); [ "$A" = "$B" ] && echo "sarif: byte-identical"
 sarif: byte-identical
 ```

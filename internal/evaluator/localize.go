@@ -12,8 +12,8 @@ import (
 	"cuelang.org/go/cue/format"
 	"cuelang.org/go/cue/token"
 
-	"github.com/srnnkls/quae/internal/config"
-	"github.com/srnnkls/quae/internal/diag"
+	"github.com/srnnkls/fas/internal/config"
+	"github.com/srnnkls/fas/internal/diag"
 )
 
 // localize walks the rule's `when` AST paired with the input value and yields

@@ -10,8 +10,8 @@ import (
 	"cuelang.org/go/cue/cuecontext"
 	cueerrors "cuelang.org/go/cue/errors"
 
-	"github.com/srnnkls/quae/internal/config"
-	"github.com/srnnkls/quae/internal/evaluator"
+	"github.com/srnnkls/fas/internal/config"
+	"github.com/srnnkls/fas/internal/evaluator"
 )
 
 // writeRuleFileNamed stages a fixture whose body is a full CUE file — it does
@@ -301,9 +301,9 @@ func TestLoadRules_MultiRuleWithStdlibImports(t *testing.T) {
 	const src = `package rules
 
 import (
-	"github.com/srnnkls/quae/cue/hook"
-	"github.com/srnnkls/quae/cue/tool"
-	"github.com/srnnkls/quae/cue/path"
+	"github.com/srnnkls/fas/cue/hook"
+	"github.com/srnnkls/fas/cue/tool"
+	"github.com/srnnkls/fas/cue/path"
 )
 
 system_deny: {

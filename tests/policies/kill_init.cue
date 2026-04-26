@@ -1,8 +1,8 @@
 package rules
 
 import (
-	"github.com/srnnkls/quae/cue/hook"
-	"github.com/srnnkls/quae/cue/tool"
+	"github.com/srnnkls/fas/cue/hook"
+	"github.com/srnnkls/fas/cue/tool"
 )
 
 // A single rule that denies two closely related shapes via struct-level `|`:

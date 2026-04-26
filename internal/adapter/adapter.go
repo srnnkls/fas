@@ -3,7 +3,7 @@ package adapter
 import (
 	"encoding/json"
 
-	"github.com/srnnkls/quae/internal/envelope"
+	"github.com/srnnkls/fas/internal/envelope"
 )
 
 // Adapter normalizes vendor hook JSON into the engine's envelope types and

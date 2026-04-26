@@ -3,17 +3,17 @@
 build:
 	CGO_ENABLED=0 go build ./...
 
-# Installs the quae binary into $GOBIN (defaults to $GOPATH/bin), which mise
-# puts on PATH. Integration tests invoke `quae` by name, so installation is
+# Installs the fas binary into $GOBIN (defaults to $GOPATH/bin), which mise
+# puts on PATH. Integration tests invoke `fas` by name, so installation is
 # the simplest way to make the binary discoverable without hardcoding paths.
 install:
-	CGO_ENABLED=0 go install ./cmd/quae
+	CGO_ENABLED=0 go install ./cmd/fas
 
 test:
 	CGO_ENABLED=0 go test ./...
 
 # End-to-end integration tests driven by scrut. Pipes JSON hook events into
-# `quae eval` and snapshots stdout. Installs quae first so the binary is on
+# `fas eval` and snapshots stdout. Installs fas first so the binary is on
 # PATH for the scrut subprocesses.
 test-integration: install
 	scrut test -w . tests/policies.md

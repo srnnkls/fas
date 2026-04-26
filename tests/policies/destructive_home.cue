@@ -3,8 +3,8 @@ package rules
 import (
 	"list"
 
-	"github.com/srnnkls/quae/cue/hook"
-	"github.com/srnnkls/quae/cue/tool"
+	"github.com/srnnkls/fas/cue/hook"
+	"github.com/srnnkls/fas/cue/tool"
 )
 
 destructive_home: {

@@ -6,7 +6,7 @@ import (
 
 	"cuelang.org/go/cue/token"
 
-	"github.com/srnnkls/quae/internal/diag"
+	"github.com/srnnkls/fas/internal/diag"
 )
 
 // TestRender_Collapse_ThreeLabelsSameSpan: a Primary plus two Notes on the

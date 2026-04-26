@@ -6,7 +6,7 @@ import (
 
 	"cuelang.org/go/cue"
 
-	"github.com/srnnkls/quae/internal/diag"
+	"github.com/srnnkls/fas/internal/diag"
 )
 
 // ---------------------------------------------------------------------------

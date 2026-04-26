@@ -6,7 +6,7 @@ import (
 	"cuelang.org/go/cue/ast"
 	"cuelang.org/go/cue/parser"
 
-	"github.com/srnnkls/quae/internal/diag"
+	"github.com/srnnkls/fas/internal/diag"
 )
 
 // lintRuleFile walks each top-level non-hidden rule's `when` subtree and

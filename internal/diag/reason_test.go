@@ -9,7 +9,7 @@ import (
 	"cuelang.org/go/cue/ast"
 	"cuelang.org/go/cue/token"
 
-	"github.com/srnnkls/quae/internal/diag"
+	"github.com/srnnkls/fas/internal/diag"
 )
 
 // Each concrete Reason variant can be assigned to a diag.Reason variable.

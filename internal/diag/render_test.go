@@ -6,7 +6,7 @@ import (
 
 	"cuelang.org/go/cue/token"
 
-	"github.com/srnnkls/quae/internal/diag"
+	"github.com/srnnkls/fas/internal/diag"
 )
 
 // fakeSource is a deterministic SourceCache for tests. It returns whatever

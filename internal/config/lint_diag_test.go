@@ -9,8 +9,8 @@ import (
 
 	"cuelang.org/go/cue/token"
 
-	"github.com/srnnkls/quae/internal/config"
-	"github.com/srnnkls/quae/internal/diag"
+	"github.com/srnnkls/fas/internal/config"
+	"github.com/srnnkls/fas/internal/diag"
 )
 
 // lintFixture stages a single .cue file under a temp dir and returns its

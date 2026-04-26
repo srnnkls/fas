@@ -7,7 +7,7 @@ import (
 
 	"cuelang.org/go/cue/token"
 
-	"github.com/srnnkls/quae/internal/diag"
+	"github.com/srnnkls/fas/internal/diag"
 )
 
 // ansiEscapeRE matches any ANSI CSI SGR escape sequence of the form

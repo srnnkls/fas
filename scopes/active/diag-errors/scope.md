@@ -4,11 +4,11 @@ status: draft
 issue_type: Feature
 ---
 
-# Scope — Compiler-style diagnostics for quae
+# Scope — Compiler-style diagnostics for fas
 
 ## Goal
 
-Give quae a Rust-compiler-style diagnostic system: error codes, file:line:col, source snippets, carets under the specific failing token (path segment, leaf constraint, disjunction arm). One renderer serves load-time, lint-time, and evaluation-time errors. `quae explain` becomes a first-class UX for "why didn't this rule fire?".
+Give fas a Rust-compiler-style diagnostic system: error codes, file:line:col, source snippets, carets under the specific failing token (path segment, leaf constraint, disjunction arm). One renderer serves load-time, lint-time, and evaluation-time errors. `fas explain` becomes a first-class UX for "why didn't this rule fire?".
 
 Depends on the `subsume-evaluator` scope landing first — diagnostics attach to subsumption failures.
 
@@ -43,7 +43,7 @@ Plus `E01xx` for load errors (schema mismatch, unknown action kind) and `E05xx` 
 ### Functional
 
 - **F1** — New package `internal/diag` defines `Diagnostic`, `Label`, `Severity` types and a compiler-style renderer (file, line:col, source snippet with caret, error code, Rust-ish format). Rendering is deterministic and stable across runs.
-- **F2** — Error code registry: constants file with `E01xx` (load), `E02xx` (path resolution), `E03xx` (leaf constraint), `E04xx` (disjunction), `E05xx` (scope/binding). Each code has a short help string; `quae explain --code E0201` prints the help.
+- **F2** — Error code registry: constants file with `E01xx` (load), `E02xx` (path resolution), `E03xx` (leaf constraint), `E04xx` (disjunction), `E05xx` (scope/binding). Each code has a short help string; `fas explain --code E0201` prints the help.
 - **F3** — `config.Rule` retains an `ast.Expr` for `when` alongside the semantic `cue.Value`. Threaded through `compileRuleFile` / `extractFileRules` / `decodeRule`. Used by the debug-path localizer.
 - **F4** — Evaluator signature is `Evaluate(rules []Rule, input cue.Value) ([]Match, []Diagnostic, error)` — three orthogonal lanes: matches (the result), diagnostics (observations on rules that didn't fire), error (engine-level failures — invalid CUE, nil input, unreadable source). Engine failures never flow through `[]Diagnostic`. Debug activation is a package-level toggle (`explainEnabled()`) set from flag / env / subcommand at CLI startup — fast path leaves `[]Diagnostic` nil and never invokes localize. The AST walker is an `iter.Seq[Diagnostic]` (Go 1.23) so it yields lazily and supports early-stop.
 - **F5** — `localize` emits per-segment diagnostics:
@@ -52,9 +52,9 @@ Plus `E01xx` for load errors (schema mismatch, unknown action kind) and `E05xx` 
   - Disjunction-all-fail → `E0401` with each arm's span labeled and the closest-match arm noted.
 - **F6** — Existing `ruleLoadError` migrates to emit `Diagnostic` via `internal/diag`. Loader-level errors (schema mismatch, unknown action kind, lint rejections from `subsume-evaluator`) use the same output shape as evaluator-level errors. One visual language across the tool. Multiple independent failures in one load pass are returned via `errors.Join` (Go 1.20+); callers unwrap with `errors.Is` / `errors.As`.
 - **F7** — CLI surface:
-  - `--explain[=fired|missed|both]` flag on `quae eval`. Default filter: `missed`. Emits diagnostics to stderr after the normal response on stdout.
-  - `QUAE_EXPLAIN=1` env var enables the same behavior without a flag (hook-debugging use case).
-  - New `quae explain <rule_id> < input.json` subcommand: runs one rule against stdin, always prints diagnostic, exits 0 on match / 1 on no-match / 2 on engine error.
+  - `--explain[=fired|missed|both]` flag on `fas eval`. Default filter: `missed`. Emits diagnostics to stderr after the normal response on stdout.
+  - `FAS_EXPLAIN=1` env var enables the same behavior without a flag (hook-debugging use case).
+  - New `fas explain <rule_id> < input.json` subcommand: runs one rule against stdin, always prints diagnostic, exits 0 on match / 1 on no-match / 2 on engine error.
 
 ### Non-functional
 
@@ -74,19 +74,19 @@ Plus `E01xx` for load errors (schema mismatch, unknown action kind) and `E05xx` 
 
 ### Acceptance tests
 
-- **Given** a rule whose `when` requires `tool_input.flags.force` and input lacks `flags`, **when** `quae explain` runs, **then** output shows `E0201` with caret under `flags` and a help listing actual keys at `tool_input`.
-- **Given** a rule with `tool_input: command: =~"^rm "` and input `command: "ls -la"`, **when** `quae explain` runs, **then** output shows `E0301` with caret under the regex, `want:` and `got:` labels.
-- **Given** a rule with `tool_name: "Bash" | "Write" | "Edit"` and input `tool_name: "Read"`, **when** `quae explain` runs, **then** output shows `E0401` with each arm's span highlighted and an arm-by-arm "not equal Read" label.
+- **Given** a rule whose `when` requires `tool_input.flags.force` and input lacks `flags`, **when** `fas explain` runs, **then** output shows `E0201` with caret under `flags` and a help listing actual keys at `tool_input`.
+- **Given** a rule with `tool_input: command: =~"^rm "` and input `command: "ls -la"`, **when** `fas explain` runs, **then** output shows `E0301` with caret under the regex, `want:` and `got:` labels.
+- **Given** a rule with `tool_name: "Bash" | "Write" | "Edit"` and input `tool_name: "Read"`, **when** `fas explain` runs, **then** output shows `E0401` with each arm's span highlighted and an arm-by-arm "not equal Read" label.
 - **Given** a rule whose `when` has a cross-rule ref, **when** loader runs, **then** error prints `E0502` with caret on the cross-rule selector expression and help suggesting a hidden sibling.
-- **Given** `quae eval --explain=missed < input.json` with three rules (one fires, two don't), **when** run, **then** stdout contains the vendor response, stderr contains exactly two diagnostics (one per non-firing rule).
-- **Given** `QUAE_EXPLAIN=1` is set, **when** `quae eval` runs, **then** behavior matches `--explain=missed`.
-- **Given** `quae explain my_rule < input.json` with a matching rule, **when** run, **then** exit 0, no diagnostic printed.
+- **Given** `fas eval --explain=missed < input.json` with three rules (one fires, two don't), **when** run, **then** stdout contains the vendor response, stderr contains exactly two diagnostics (one per non-firing rule).
+- **Given** `FAS_EXPLAIN=1` is set, **when** `fas eval` runs, **then** behavior matches `--explain=missed`.
+- **Given** `fas explain my_rule < input.json` with a matching rule, **when** run, **then** exit 0, no diagnostic printed.
 - **Given** the same command with a non-matching rule, **when** run, **then** exit 1, diagnostic printed to stderr.
 
 ### Commands
 
 ```
-go test ./internal/diag/... ./internal/evaluator/... ./cmd/quae/...
+go test ./internal/diag/... ./internal/evaluator/... ./cmd/fas/...
 go test ./...
 scrut test tests/policies.md
 scrut test tests/diagnostics.md  # NEW — CLI surface tests
@@ -104,5 +104,5 @@ scrut test tests/diagnostics.md  # NEW — CLI surface tests
 | `internal/config/lint.go` | Lint rejections emit `diag.Diagnostic` |
 | `internal/evaluator/evaluator.go` | `Evaluate` returns `([]Match, []Diagnostic, error)` — three lanes |
 | `internal/evaluator/localize.go` (NEW) | AST-paired walk; per-segment diagnostic emission |
-| `cmd/quae/main.go` | `--explain` flag; `QUAE_EXPLAIN` env; `explain` subcommand |
+| `cmd/fas/main.go` | `--explain` flag; `FAS_EXPLAIN` env; `explain` subcommand |
 | `tests/diagnostics.md` (NEW) | Scrut contract for CLI diagnostic output |

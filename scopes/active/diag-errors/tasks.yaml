@@ -115,7 +115,7 @@ tasks:
       errors (var ErrInvalidInput = errors.New(...)) checked via errors.Is.
 
       Debug activation is a package-level toggle (`explainEnabled()`), set
-      once by the CLI from --explain / QUAE_EXPLAIN / explain subcommand at
+      once by the CLI from --explain / FAS_EXPLAIN / explain subcommand at
       startup. When disabled, Subsume non-match skips localize entirely —
       `[]Diagnostic` stays nil, one Subsume call per rule (zero cost).
 
@@ -150,7 +150,7 @@ tasks:
   - id: T7
     subject: CLI --explain flag
     description: >
-      Add `--explain[=fired|missed|both]` to `cmd/quae/main.go`. Default value
+      Add `--explain[=fired|missed|both]` to `cmd/fas/main.go`. Default value
       `missed` when flag present without argument. Flips the evaluator's
       package-level explainEnabled toggle before calling Evaluate. Filter
       (fired / missed / both) applied to the returned `[]Diagnostic` slice
@@ -158,8 +158,8 @@ tasks:
       vendor response on stdout. Zero cost when flag absent (toggle off,
       localize never invoked).
     files:
-      - cmd/quae/main.go
-      - cmd/quae/main_test.go
+      - cmd/fas/main.go
+      - cmd/fas/main_test.go
     status: completed
     depends_on: [T6]
     test_hints:
@@ -169,50 +169,50 @@ tasks:
       - Without flag → stderr empty (unchanged behavior).
 
   - id: T8
-    subject: QUAE_EXPLAIN env var
+    subject: FAS_EXPLAIN env var
     description: >
-      Read `QUAE_EXPLAIN` env var in `cmd/quae/main.go`. Any truthy value
+      Read `FAS_EXPLAIN` env var in `cmd/fas/main.go`. Any truthy value
       (`1`, `true`, `yes`) enables `--explain=missed`. Flag takes precedence
       over env var when both set.
     files:
-      - cmd/quae/main.go
-      - cmd/quae/main_test.go
+      - cmd/fas/main.go
+      - cmd/fas/main_test.go
     status: completed
     depends_on: [T7]
     test_hints:
-      - QUAE_EXPLAIN=1 without flag → same as --explain=missed.
-      - --explain=both + QUAE_EXPLAIN=1 → flag wins (both).
-      - QUAE_EXPLAIN=0 → disabled (unchanged behavior).
+      - FAS_EXPLAIN=1 without flag → same as --explain=missed.
+      - --explain=both + FAS_EXPLAIN=1 → flag wins (both).
+      - FAS_EXPLAIN=0 → disabled (unchanged behavior).
 
   - id: T9
-    subject: quae explain subcommand
+    subject: fas explain subcommand
     description: >
-      New subcommand: `quae explain <rule_id> < input.json`. Runs only the
+      New subcommand: `fas explain <rule_id> < input.json`. Runs only the
       named rule against stdin input. Prints diagnostic to stderr if no match.
       Exit codes: 0 match, 1 no-match, 2 engine error. Dispatch at the top of
       `run` alongside the existing optional `eval` handling.
     files:
-      - cmd/quae/main.go
-      - cmd/quae/main_test.go
+      - cmd/fas/main.go
+      - cmd/fas/main_test.go
     status: completed
     depends_on: [T6]
     test_hints:
-      - `quae explain known_rule < matching_input.json` → exit 0, stderr empty.
-      - `quae explain known_rule < non_matching_input.json` → exit 1, diagnostic on stderr.
-      - `quae explain missing_rule < input.json` → exit 2, error on stderr.
+      - `fas explain known_rule < matching_input.json` → exit 0, stderr empty.
+      - `fas explain known_rule < non_matching_input.json` → exit 1, diagnostic on stderr.
+      - `fas explain missing_rule < input.json` → exit 2, error on stderr.
 
   - id: T10
-    subject: quae explain --code Exxxx help
+    subject: fas explain --code Exxxx help
     description: >
       Extend the `explain` subcommand with a `--code <code>` flag that prints
       the help string for the given error code and exits 0. No stdin required.
     files:
-      - cmd/quae/main.go
-      - cmd/quae/main_test.go
+      - cmd/fas/main.go
+      - cmd/fas/main_test.go
     status: completed
     depends_on: [T2, T9]
     test_hints:
-      - `quae explain --code E0201` → prints help, exit 0.
+      - `fas explain --code E0201` → prints help, exit 0.
       - Unknown code → exit 2, error on stderr.
 
   - id: T11
@@ -220,7 +220,7 @@ tasks:
     description: >
       New file `tests/diagnostics.md` with ~8 scrut blocks exercising:
       missing-path error, leaf constraint error, disjunction error, cross-rule
-      ref rejection, unbound identifier rejection, --explain filters, `quae
+      ref rejection, unbound identifier rejection, --explain filters, `fas
       explain` subcommand exit codes, --code help. Byte-level snapshot of
       renderer output for stability.
     files:

@@ -1,6 +1,6 @@
-// Command quae is the CLI entry point for the Quae policy engine.
+// Command fas is the CLI entry point for the Fas policy engine.
 //
-// quae eval reads a vendor-native hook payload on stdin, evaluates it against
+// fas eval reads a vendor-native hook payload on stdin, evaluates it against
 // two layered rule sets (global + project), and writes the vendor-native
 // response on stdout. The pipeline is:
 //
@@ -33,14 +33,14 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
 
-	"github.com/srnnkls/quae/internal/adapter"
-	"github.com/srnnkls/quae/internal/config"
-	"github.com/srnnkls/quae/internal/diag"
-	"github.com/srnnkls/quae/internal/envelope"
-	"github.com/srnnkls/quae/internal/evaluator"
-	"github.com/srnnkls/quae/internal/parser"
-	"github.com/srnnkls/quae/internal/pipeline"
-	"github.com/srnnkls/quae/internal/synthesis"
+	"github.com/srnnkls/fas/internal/adapter"
+	"github.com/srnnkls/fas/internal/config"
+	"github.com/srnnkls/fas/internal/diag"
+	"github.com/srnnkls/fas/internal/envelope"
+	"github.com/srnnkls/fas/internal/evaluator"
+	"github.com/srnnkls/fas/internal/parser"
+	"github.com/srnnkls/fas/internal/pipeline"
+	"github.com/srnnkls/fas/internal/synthesis"
 )
 
 // defaultSizeBudget caps concatenated inject text so a runaway rule cannot
@@ -49,11 +49,11 @@ import (
 const defaultSizeBudget = 8192
 
 // defaultProjectRulesDir is the conventional location for per-repo rules.
-const defaultProjectRulesDir = ".quae/rules"
+const defaultProjectRulesDir = ".fas/rules"
 
 // defaultGlobalRulesSubpath is joined onto $HOME/.config to find the
 // user-global rules directory when --global-config is omitted.
-const defaultGlobalRulesSubpath = ".config/quae/rules"
+const defaultGlobalRulesSubpath = ".config/fas/rules"
 
 func main() {
 	os.Exit(run(os.Stdin, os.Stdout, os.Stderr, os.Args[1:]))
@@ -71,7 +71,7 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 	}
 
 	// Drop an optional leading "eval" subcommand so the CLI accepts both
-	// `quae eval --harness claude` and `quae --harness claude`. The v0.1
+	// `fas eval --harness claude` and `fas --harness claude`. The v0.1
 	// binary only has one subcommand; insisting on it buys nothing.
 	if len(args) > 0 && args[0] == "eval" {
 		args = args[1:]
@@ -117,11 +117,11 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 		return 1
 	}
 
-	// QUAE_EXPLAIN acts as an env fallback for `--explain=missed` but only
+	// FAS_EXPLAIN acts as an env fallback for `--explain=missed` but only
 	// when the user did not pass the flag explicitly. Read on every run so an
 	// in-process test harness sees fresh env state, never latched from a
 	// previous invocation.
-	if !opts.explain.set && isTruthyEnv(os.Getenv("QUAE_EXPLAIN")) {
+	if !opts.explain.set && isTruthyEnv(os.Getenv("FAS_EXPLAIN")) {
 		opts.explain = explainFlag{set: true, value: explainMissed}
 	}
 
@@ -147,7 +147,7 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 	return 0
 }
 
-// runExplain implements `quae explain <rule_id> < input.json`. It loads both
+// runExplain implements `fas explain <rule_id> < input.json`. It loads both
 // rule sets, resolves rule_id with project-wins tie-break, evaluates the
 // single rule against stdin input, and maps (match, no-match, engine error)
 // to exit codes 0/1/2. The subcommand always localizes (implicit
@@ -173,13 +173,13 @@ func runExplain(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 	}
 
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		errorf(stderr, "usage: quae explain <rule_id> [--harness <name>] [--config <path>] [--global-config <path>]\n")
+		errorf(stderr, "usage: fas explain <rule_id> [--harness <name>] [--config <path>] [--global-config <path>]\n")
 		return 2
 	}
 	ruleID := args[0]
 	rest := args[1:]
 
-	fs := flag.NewFlagSet("quae explain", flag.ContinueOnError)
+	fs := flag.NewFlagSet("fas explain", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() { writeUsage(stderr) }
 
@@ -206,12 +206,12 @@ func runExplain(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 	if err := fs.Parse(rest); err != nil {
 		return 2
 	}
-	resolvedFormat, ferr := resolveFormat(format, os.Getenv("QUAE_FORMAT"))
+	resolvedFormat, ferr := resolveFormat(format, os.Getenv("FAS_FORMAT"))
 	if ferr != nil {
 		errorln(stderr, ferr)
 		return 2
 	}
-	resolvedColor, cerr := resolveColor(color, os.Getenv("QUAE_COLOR"), os.Getenv("NO_COLOR"))
+	resolvedColor, cerr := resolveColor(color, os.Getenv("FAS_COLOR"), os.Getenv("NO_COLOR"))
 	if cerr != nil {
 		errorln(stderr, cerr)
 		return 2
@@ -289,7 +289,7 @@ func runExplain(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 	return 1
 }
 
-// writeExplainDiagnostics is the `quae explain` variant of writeDiagnostics:
+// writeExplainDiagnostics is the `fas explain` variant of writeDiagnostics:
 // same format dispatch, but without the per-diag `rule_id:` header (the
 // caller has already resolved a single rule_id, so the per-diag attribution
 // step is redundant noise for this subcommand).
@@ -424,7 +424,7 @@ func (f *explainFlag) Set(raw string) error {
 
 // isTruthyEnv reports whether an environment value means "on". Matches
 // {1, true, yes} case-insensitively; everything else (including filter-mode
-// words like "fired"/"missed"/"both") is treated as off. QUAE_EXPLAIN is a
+// words like "fired"/"missed"/"both") is treated as off. FAS_EXPLAIN is a
 // truthiness switch, not a filter channel — truthy routes through the same
 // code path as `--explain=missed`.
 func isTruthyEnv(v string) bool {
@@ -453,7 +453,7 @@ type cliOptions struct {
 
 // outputFormat enumerates diagnostic emission formats wired through to the
 // renderer. `formatUnset` distinguishes "no flag provided" from "text" so
-// env-var fallback (QUAE_FORMAT) only fires when the flag is absent.
+// env-var fallback (FAS_FORMAT) only fires when the flag is absent.
 type outputFormat int
 
 const (
@@ -464,7 +464,7 @@ const (
 )
 
 // colorMode enumerates --color values. `colorUnset` is the pre-resolution
-// sentinel that triggers QUAE_COLOR / NO_COLOR fallback; the other three
+// sentinel that triggers FAS_COLOR / NO_COLOR fallback; the other three
 // map 1:1 to the user-visible flag vocabulary.
 type colorMode int
 
@@ -475,7 +475,7 @@ const (
 	colorNever
 )
 
-// parseFormatValue decodes a --format / QUAE_FORMAT string. Empty and
+// parseFormatValue decodes a --format / FAS_FORMAT string. Empty and
 // "text" map to text; "json" and "sarif" are recognised; everything else is
 // an error surfaced to the caller for an exit-2 diagnostic.
 func parseFormatValue(s string) (outputFormat, error) {
@@ -491,7 +491,7 @@ func parseFormatValue(s string) (outputFormat, error) {
 	}
 }
 
-// parseColorValue decodes a --color / QUAE_COLOR string. Empty treats as
+// parseColorValue decodes a --color / FAS_COLOR string. Empty treats as
 // auto for env-var precedence callers.
 func parseColorValue(s string) (colorMode, error) {
 	switch s {
@@ -579,25 +579,25 @@ func resolveFormat(fv formatFlag, env string) (outputFormat, error) {
 	if env != "" {
 		v, err := parseFormatValue(env)
 		if err != nil {
-			return formatText, fmt.Errorf("QUAE_FORMAT: %w", err)
+			return formatText, fmt.Errorf("FAS_FORMAT: %w", err)
 		}
 		return v, nil
 	}
 	return formatText, nil
 }
 
-// resolveColor applies precedence across --color / QUAE_COLOR / NO_COLOR.
-// Order: explicit flag wins; else QUAE_COLOR (quae-specific) wins over
+// resolveColor applies precedence across --color / FAS_COLOR / NO_COLOR.
+// Order: explicit flag wins; else FAS_COLOR (fas-specific) wins over
 // NO_COLOR (community convention); else auto with NO_COLOR respected.
 // Unknown env values return an error so startup can exit 2.
-func resolveColor(cv colorFlag, quaeColorEnv, noColorEnv string) (colorMode, error) {
+func resolveColor(cv colorFlag, fasColorEnv, noColorEnv string) (colorMode, error) {
 	if cv.set {
 		return cv.value, nil
 	}
-	if quaeColorEnv != "" {
-		v, err := parseColorValue(quaeColorEnv)
+	if fasColorEnv != "" {
+		v, err := parseColorValue(fasColorEnv)
 		if err != nil {
-			return colorAuto, fmt.Errorf("QUAE_COLOR: %w", err)
+			return colorAuto, fmt.Errorf("FAS_COLOR: %w", err)
 		}
 		return v, nil
 	}
@@ -641,7 +641,7 @@ func paletteFor(mode colorMode, tty bool, noColorEnv string) diag.Palette {
 // parseFlags reads args into a cliOptions. The returned bool is true when the
 // user asked for help; callers should print usage and exit 0.
 func parseFlags(args []string, stderr io.Writer) (cliOptions, bool, error) {
-	fs := flag.NewFlagSet("quae eval", flag.ContinueOnError)
+	fs := flag.NewFlagSet("fas eval", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() { writeUsage(stderr) }
 
@@ -682,13 +682,13 @@ func parseFlags(args []string, stderr io.Writer) (cliOptions, bool, error) {
 	}
 	opts.format = formatText
 	opts.color = colorAuto
-	f, rerr := resolveFormat(format, os.Getenv("QUAE_FORMAT"))
+	f, rerr := resolveFormat(format, os.Getenv("FAS_FORMAT"))
 	if rerr != nil {
 		errorln(stderr, rerr)
 		return opts, false, rerr
 	}
 	opts.format = f
-	c, rerr := resolveColor(color, os.Getenv("QUAE_COLOR"), os.Getenv("NO_COLOR"))
+	c, rerr := resolveColor(color, os.Getenv("FAS_COLOR"), os.Getenv("NO_COLOR"))
 	if rerr != nil {
 		errorln(stderr, rerr)
 		return opts, false, rerr
@@ -697,7 +697,7 @@ func parseFlags(args []string, stderr io.Writer) (cliOptions, bool, error) {
 	return opts, false, nil
 }
 
-// defaultGlobalConfigDir resolves ~/.config/quae/rules using os.UserHomeDir
+// defaultGlobalConfigDir resolves ~/.config/fas/rules using os.UserHomeDir
 // so tilde expansion never leaks a literal "~" into downstream path handling.
 func defaultGlobalConfigDir() (string, error) {
 	home, err := os.UserHomeDir()
@@ -894,7 +894,7 @@ func fallbackEnvelope(cause error, failClosed bool) envelope.OutputEnvelope {
 	if failClosed {
 		return envelope.OutputEnvelope{
 			Category:   envelope.Blocking,
-			UserReason: fmt.Sprintf("quae engine error: %v", cause),
+			UserReason: fmt.Sprintf("fas engine error: %v", cause),
 		}
 	}
 	return envelope.OutputEnvelope{Category: envelope.Allowing}
@@ -1036,8 +1036,8 @@ func printUsage(w io.Writer) {
 // writeUsage is the shared text for --help, -h, and flag parse failures.
 // Kept in one place so the three entry points never drift.
 func writeUsage(w io.Writer) {
-	_, _ = fmt.Fprint(w, `Usage: quae eval [flags]
-       quae explain <rule_id> [flags]
+	_, _ = fmt.Fprint(w, `Usage: fas eval [flags]
+       fas explain <rule_id> [flags]
 
 Read a vendor-native hook payload on stdin, evaluate it against the
 configured rule sets, and emit a vendor-native response on stdout.
@@ -1079,16 +1079,16 @@ Subcommands:
                           codes exit 2 with a stderr diagnostic.
 
 Environment:
-  QUAE_EXPLAIN            Truthy (1, true, yes — case-insensitive) enables
+  FAS_EXPLAIN            Truthy (1, true, yes — case-insensitive) enables
                           --explain=missed when --explain is absent. The
                           flag always wins when both are set.
-  QUAE_FORMAT             Selects the diagnostic output format when
+  FAS_FORMAT             Selects the diagnostic output format when
                           --format is absent (text|json|sarif).
-  QUAE_COLOR              Selects the color mode when --color is absent
+  FAS_COLOR              Selects the color mode when --color is absent
                           (auto|always|never). Overrides NO_COLOR.
   NO_COLOR                Community convention: when set (any value),
                           color is disabled. Superseded by --color or
-                          QUAE_COLOR when those are set.
+                          FAS_COLOR when those are set.
 
 Supported harnesses: claude.
 `)
