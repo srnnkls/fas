@@ -458,6 +458,96 @@ error[E0201]: key not found
    = help: tool_input has keys: file_path
 ```
 
+## `--explain=missed` is the default; bare `--explain` and `FAS_EXPLAIN=1` mirror it
+
+`--explain` with no value defaults to the `missed` filter — only non-firing
+rules emit diagnostics, the firing `disjunction` is silent. The
+`FAS_EXPLAIN=1` env var enables the same default without a flag (the
+hook-debugging path). Both forms produce byte-identical output to an
+explicit `--explain=missed`.
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Read",
+>   "tool_input": {"file_path": "/tmp/f"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global --explain 2>&1
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"wrong tool"}}rule_id: absent-path
+error[E0301]: leaf constraint failed
+  --> /__fas_rules__/absent_path.cue:10:20
+   |
+10 |         tool_name:       "Bash"
+   |                          ^^^^^^ got: "Read"
+rule_id: absent-path
+error[E0201]: key not found
+  --> /__fas_rules__/absent_path.cue:11:3
+   |
+11 |         signals: user_confirmed: true
+   |         ^^^^^^^ key "signals" not found at <root>
+   |
+   = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
+rule_id: leaf-regex
+error[E0301]: leaf constraint failed
+  --> /__fas_rules__/leaf_regex.cue:11:20
+   |
+11 |         tool_name:       "Bash"
+   |                          ^^^^^^ got: "Read"
+rule_id: leaf-regex
+error[E0201]: key not found
+  --> /__fas_rules__/leaf_regex.cue:12:15
+   |
+12 |         tool_input: command: =~"^rm "
+   |                     ^^^^^^^ key "command" not found at tool_input
+   |
+   = help: tool_input has keys: file_path
+```
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Read",
+>   "tool_input": {"file_path": "/tmp/f"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> FAS_EXPLAIN=1 fas eval --harness claude --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"wrong tool"}}rule_id: absent-path
+error[E0301]: leaf constraint failed
+  --> /__fas_rules__/absent_path.cue:10:20
+   |
+10 |         tool_name:       "Bash"
+   |                          ^^^^^^ got: "Read"
+rule_id: absent-path
+error[E0201]: key not found
+  --> /__fas_rules__/absent_path.cue:11:3
+   |
+11 |         signals: user_confirmed: true
+   |         ^^^^^^^ key "signals" not found at <root>
+   |
+   = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
+rule_id: leaf-regex
+error[E0301]: leaf constraint failed
+  --> /__fas_rules__/leaf_regex.cue:11:20
+   |
+11 |         tool_name:       "Bash"
+   |                          ^^^^^^ got: "Read"
+rule_id: leaf-regex
+error[E0201]: key not found
+  --> /__fas_rules__/leaf_regex.cue:12:15
+   |
+12 |         tool_input: command: =~"^rm "
+   |                     ^^^^^^^ key "command" not found at tool_input
+   |
+   = help: tool_input has keys: file_path
+```
+
 ## `fas explain` exit codes — match, no-match, unknown rule
 
 Exit 0 when the rule fires, exit 1 when it does not (and a diagnostic is
@@ -474,6 +564,28 @@ $ cat << 'EOF' |
 > }
 > EOF
 > fas explain disjunction --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
+[0]
+```
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "ls"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
+error[E0201]: key not found
+  --> /__fas_rules__/absent_path.cue:11:3
+   |
+11 |         signals: user_confirmed: true
+   |         ^^^^^^^ key "signals" not found at <root>
+   |
+   = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
+[1]
 ```
 
 ```scrut
@@ -506,6 +618,7 @@ Under closed-world pattern-match semantics, every path referenced in
 `when` must exist in the input for the rule to match. Absent paths
 cause the rule to silently not fire; the diagnostic shows which
 segment broke the chain.
+[0]
 ```
 
 ```scrut

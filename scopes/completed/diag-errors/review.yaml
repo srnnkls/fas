@@ -275,7 +275,103 @@ batch_reviews:
       preserves pre-T6 cost (one Subsume per rule when explain off).
       iter.Seq break semantics locked by paired CallerBreak + NoBreak tests.
 
+  - batch: 7
+    tasks: [T10, T11]
+    commit: pending
+    reviewers:
+      - id: code-reviewer-claude-T10
+        status: completed
+        phase: C
+        outcome: approved_after_fix
+        gates:
+          correctness: pass
+          security: pass
+          performance: pass
+          architecture: pass
+          style: pass
+        issues: { critical: 0, high: 0, medium: 2, low: 3 }
+        fix:
+          - deferred: [M1 extractCodeFlag whole-slice scan, M2 missing-value error phrasing, L3 --format json ignored on --code, L4 usage line discoverability, L5 single-dash flag form untested]
+      - id: test-reviewer-claude-T11
+        status: completed
+        phase: A.5
+        outcome: approved_after_fix
+        gates: { test_quality: pass }
+        issues: { critical: 0, high: 1, medium: 3, low: 2 }
+        fix:
+          - resolved:
+              - H1 fire-path block now carries [0] marker
+              - F7 explicit exit-1 no-match block added (fas explain absent-path → diagnostic + [1])
+              - F7 acceptance test #5 added (bare --explain default-missed)
+              - F7 acceptance test #6 added (FAS_EXPLAIN=1 env var path)
+              - L1 --code E0201 help block now carries [0] marker
+          - deferred:
+              - M2 provenance footer line number coupled to stdlib path.cue:42
+              - M3 --explain=both ordering claim only exercises 2 rules (alphabetical == insertion)
+              - L2 load-time E0501/E0502 blocks use fas eval rather than fas explain (intentional — load errors fire pre-rule-selection)
+    synthesized:
+      gates:
+        correctness: pass
+        security: pass
+        performance: pass
+        architecture: pass
+        style: pass
+        test_quality: pass
+      critical_issues: 0
+      high_issues: 0
+      medium_issues: 5
+      low_issues: 5
+    outcome: approved_after_fix
+    notes: |
+      Final batch covering T10 (--code Exxxx flag) and T11 (scrut contract).
+      T11 gained three new blocks closing the F7 acceptance-test gap: the
+      bare --explain default-missed form, FAS_EXPLAIN=1 env-var path, and
+      an explicit fas-explain exit-1 no-match block. All three were
+      implicitly assumed working through unit tests but not pinned by the
+      contract. scrut test -w . tests/diagnostics.md now reports 20/20.
+      Remaining T10 medium issues (extractCodeFlag arg-walking edge case,
+      missing-value error phrasing) are real but low-impact: deferred over
+      sprawling the --code surface late in the scope.
+
 deferred_issues:
+  - batch: 7
+    severity: medium
+    file: cmd/fas/main.go
+    line: 331
+    description: extractCodeFlag scans the entire arg slice with no value-skip; `fas explain ... --config --code` would misread the flag-value `--code` as the flag itself. Low-likelihood real-world trigger, but a pre-scanner that respects `--<flag> <val>` pairs would be more correct.
+  - batch: 7
+    severity: medium
+    file: cmd/fas/main.go
+    line: 172
+    description: Dual error paths (empty/missing value vs unknown code) emit identical "unknown error code %q" text — when value is missing, message reads `unknown error code ""` rather than something like `--code requires a value`.
+  - batch: 7
+    severity: medium
+    file: tests/diagnostics.md
+    line: 202
+    description: Provenance footer hard-codes `/__fas_rules__/cue.mod/pkg/github.com/srnnkls/fas/cue/path/path.cue:42:1` — couples snapshot to stdlib file layout AND line number. Reformatting path.cue drifts the snapshot.
+  - batch: 7
+    severity: medium
+    file: tests/diagnostics.md
+    line: 417
+    description: Narrative claims "Diagnostics appear in rule_id order" but the block only contains `absent-path` and `leaf-regex` — alphabetical and insertion order coincide. Add a third non-firing rule whose id sorts before `absent-path` to actually exercise the ordering claim.
+  - batch: 7
+    severity: low
+    file: cmd/fas/main.go
+    line: 182
+    description: `--code` output bypasses --format json dispatch; format flag is silently ignored on this path. Either honor or document.
+  - batch: 7
+    severity: low
+    file: cmd/fas/main.go
+    description: usage line on stderr does not mention `--code` as an alternative to positional rule_id — discoverability gap.
+  - batch: 7
+    severity: low
+    file: cmd/fas/main_test.go
+    description: No coverage for single-dash forms (`-code E0201`, `-code=E0201`) which extractCodeFlag explicitly supports — drop the support or add a pinning test.
+  - batch: 7
+    severity: low
+    file: tests/diagnostics.md
+    description: Load-time E0501/E0502 blocks use `fas eval --harness claude` rather than `fas explain` — intentional (load errors fire pre-rule-selection) but not commented inline.
+
   - batch: 6
     severity: medium
     file: cmd/fas/main.go

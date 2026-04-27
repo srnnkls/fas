@@ -1,6 +1,7 @@
 ---
 created: 2026-04-22
-status: draft
+status: done
+completed: 2026-04-27
 issue_type: Feature
 ---
 
