@@ -35,6 +35,15 @@ local runners = new Mapping<String, Step> {
   }
 }
 
+// Integration tests driven by scrut. Installs fas first so the binary is on
+// PATH for the scrut subprocesses.
+local scrut: Step = new {
+  glob = List("**/*.go", "**/go.mod", "**/go.sum", "tests/**")
+  workspace_indicator = "go.mod"
+  check = "cd {{workspace}} && go install ./cmd/fas && scrut test -w . tests/policies.md tests/diagnostics.md tests/diagnostics_formats.md"
+  stomp = true
+}
+
 // Fix-only steps: gofmt in fix mode + go fix modernizer.
 local fixers = new Mapping<String, Step> {
   ["gofmt-fix"] = (linters["gofmt"]) {
@@ -61,6 +70,16 @@ hooks {
     steps = new {
       ...linters
       ...runners
+      ["scrut"] = scrut
+    }
+  }
+  ["lint"] {
+    steps = linters
+  }
+  ["test"] {
+    steps = new {
+      ["test"] = (runners["test"]) {}
+      ["scrut"] = scrut
     }
   }
   ["fix"] {

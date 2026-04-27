@@ -121,9 +121,23 @@ Three output formats: `--format=text` (default, ANSI-coloured), `--format=json`
 
 ## Building
 
-Pure Go, `CGO_ENABLED=0`. `go build ./...` and `go test ./...` work standalone.
-Integration tests use [scrut](https://github.com/facebookincubator/scrut)
-(installed via mise: `mise install`).
+Pure Go, `CGO_ENABLED=0`. Developer tasks are exposed as
+[mise](https://mise.jdx.dev/) tasks (`mise tasks` lists them):
+
+| Task                       | What it runs                                          |
+|----------------------------|-------------------------------------------------------|
+| `mise run build`           | `go build ./...`                                      |
+| `mise run install`         | `go install ./cmd/fas`                                |
+| `mise run test`            | unit + scrut integration tests (via `hk run test`)    |
+| `mise run test-unit`       | `go test ./...`                                       |
+| `mise run test-integration`| [scrut](https://github.com/facebookincubator/scrut) over `tests/*.md` |
+| `mise run lint`            | gofmt, govet, golangci-lint, gomod-tidy (via `hk`)    |
+| `mise run fix`             | gofmt + `go fix` modernizer (via `hk`)                |
+| `mise run check`           | full validation: lint + build + tests + scrut        |
+
+`mise install` provisions the toolchain (Go, scrut, hk, golangci-lint, pkl)
+and registers the `pre-commit` hook. Bare `go build ./...` and `go test ./...`
+also work standalone.
 
 ## License
 

@@ -6,5 +6,41 @@ go = "1.26.2"
 hk = "1.42.0"
 pkl = "0.31.0"
 
+[env]
+CGO_ENABLED = "0"
+
 [hooks]
 postinstall = "hk install --mise"
+
+[tasks.build]
+description = "Build all Go packages"
+run = "go build ./..."
+
+[tasks.install]
+description = "Install fas binary into $GOBIN"
+run = "go install ./cmd/fas"
+
+[tasks.test]
+description = "Run unit + integration tests"
+run = "hk run test --all"
+
+[tasks.test-unit]
+description = "Run Go unit tests"
+run = "go test ./..."
+
+[tasks.test-integration]
+description = "Run scrut integration tests"
+depends = ["install"]
+run = "scrut test -w . tests/policies.md tests/diagnostics.md tests/diagnostics_formats.md"
+
+[tasks.lint]
+description = "Run linters (gofmt, govet, golangci-lint, gomod-tidy)"
+run = "hk run lint --all"
+
+[tasks.fix]
+description = "Apply auto-fixes (gofmt, gofix)"
+run = "hk fix --all"
+
+[tasks.check]
+description = "Run lint + build + tests (full validation)"
+run = "hk check --all"
