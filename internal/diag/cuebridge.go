@@ -1,6 +1,7 @@
 package diag
 
 import (
+	"slices"
 	"strings"
 
 	cueerrors "cuelang.org/go/cue/errors"
@@ -69,7 +70,9 @@ func NewDiagError(d Diagnostic, src SourceCache, cause error) *DiagError {
 //     does not satisfy the `#Action` schema as a whole (a scalar where a
 //     struct is required — E0101). A path that extends past `then` —
 //     e.g. `[#Rule then halt]` — names a child field that does not exist in
-//     the closed `#Action` schema (unknown action kind — E0102).
+//     the closed `#Action` schema (unknown action kind — E0102). A path that
+//     runs through `when` with an "undefined field" leaf is a typo'd stdlib
+//     reference in the match pattern (scope/binding failure — E0501).
 //   - Message shape. "field not allowed" reinforces the unknown-kind
 //     classification; "conflicting values" and "errors in empty disjunction"
 //     reinforce the shape-mismatch classification. Message-based signals are
@@ -112,13 +115,21 @@ func FromCueError(err error) Diagnostic {
 }
 
 // classifyCueErrors walks the leaf diagnostics in order and returns the first
-// (code, title) pair that matches a known classifier. Order matters: E0102's
-// "field not allowed" / path-extension branch is more specific than E0101's
-// disjunction-level "conflicting values", so the kind-level check runs first.
+// (code, title) pair that matches a known classifier. Order matters and runs
+// most-specific first: E0102's "field not allowed" / path-extension branch,
+// then E0501's `when`-side unresolved reference ("undefined field" on a `when`
+// path — a typo'd stdlib member), then E0101's `then` shape mismatch. Without
+// the E0501 branch a `when` reference typo falls through to E0101, whose help
+// talks about the `then` action schema and misdirects the author.
 func classifyCueErrors(leaves []cueerrors.Error) (code, title string) {
 	for _, e := range leaves {
 		if isUnknownActionKind(e) {
 			return E0102.Code, humanizeLeaf(e)
+		}
+	}
+	for _, e := range leaves {
+		if isWhenReferenceError(e) {
+			return E0501.Code, humanizeLeaf(e)
 		}
 	}
 	for _, e := range leaves {
@@ -130,6 +141,28 @@ func classifyCueErrors(leaves []cueerrors.Error) (code, title string) {
 		return E0101.Code, humanizeLeaf(leaves[0])
 	}
 	return E0101.Code, ""
+}
+
+// isWhenReferenceError reports whether a CUE leaf is an unresolved reference
+// inside `when`: a typo'd stdlib member (e.g. hook.#Agent.Explor) or a missing
+// definition surfaces as an "undefined field" / "not found" error on a path
+// that runs through `when`. These are scope/binding failures (E0501), not
+// `then` action-schema problems. CUE keeps such errors on the offending leaf,
+// so the path carries the authoritative `when` signal; the message text is a
+// secondary guard that stays correct if CUE reshapes its path reporting.
+func isWhenReferenceError(e cueerrors.Error) bool {
+	if !pathHasWhen(e.Path()) {
+		return false
+	}
+	format, _ := e.Msg()
+	return strings.Contains(format, "undefined field") ||
+		strings.Contains(format, "not found")
+}
+
+// pathHasWhen reports whether any segment of the error path is `when` — the
+// signal that a leaf error originates in the match pattern rather than `then`.
+func pathHasWhen(path []string) bool {
+	return slices.Contains(path, "when")
 }
 
 // isUnknownActionKind reports whether a CUE leaf names a field under `then`

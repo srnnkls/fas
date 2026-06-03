@@ -126,6 +126,39 @@ typo: {
 	}
 }
 
+func TestLoadRules_TypoedWhenRef_ClassifiedAsE0501(t *testing.T) {
+	// A typo'd stdlib member in `when` is a scope/binding failure (E0501), not
+	// a `then` action-schema problem. The rendered diagnostic must carry
+	// E0501's code/help, not E0101's "action schema" misdirection.
+	const src = `package rules
+
+import "github.com/srnnkls/fas/cue/hook"
+
+typo: {
+	when: hook.#PreToolUse & {agent_type: hook.#NoSuchDef}
+	then: deny: {
+		rule_id:  "r1"
+		reason:   "x"
+		severity: "HIGH"
+	}
+}
+`
+	dir := t.TempDir()
+	writeRuleFile(t, dir, "typo.cue", src)
+
+	_, err := config.LoadRules(dir)
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "E0501") {
+		t.Errorf("expected E0501 classification, got: %s", msg)
+	}
+	if strings.Contains(msg, "does not conform to the action schema") {
+		t.Errorf("got E0101 then-schema help for a when-side reference error: %s", msg)
+	}
+}
+
 func TestLoadRules_MultipleRulesDeterministicOrder(t *testing.T) {
 	dir := t.TempDir()
 	// Intentionally write in non-alphabetical order to prove sort is
