@@ -49,8 +49,25 @@ package hook
 	...
 }
 
+// #Agent names the built-in Claude Code subagent types (per the docs: Explore,
+// Plan, general-purpose). Reference these — e.g. agent_type: hook.#Agent.Explore
+// — for a canonical, discoverable vocabulary instead of scattering bare string
+// literals. The event definitions keep agent_type an open string, so custom
+// subagents (your own .claude/agents, task runners, …) still match by name.
+#Agent: {
+	Explore:        "Explore"
+	Plan:           "Plan"
+	GeneralPurpose: "general-purpose"
+}
+
+// #KnownAgentType is the disjunction of the built-in subagent types, for rules
+// that want to match "any built-in agent". Deliberately NOT used to type the
+// agent_type field, which stays an open string so custom subagents still match.
+#KnownAgentType: #Agent.Explore | #Agent.Plan | #Agent.GeneralPurpose
+
 // #SubagentStart: a subagent is about to start — agent_type names the starting
-// subagent (e.g. "Explore", "Plan"), letting rules target one kind of subagent.
+// subagent. Target a specific kind with hook.#Agent.Explore (built-ins) or a
+// bare string for custom subagents.
 #SubagentStart: {
 	hook_event_name: "SubagentStart"
 	agent_type?:     string
