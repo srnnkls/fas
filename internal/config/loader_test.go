@@ -94,6 +94,38 @@ bad_halt: {
 	}
 }
 
+func TestLoadRules_TypoedStdlibRef_Rejected(t *testing.T) {
+	// A typo'd stdlib member (hook.#NoSuchDef) resolves to an "undefined field"
+	// error that CUE keeps localized on the offending leaf, not on `when`. A
+	// top-level when.Err() / Validate misses it, so the rule would otherwise
+	// load as silent bottom that never matches. The loader must walk the
+	// subtree and fail the load.
+	const src = `package rules
+
+import "github.com/srnnkls/fas/cue/hook"
+
+typo: {
+	when: hook.#PreToolUse & {agent_type: hook.#NoSuchDef}
+	then: deny: {
+		rule_id:  "r1"
+		reason:   "x"
+		severity: "HIGH"
+	}
+}
+`
+	dir := t.TempDir()
+	writeRuleFile(t, dir, "typo.cue", src)
+
+	_, err := config.LoadRules(dir)
+	if err == nil {
+		t.Fatalf("expected error for typo'd stdlib reference, got nil")
+	}
+	msg := strings.ToLower(err.Error())
+	if !strings.Contains(msg, "nosuchdef") && !strings.Contains(msg, "undefined") && !strings.Contains(msg, "not found") {
+		t.Fatalf("error should reference the undefined field, got: %s", err.Error())
+	}
+}
+
 func TestLoadRules_MultipleRulesDeterministicOrder(t *testing.T) {
 	dir := t.TempDir()
 	// Intentionally write in non-alphabetical order to prove sort is

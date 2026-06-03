@@ -212,11 +212,13 @@ func extractFileRules(ruleDef cue.Value, fileVal cue.Value, rulePath string) ([]
 			continue
 		}
 		// Unresolved references inside `when` surface as a value error on
-		// the field itself. An undefined identifier from the stdlib is not
-		// a legitimate non-concrete constraint; it must fail the load
-		// instead of being smuggled in as silent bottom.
+		// the offending leaf field, NOT on `when` itself — CUE keeps such
+		// errors localized, so a top-level when.Err() (and even
+		// when.Validate) misses a typo'd stdlib reference like
+		// `hook.#Agent.Explor`. Walk the subtree so it fails the load
+		// instead of being smuggled in as silent bottom that never matches.
 		if when := unified.LookupPath(cue.ParsePath("when")); when.Exists() {
-			if err := when.Err(); err != nil {
+			if err := whenFieldErr(when, 0); err != nil {
 				loadErrs = append(loadErrs, wrapFieldLoadError(rulePath, fieldName, err))
 				continue
 			}
@@ -240,6 +242,34 @@ func extractFileRules(ruleDef cue.Value, fileVal cue.Value, rulePath string) ([]
 		return nil, errors.Join(loadErrs...)
 	}
 	return out, nil
+}
+
+// whenFieldErr walks a compiled `when` value and returns the first field that
+// carries a localized error. CUE keeps reference errors (e.g. "undefined field"
+// from a typo'd stdlib member such as hook.#Agent.Explor) on the offending leaf
+// rather than bubbling them to the parent, so a top-level when.Err() misses
+// them. Abstract pattern constraints — regex (=~), bounds (>0), disjunctions,
+// list.MatchN — carry no error and are never flagged (verified against the full
+// rule corpus). The depth guard is a cheap backstop against pathological nesting.
+func whenFieldErr(v cue.Value, depth int) error {
+	if err := v.Err(); err != nil {
+		return err
+	}
+	if depth > 64 {
+		return nil
+	}
+	iter, err := v.Fields(cue.All())
+	if err != nil {
+		// A leaf (non-struct) value has no sub-fields to descend into; Fields
+		// erroring here means "not a struct", not a rule failure.
+		return nil //nolint:nilerr // intentional: non-struct leaf, nothing to walk
+	}
+	for iter.Next() {
+		if err := whenFieldErr(iter.Value(), depth+1); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // compileRuleFile evaluates a rule file with stdlib imports resolved.
