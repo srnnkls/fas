@@ -51,9 +51,11 @@ package hook
 
 // #Agent names the built-in Claude Code subagent types (per the docs: Explore,
 // Plan, general-purpose). Reference these — e.g. agent_type: hook.#Agent.Explore
-// — for a canonical, discoverable vocabulary instead of scattering bare string
-// literals. The event definitions keep agent_type an open string, so custom
-// subagents (your own .claude/agents, task runners, …) still match by name.
+// — for a canonical, discoverable vocabulary: a typo'd member like
+// hook.#Agent.Explor is an "undefined field" the loader rejects, not a bare
+// string literal that silently never matches. The event definitions keep
+// agent_type an open string, so custom subagents (your own .claude/agents, task
+// runners, …) still match by name.
 #Agent: {
 	Explore:        "Explore"
 	Plan:           "Plan"
