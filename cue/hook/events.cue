@@ -12,7 +12,7 @@ package hook
 // #HookEventName enumerates every hook event fas evaluates. Retyping
 // fas.#Input.hook_event_name against this disjunction turns typos like
 // "PreToolUsex" into load-time failures instead of silent policy misses.
-#HookEventName: "PreToolUse" | "PostToolUse" | "UserPromptSubmit" | "Stop" | "SubagentStart" | "Notification"
+#HookEventName: "PreToolUse" | "PostToolUse" | "UserPromptSubmit" | "Stop" | "SubagentStart" | "SubagentStop" | "Notification"
 
 // #PreToolUse: a tool invocation is about to run — tool_name must be present.
 #PreToolUse: {
@@ -22,16 +22,17 @@ package hook
 }
 
 // #PostToolUse: a tool invocation just finished — tool_name is required and
-// tool_response rides along inside tool_input so signals can inspect the result.
+// tool_response rides along at the top level so rules can inspect the result
+// (e.g. tool_response.numFiles for an empty Grep).
 #PostToolUse: {
 	hook_event_name: "PostToolUse"
 	tool_name:       string & !=""
 	tool_input?: {
-		command?:       string
-		parsed?:        {...}
-		tool_response?: _
+		command?: string
+		parsed?:  {...}
 		...
 	}
+	tool_response?: _
 	...
 }
 
@@ -48,9 +49,19 @@ package hook
 	...
 }
 
-// #SubagentStart: a subagent is about to start — no extra fields required.
+// #SubagentStart: a subagent is about to start — agent_type names the starting
+// subagent (e.g. "Explore", "Plan"), letting rules target one kind of subagent.
 #SubagentStart: {
 	hook_event_name: "SubagentStart"
+	agent_type?:     string
+	...
+}
+
+// #SubagentStop: a subagent just finished — agent_type names the subagent that
+// stopped, letting rules react to one kind of subagent completing.
+#SubagentStop: {
+	hook_event_name: "SubagentStop"
+	agent_type?:     string
 	...
 }
 

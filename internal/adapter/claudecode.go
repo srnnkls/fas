@@ -40,6 +40,9 @@ type ccInput struct {
 	HookEventName  string          `json:"hook_event_name"`
 	ToolName       string          `json:"tool_name"`
 	ToolInput      json.RawMessage `json:"tool_input"`
+	ToolResponse   json.RawMessage `json:"tool_response"`
+	Prompt         string          `json:"prompt"`
+	AgentType      string          `json:"agent_type"`
 	SessionID      string          `json:"session_id"`
 	CWD            string          `json:"cwd"`
 	TranscriptPath string          `json:"transcript_path"`
@@ -72,6 +75,9 @@ func (ClaudeCode) ParseInput(raw json.RawMessage) (*envelope.Input, error) {
 		HookEventName: parsed.HookEventName,
 		ToolName:      parsed.ToolName,
 		ToolInput:     parsed.ToolInput,
+		ToolResponse:  parsed.ToolResponse,
+		Prompt:        parsed.Prompt,
+		AgentType:     parsed.AgentType,
 		SessionID:     parsed.SessionID,
 		CWD:           parsed.CWD,
 	}, nil
@@ -92,9 +98,37 @@ type ccResponse struct {
 	HookSpecificOutput ccHookSpecificOutput `json:"hookSpecificOutput"`
 }
 
-// RenderOutput renders an OutputEnvelope as a Claude Code PreToolUse response.
-// UpdatedInput is silently dropped: CC has no consumer for it (see AllowsModify).
+// ccContextOutput is the wire shape for events that inject context but carry no
+// permission decision (SubagentStart). Emitting permissionDecision there is off
+// contract, so those events get a dedicated, decision-free shape.
+type ccContextOutput struct {
+	HookEventName     string `json:"hookEventName"`
+	AdditionalContext string `json:"additionalContext,omitempty"`
+}
+
+type ccContextResponse struct {
+	HookSpecificOutput ccContextOutput `json:"hookSpecificOutput"`
+}
+
+// contextOnlyEvents are the hook events whose only output channel is
+// additionalContext — they never carry a permissionDecision.
+var contextOnlyEvents = map[string]bool{
+	"SubagentStart": true,
+	"SubagentStop":  true,
+}
+
+// RenderOutput renders an OutputEnvelope as a Claude Code hook response. For
+// PreToolUse the response carries a permission decision; context-only events
+// (SubagentStart) carry just additionalContext. UpdatedInput is silently
+// dropped: CC has no consumer for it (see AllowsModify).
 func (ClaudeCode) RenderOutput(out envelope.OutputEnvelope, hookEventName string) (json.RawMessage, error) {
+	if contextOnlyEvents[hookEventName] {
+		return json.Marshal(ccContextResponse{HookSpecificOutput: ccContextOutput{
+			HookEventName:     hookEventName,
+			AdditionalContext: out.AdditionalContext,
+		}})
+	}
+
 	decision := permissionDecisionFor(out.Category)
 
 	hso := ccHookSpecificOutput{

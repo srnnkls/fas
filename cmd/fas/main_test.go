@@ -220,6 +220,58 @@ rule: {
 }
 `
 
+// injectExploreOrientRule injects an agent-channel hint on SubagentStart, but
+// only when the starting subagent is the built-in Explore. Concrete fields
+// (no stdlib import) so LoadRules compiles the single file in isolation.
+const injectExploreOrientRule = `package rules
+
+rule: {
+	when: {
+		hook_event_name: "SubagentStart"
+		agent_type:      "Explore"
+	}
+	then: inject: {
+		rule_id:  "explore-gestalt-orient"
+		text:     "ORIENT-WITH-GESTALT"
+		channel:  "agent"
+		priority: 50
+	}
+}
+`
+
+// injectEmptyGrepHintRule injects on a PostToolUse Grep whose tool_response
+// reports zero matches — exercises top-level tool_response plumbing.
+const injectEmptyGrepHintRule = `package rules
+
+rule: {
+	when: {
+		hook_event_name: "PostToolUse"
+		tool_name:       "Grep"
+		tool_response: numFiles: 0
+	}
+	then: inject: {
+		rule_id:  "empty-grep-hint"
+		text:     "GESTALT-MAP-HINT"
+		channel:  "agent"
+		priority: 50
+	}
+}
+`
+
+// injectSubagentStopRule injects on SubagentStop — exercises the event enum.
+const injectSubagentStopRule = `package rules
+
+rule: {
+	when: hook_event_name: "SubagentStop"
+	then: inject: {
+		rule_id:  "subagent-stop-note"
+		text:     "SUBAGENT-STOPPED"
+		channel:  "agent"
+		priority: 50
+	}
+}
+`
+
 // modifyRuleSrc emits a modify effect — must be rejected at rule-load time
 // when the Claude Code adapter is selected because CC has no payload-rewrite
 // channel.
@@ -298,6 +350,30 @@ rule: {
 }
 `
 
+// claudeSubagentStartInput builds a canonical Claude Code SubagentStart payload
+// for a subagent of the given type. No tool_name / tool_input — SubagentStart
+// carries the agent identity instead.
+func claudeSubagentStartInput(agentType string) []byte {
+	payload := struct {
+		HookEventName string `json:"hook_event_name"`
+		AgentType     string `json:"agent_type"`
+		AgentID       string `json:"agent_id"`
+		SessionID     string `json:"session_id"`
+		CWD           string `json:"cwd"`
+	}{
+		HookEventName: "SubagentStart",
+		AgentType:     agentType,
+		AgentID:       "agent-test",
+		SessionID:     "sess-test",
+		CWD:           "/tmp/project",
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		panic("claudeSubagentStartInput: " + err.Error())
+	}
+	return raw
+}
+
 // -----------------------------------------------------------------------------
 // Allow / deny / ask end-to-end paths
 // -----------------------------------------------------------------------------
@@ -372,6 +448,159 @@ func TestRun_AskingPath_EndToEnd(t *testing.T) {
 	resp := decodeCC(t, res.stdout)
 	if got, want := resp.HookSpecificOutput.PermissionDecision, "ask"; got != want {
 		t.Errorf("permissionDecision=%q, want %q\nstdout=%s", got, want, res.stdout)
+	}
+}
+
+// claudePostToolUseGrepInput builds a PostToolUse payload for Grep carrying a
+// top-level tool_response with the given match count.
+func claudePostToolUseGrepInput(pattern string, numFiles int) []byte {
+	payload := map[string]any{
+		"hook_event_name": "PostToolUse",
+		"tool_name":       "Grep",
+		"tool_input":      map[string]any{"pattern": pattern},
+		"tool_response":   map[string]any{"numFiles": numFiles, "filenames": []string{}},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		panic("claudePostToolUseGrepInput: " + err.Error())
+	}
+	return raw
+}
+
+// claudeSubagentStopInput builds a minimal SubagentStop payload.
+func claudeSubagentStopInput() []byte {
+	payload := map[string]any{
+		"hook_event_name": "SubagentStop",
+		"session_id":      "sess-test",
+		"cwd":             "/tmp/project",
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		panic("claudeSubagentStopInput: " + err.Error())
+	}
+	return raw
+}
+
+// -----------------------------------------------------------------------------
+// PostToolUse tool_response + SubagentStop event
+// -----------------------------------------------------------------------------
+
+func TestRun_PostToolUse_ToolResponseRule_Injects(t *testing.T) {
+	globalDir := writeRuleFiles(t, map[string]string{
+		"grep.cue": injectEmptyGrepHintRule,
+	})
+	projectDir := emptyRulesDir(t)
+
+	stdin := claudePostToolUseGrepInput("foo", 0)
+	res := runCLI(t, stdin,
+		"eval", "--harness", "claude",
+		"--config", projectDir, "--global-config", globalDir,
+	)
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
+	}
+	if !bytes.Contains(res.stdout, []byte("GESTALT-MAP-HINT")) {
+		t.Errorf("expected tool_response-keyed inject; stdout=%s", res.stdout)
+	}
+}
+
+func TestRun_PostToolUse_ToolResponseRule_NoMatchWhenNonZero(t *testing.T) {
+	globalDir := writeRuleFiles(t, map[string]string{
+		"grep.cue": injectEmptyGrepHintRule,
+	})
+	projectDir := emptyRulesDir(t)
+
+	stdin := claudePostToolUseGrepInput("foo", 3)
+	res := runCLI(t, stdin,
+		"eval", "--harness", "claude",
+		"--config", projectDir, "--global-config", globalDir,
+	)
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
+	}
+	if bytes.Contains(res.stdout, []byte("GESTALT-MAP-HINT")) {
+		t.Errorf("non-empty grep must not inject; stdout=%s", res.stdout)
+	}
+}
+
+func TestRun_SubagentStop_RuleMatches_EndToEnd(t *testing.T) {
+	globalDir := writeRuleFiles(t, map[string]string{
+		"stop.cue": injectSubagentStopRule,
+	})
+	projectDir := emptyRulesDir(t)
+
+	stdin := claudeSubagentStopInput()
+	res := runCLI(t, stdin,
+		"eval", "--harness", "claude",
+		"--config", projectDir, "--global-config", globalDir,
+	)
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
+	}
+	resp := decodeCC(t, res.stdout)
+	if got, want := resp.HookSpecificOutput.HookEventName, "SubagentStop"; got != want {
+		t.Errorf("hookEventName=%q, want %q", got, want)
+	}
+	if !strings.Contains(resp.HookSpecificOutput.AdditionalContext, "SUBAGENT-STOPPED") {
+		t.Errorf("expected SubagentStop inject; got %q", resp.HookSpecificOutput.AdditionalContext)
+	}
+	if bytes.Contains(res.stdout, []byte("permissionDecision")) {
+		t.Errorf("SubagentStop must not carry permissionDecision; stdout=%s", res.stdout)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// SubagentStart: inject orientation hint into Explore subagents only
+// -----------------------------------------------------------------------------
+
+func TestRun_SubagentStart_InjectExploreHint_EndToEnd(t *testing.T) {
+	globalDir := writeRuleFiles(t, map[string]string{
+		"explore.cue": injectExploreOrientRule,
+	})
+	projectDir := emptyRulesDir(t)
+
+	stdin := claudeSubagentStartInput("Explore")
+	res := runCLI(t, stdin,
+		"eval",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
+	}
+	resp := decodeCC(t, res.stdout)
+	if got, want := resp.HookSpecificOutput.HookEventName, "SubagentStart"; got != want {
+		t.Errorf("hookEventName=%q, want %q", got, want)
+	}
+	if !strings.Contains(resp.HookSpecificOutput.AdditionalContext, "ORIENT-WITH-GESTALT") {
+		t.Errorf("additionalContext=%q, want it to contain the orient hint", resp.HookSpecificOutput.AdditionalContext)
+	}
+	if bytes.Contains(res.stdout, []byte("permissionDecision")) {
+		t.Errorf("SubagentStart response must not carry permissionDecision; stdout=%s", res.stdout)
+	}
+}
+
+func TestRun_SubagentStart_UnmatchedAgent_NoInject(t *testing.T) {
+	globalDir := writeRuleFiles(t, map[string]string{
+		"explore.cue": injectExploreOrientRule,
+	})
+	projectDir := emptyRulesDir(t)
+
+	stdin := claudeSubagentStartInput("general-purpose")
+	res := runCLI(t, stdin,
+		"eval",
+		"--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
+	}
+	if bytes.Contains(res.stdout, []byte("ORIENT-WITH-GESTALT")) {
+		t.Errorf("an agent_type the rule does not target must not receive the hint; stdout=%s", res.stdout)
 	}
 }
 
