@@ -49,27 +49,30 @@ package hook
 	...
 }
 
-// #Agent names the built-in Claude Code subagent types (per the docs: Explore,
-// Plan, general-purpose). Reference these — e.g. agent_type: hook.#Agent.Explore
-// — for a canonical, discoverable vocabulary: a typo'd member like
-// hook.#Agent.Explor is an "undefined field" the loader rejects, not a bare
-// string literal that silently never matches. The event definitions keep
+// #Agent provides matchers for the built-in Claude Code subagent types (per the
+// docs: Explore, Plan, general-purpose). Compose them with the event, the same
+// way tool.#isBash & friends compose:
+//
+//	when: hook.#SubagentStart & hook.#Agent.Explore
+//
+// Each constrains only agent_type, so the same matcher works for SubagentStart
+// and SubagentStop. A typo'd member (hook.#Agent.Explor) is an "undefined field"
+// the loader rejects, not a silent non-match. The event definitions keep
 // agent_type an open string, so custom subagents (your own .claude/agents, task
-// runners, …) still match by name.
+// runners, …) still match via {agent_type: "your-agent"}.
 #Agent: {
-	Explore:        "Explore"
-	Plan:           "Plan"
-	GeneralPurpose: "general-purpose"
+	Explore:        {agent_type: "Explore", ...}
+	Plan:           {agent_type: "Plan", ...}
+	GeneralPurpose: {agent_type: "general-purpose", ...}
 }
 
-// #KnownAgentType is the disjunction of the built-in subagent types, for rules
-// that want to match "any built-in agent". Deliberately NOT used to type the
-// agent_type field, which stays an open string so custom subagents still match.
+// #KnownAgentType matches any built-in subagent — the disjunction of the #Agent
+// matchers. Compose as hook.#SubagentStart & hook.#KnownAgentType.
 #KnownAgentType: #Agent.Explore | #Agent.Plan | #Agent.GeneralPurpose
 
 // #SubagentStart: a subagent is about to start — agent_type names the starting
-// subagent. Target a specific kind with hook.#Agent.Explore (built-ins) or a
-// bare string for custom subagents.
+// subagent. Target a specific kind with `& hook.#Agent.Explore` (built-ins) or
+// `& {agent_type: "your-agent"}` for custom subagents.
 #SubagentStart: {
 	hook_event_name: "SubagentStart"
 	agent_type?:     string

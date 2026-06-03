@@ -169,7 +169,7 @@ func TestLoadRules_TypoedAgentRef_Rejected(t *testing.T) {
 import "github.com/srnnkls/fas/cue/hook"
 
 orient: {
-	when: hook.#SubagentStart & {agent_type: hook.#Agent.Explor}
+	when: hook.#SubagentStart & hook.#Agent.Explor
 	then: inject: {
 		rule_id: "x"
 		channel: "agent"

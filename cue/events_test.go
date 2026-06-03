@@ -201,7 +201,7 @@ func TestEvents_SubagentStart_PinsEventName(t *testing.T) {
 		`{hook_event_name: "Stop"}`)
 }
 
-func TestEvents_Agent_Constants(t *testing.T) {
+func TestEvents_Agent_Matchers(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgHook)
 
@@ -209,18 +209,20 @@ func TestEvents_Agent_Constants(t *testing.T) {
 	if !agent.Exists() {
 		t.Fatal("definition #Agent not found")
 	}
+	// Each #Agent.X is a matcher struct that pins agent_type — composed with
+	// the event via `&`, not assigned to a field.
 	for field, want := range map[string]string{
 		"Explore":        "Explore",
 		"Plan":           "Plan",
 		"GeneralPurpose": "general-purpose",
 	} {
-		got, err := agent.LookupPath(cue.ParsePath(field)).String()
+		got, err := agent.LookupPath(cue.ParsePath(field + ".agent_type")).String()
 		if err != nil {
-			t.Errorf("#Agent.%s: %v", field, err)
+			t.Errorf("#Agent.%s.agent_type: %v", field, err)
 			continue
 		}
 		if got != want {
-			t.Errorf("#Agent.%s = %q, want %q", field, got, want)
+			t.Errorf("#Agent.%s.agent_type = %q, want %q", field, got, want)
 		}
 	}
 }
