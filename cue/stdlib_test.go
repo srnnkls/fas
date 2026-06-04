@@ -42,8 +42,10 @@ const stdlibModulePath = "fas.test/stdlib@v0"
 type subPkg string
 
 const (
+	subPkgCatalog    subPkg = "catalog"
 	subPkgHook       subPkg = "hook"
 	subPkgTool       subPkg = "tool"
+	subPkgCommand    subPkg = "command"
 	subPkgPath       subPkg = "path"
 	subPkgEscalation subPkg = "escalation"
 	subPkgAction     subPkg = "action"
@@ -409,19 +411,87 @@ func TestAction_HasDestructiveAction_VerbsOnly(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// tool package — #isBash
+// catalog package — #ToolName, #AgentType, #EventName identities
 // ---------------------------------------------------------------------------
 
-func TestTool_IsBash(t *testing.T) {
+func catalogString(t *testing.T, pkg cue.Value, def, member string) string {
+	t.Helper()
+	v := pkg.LookupPath(cue.MakePath(cue.Def(def))).LookupPath(cue.ParsePath(member))
+	s, err := v.String()
+	if err != nil {
+		t.Fatalf("catalog.#%s.%s: %v", def, member, err)
+	}
+	return s
+}
+
+func TestCatalog_Identities(t *testing.T) {
+	ctx := cuecontext.New()
+	pkg := loadSubPkg(t, ctx, subPkgCatalog)
+
+	for _, tc := range []struct{ def, member, want string }{
+		{"ToolName", "Bash", "Bash"},
+		{"ToolName", "Write", "Write"},
+		{"ToolName", "WebFetch", "WebFetch"},
+		{"AgentType", "Explore", "Explore"},
+		{"AgentType", "GeneralPurpose", "general-purpose"},
+		{"EventName", "PreToolUse", "PreToolUse"},
+		{"EventName", "SubagentStop", "SubagentStop"},
+	} {
+		if got := catalogString(t, pkg, tc.def, tc.member); got != tc.want {
+			t.Errorf("catalog.#%s.%s = %q, want %q", tc.def, tc.member, got, tc.want)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// tool package — #Tool matchers (bound from catalog.#ToolName), #KnownTool
+// ---------------------------------------------------------------------------
+
+func TestTool_Tool_Matchers(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgTool)
 
-	unifyExpectOK(t, ctx, pkg, "isBash",
-		`{tool_name: "Bash"}`)
-	unifyExpectFail(t, ctx, pkg, "isBash",
-		`{tool_name: "Write"}`)
-	unifyExpectFail(t, ctx, pkg, "isBash",
-		`{tool_name: "Edit"}`)
+	toolDef := lookupDef(t, pkg, "Tool")
+	bash := toolDef.LookupPath(cue.ParsePath("Bash"))
+	if !bash.Exists() {
+		t.Fatal("#Tool.Bash not found")
+	}
+
+	okVal := ctx.CompileString(`{tool_name: "Bash"}`, cue.Filename("ok.cue"))
+	if err := bash.Unify(okVal).Validate(cue.Concrete(false)); err != nil {
+		t.Errorf("#Tool.Bash should match Bash, got: %v", err)
+	}
+	writeVal := ctx.CompileString(`{tool_name: "Write"}`, cue.Filename("write.cue"))
+	if err := bash.Unify(writeVal).Validate(cue.Concrete(false)); err == nil {
+		t.Error("#Tool.Bash should not match Write")
+	}
+	write := toolDef.LookupPath(cue.ParsePath("Write"))
+	if err := write.Unify(writeVal).Validate(cue.Concrete(false)); err != nil {
+		t.Errorf("#Tool.Write should match Write, got: %v", err)
+	}
+}
+
+func TestTool_KnownTool_Disjunction(t *testing.T) {
+	ctx := cuecontext.New()
+	pkg := loadSubPkg(t, ctx, subPkgTool)
+
+	unifyExpectOK(t, ctx, pkg, "KnownTool", `{tool_name: "Bash"}`)
+	unifyExpectOK(t, ctx, pkg, "KnownTool", `{tool_name: "WebSearch"}`)
+	unifyExpectFail(t, ctx, pkg, "KnownTool", `{tool_name: "DefinitelyNotABuiltin"}`)
+}
+
+// ---------------------------------------------------------------------------
+// command package — Bash command matchers (rm, tee, …)
+// ---------------------------------------------------------------------------
+
+func TestCommand_Matchers(t *testing.T) {
+	ctx := cuecontext.New()
+	pkg := loadSubPkg(t, ctx, subPkgCommand)
+
+	unifyExpectOK(t, ctx, pkg, "isRm", `{tool_input: {command: "rm -rf /etc"}}`)
+	unifyExpectFail(t, ctx, pkg, "isRm", `{tool_input: {command: "ls -la"}}`)
+	unifyExpectOK(t, ctx, pkg, "isTee", `{tool_input: {command: "tee /etc/hosts"}}`)
+	unifyExpectOK(t, ctx, pkg, "isMv", `{tool_input: {command: "mv a b"}}`)
 }
 
 // ---------------------------------------------------------------------------

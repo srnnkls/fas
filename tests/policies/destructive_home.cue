@@ -8,7 +8,7 @@ import (
 )
 
 destructive_home: {
-	when: hook.#PreToolUse & tool.#isBash & {
+	when: hook.#PreToolUse & tool.#Tool.Bash & {
 		tool_input: {
 			command: =~"^rm\\b"
 			parsed: {

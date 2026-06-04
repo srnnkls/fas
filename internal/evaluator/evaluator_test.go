@@ -274,7 +274,7 @@ func TestEvaluate_MatchProducesAction(t *testing.T) {
 // tests exercise the same evaluator behaviour the real stdlib relies on.
 // -----------------------------------------------------------------------------
 
-// systemTargetRuleSrc inlines #isPreToolUse & #isBash & #hasSystemTarget.
+// systemTargetRuleSrc inlines hook.#PreToolUse & tool.#Tool.Bash & #hasSystemTarget.
 // The `list` and `strings` imports live at file scope — see the
 // mustWriteRuleWithImports call that writes this body.
 const systemTargetRuleSrc = `{
@@ -327,7 +327,7 @@ func TestEvaluate_HasSystemTarget_Matches(t *testing.T) {
 	})
 }
 
-// rmForceRuleSrc inlines #isPreToolUse & #isBash & #HasRmForce.
+// rmForceRuleSrc inlines hook.#PreToolUse & tool.#Tool.Bash & #HasRmForce.
 const rmForceRuleSrc = `{
 	_rmShortClass: "friv"
 	when: {

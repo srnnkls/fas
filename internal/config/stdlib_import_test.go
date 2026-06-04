@@ -62,7 +62,7 @@ import (
 )
 
 system_path: {
-	when: hook.#PreToolUse & tool.#isBash & path.#hasSystemTarget
+	when: hook.#PreToolUse & tool.#Tool.Bash & path.#hasSystemTarget
 	then: deny: {
 		rule_id: "sys-path"
 		reason:  "System path blocked"
@@ -120,7 +120,7 @@ import (
 )
 
 rm_force: {
-	when: hook.#PreToolUse & tool.#isBash & flag.#HasRmForce
+	when: hook.#PreToolUse & tool.#Tool.Bash & flag.#HasRmForce
 	then: deny: {
 		rule_id: "rm-force"
 		reason:  "rm -f blocked"
@@ -218,7 +218,7 @@ import (
 )
 
 typed_system_path: {
-	when: hook.#PreToolUse & tool.#isBash & path.#hasSystemTarget
+	when: hook.#PreToolUse & tool.#Tool.Bash & path.#hasSystemTarget
 	then: deny: {
 		rule_id: "typed-pretooluse"
 		reason:  "typed #PreToolUse + system path"

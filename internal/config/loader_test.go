@@ -189,6 +189,37 @@ orient: {
 	}
 }
 
+func TestLoadRules_TypoedToolRef_Rejected(t *testing.T) {
+	// Parity with the #Agent case: tool.#Tool has Bash/Edit/…; .Bsh is an
+	// undefined field nested under when.tool_name, which the loader must reject
+	// rather than admit as a rule that silently never matches.
+	const src = `package rules
+
+import (
+	"github.com/srnnkls/fas/cue/hook"
+	"github.com/srnnkls/fas/cue/tool"
+)
+
+guard: {
+	when: hook.#PreToolUse & tool.#Tool.Bsh
+	then: deny: {
+		rule_id: "x"
+		reason:  "y"
+	}
+}
+`
+	dir := t.TempDir()
+	writeRuleFile(t, dir, "guard.cue", src)
+
+	_, err := config.LoadRules(dir)
+	if err == nil {
+		t.Fatalf("expected error for typo'd tool.#Tool.Bsh, got nil")
+	}
+	if msg := strings.ToLower(err.Error()); !strings.Contains(msg, "bsh") {
+		t.Fatalf("error should name the undefined field, got: %s", err.Error())
+	}
+}
+
 func TestLoadRules_MultipleRulesDeterministicOrder(t *testing.T) {
 	dir := t.TempDir()
 	// Intentionally write in non-alphabetical order to prove sort is
