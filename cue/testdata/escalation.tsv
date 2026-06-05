@@ -1,0 +1,25 @@
+# matcher: escalation.#escalationCommand
+# Each row is a single command token.
+# match   = exact privilege-escalation command: sudo doas su
+# nomatch = anything else, including lookalikes that merely share a prefix
+#
+# Exact escalation commands.
+sudo	match
+doas	match
+su	match
+#
+# Lookalikes sharing a prefix but not the exact token.
+sudoers	nomatch
+subarachnoid	nomatch
+sudoedit	nomatch
+sudox	nomatch
+suid	nomatch
+doasedit	nomatch
+#
+# Unrelated commands.
+ls	nomatch
+env	nomatch
+rm	nomatch
+#
+# Empty input is not an escalation command.
+	nomatch

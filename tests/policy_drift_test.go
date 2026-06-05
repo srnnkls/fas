@@ -8,13 +8,29 @@ import (
 	"testing"
 )
 
-// bannedInline maps an inline-regex substring that a stdlib helper already
-// provides to the helper that should be used instead. A policy .cue containing
-// any key has drifted from the canonical catalog.
+// bannedInline is maintained alongside the stdlib — an exported matcher added without a key here is a reviewable omission.
 var bannedInline = map[string]string{
-	`(^|[^A-Za-z0-9_])/(etc|sys|proc|boot|dev)(/|$|[^A-Za-z0-9_])`: "use path.#hasSystemInCommand",
-	`^-[a-zA-Z]*r[a-zA-Z]*$|^--recursive$`:                         "use flag.#hasRmRecursive",
-	`=~"^rm\\b"`:                                                   "use command.#isRm",
+	// flag/rm.cue
+	`^--force(=|$)|^-force(=|$)|^-[a-zA-Z]*f[a-zA-Z]*$`:                "use flag.#hasRmForce",
+	`^--recursive(=|$)|^-recursive(=|$)|^-[a-zA-Z]*[rR][a-zA-Z]*$`:     "use flag.#hasRmRecursive",
+	`^--interactive(=|$)|^-interactive(=|$)|^-[a-zA-Z]*[iI][a-zA-Z]*$`: "use flag.#hasRmInteractive",
+	`^--verbose(=|$)|^-verbose(=|$)|^-[a-zA-Z]*v[a-zA-Z]*$`:            "use flag.#hasRmVerbose",
+
+	// path/path.cue
+	`^(/etc|/sys|/proc|/boot|/dev)($|/)`:                           "use path.#systemTarget / path.#hasSystemTarget",
+	`(^|[^A-Za-z0-9_])/(etc|sys|proc|boot|dev)(/|$|[^A-Za-z0-9_])`: "use path.#systemInCommand / path.#hasSystemInCommand",
+
+	// command/command.cue
+	`=~"^rm\\b"`:    "use command.#isRm",
+	`=~"^chmod\\b"`: "use command.#isChmod",
+	`=~"^tee\\b"`:   "use command.#isTee",
+	`=~"^mv\\b"`:    "use command.#isMv",
+
+	// action/action.cue
+	`or(["delete", "drop", "remove", "destroy", "truncate"])`: "use action.#destructiveAction / action.#hasDestructiveAction",
+
+	// escalation/escalation.cue
+	`or(["sudo", "doas", "su"])`: "use escalation.#escalationCommand / escalation.#hasPrivilegeEscalation",
 }
 
 func policiesDir(t *testing.T) string {

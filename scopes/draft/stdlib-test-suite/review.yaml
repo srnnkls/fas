@@ -1,0 +1,270 @@
+synthesized_report:
+  scope: stdlib-test-suite
+  date: 2026-06-05
+  reviewers: [claude-opus, claude-sonnet]
+  reviewers_unavailable:
+    - pi-gpt5.5  # pi harness broken in this env (extension resolution failure, exit 1)
+  gates:
+    completeness:
+      status: fail
+      failed_by: [claude-sonnet]
+    consistency:
+      status: fail
+      failed_by: [claude-opus, claude-sonnet]
+    feasibility:
+      status: fail
+      failed_by: [claude-opus]
+    clarity:
+      status: fail
+      failed_by: [claude-sonnet]
+    design_depth:
+      status: pass
+      failed_by: []
+  recommendation: address_issues
+
+  issues:
+    - id: C1
+      severity: critical
+      gate: consistency
+      area: design
+      description: >
+        dependencies.yaml batch 1 = [STS-001, STS-005, STS-006, STS-007, STS-009, STS-008]
+        places STS-005 and STS-006 in the same batch though both write cue/stdlib_test.go —
+        a same-file write collision the file's own comment forbids. Worse, STS-002/003/005/006
+        ALL target cue/stdlib_test.go, so the "4 parallel batches" are effectively serial.
+      suggestion: >
+        Split the new CUE tests into separate files (stdlib_differential_test.go,
+        stdlib_derivation_test.go, stdlib_composition_test.go, plus the table rewrite in
+        stdlib_test.go) so they genuinely parallelize, then recompute batches. This both
+        fixes the collision and restores the parallel-dispatch value.
+      found_by: [claude-opus, claude-sonnet]
+      verified: true
+
+    - id: C2
+      severity: critical
+      gate: consistency
+      area: integration
+      description: >
+        STS-007 (loader-contract: undefined catalog member fails at load) is ALREADY
+        IMPLEMENTED. internal/config/loader_test.go:192 TestLoadRules_TypoedToolRef_Rejected
+        (tool.#Tool.Bsh) and :162 TestLoadRules_TypoedAgentRef_Rejected (hook.#Agent.Explor)
+        match the task verbatim. Building STS-007 as written duplicates them.
+        NOTE: this refutes opus's separate concern that member-typo rejection is "unproven
+        and needs a Phase-1 spike" — it is proven by these existing tests.
+      suggestion: >
+        Close STS-007 as done, OR rescope narrowly to "per-sub-package coverage via the
+        overlay harness in cue/stdlib_test.go" (marginal value over the existing config-layer
+        tests). Remove the spike implied by opus.
+      found_by: [claude-sonnet]
+      verified: true
+
+    - id: H1
+      severity: high
+      gate: feasibility
+      area: design
+      description: >
+        FuzzRecursiveFlag as scoped re-loads the full CUE module overlay per iteration
+        (loadSubPkg walks StdlibFS + load.Instances + BuildInstance). No reusable compiled
+        matcher handle exists; per-iteration reload is prohibitively slow.
+      suggestion: >
+        Add a sub-task: extract a reusable compiled-matcher closure (load flag sub-package +
+        lookupDef ONCE, return func(token) bool doing only CompileString+Unify+Validate).
+        Spike throughput before committing the fuzz layer; fall back to a table-driven
+        property test over the seed corpus if too slow.
+      found_by: [claude-opus]
+
+    - id: H2
+      severity: high
+      gate: feasibility
+      area: behavior
+      description: >
+        Fuzz reference predicate risks circularity (re-encoding rm.cue's regex ⇒ INV-3
+        vacuous) AND a model mismatch: the matcher is list.MatchN over parsed.flags (list-level)
+        but design.md's predicate is token-level isRecursiveFlag(tok). Also Go fuzz seeds must
+        be []byte files under testdata/fuzz/<Fn>/, not the shared .tsv directly.
+      suggestion: >
+        Pin the predicate's accept set from `man rm` in design.md (authored without reading
+        rm.cue); decide token-level vs list-level explicitly; specify the .tsv → fuzz-seed
+        conversion.
+      found_by: [claude-opus, claude-sonnet]
+
+    - id: H3
+      severity: high
+      gate: clarity
+      area: data_model
+      description: >
+        The testdata .tsv format is the single source for tables + fuzz seeds but its schema
+        is never specified (columns, classification vocabulary match/nomatch vs allow/deny,
+        header row, tab/special-char escaping, comment syntax). Two implementers produce
+        incompatible files.
+      suggestion: >
+        Add a Format section to design.md: e.g. `input <TAB> expected` where expected ∈
+        {match, nomatch}; no header; document escaping of tabs in the input column.
+      found_by: [claude-sonnet, claude-opus]
+
+    - id: H4
+      severity: high
+      gate: completeness
+      area: behavior
+      description: >
+        "near-miss allow" (INV-7, STS-008, acceptance criterion 5) is used 4x with no
+        definition or example. A fresh implementer cannot derive the cases.
+      suggestion: >
+        Define in design.md: "an input sharing the triggering command/tool with a deny case
+        but lacking the specific deny condition (wrong flag, non-system path, different
+        tool_name)." Give one concrete example per policy (e.g. destructive-home: deny
+        `rm -rf ~` / allow `rm -rf ./build`).
+      found_by: [claude-sonnet]
+
+    - id: H5
+      severity: high
+      gate: completeness
+      area: scope
+      description: >
+        scope.md requires tool.#Tool and hook.#Agent per-matcher corpora, but STS-002 omits
+        them and INV-1 is left partially unowned. Separately, opus notes tool.#Tool is a
+        category error for the .tsv input<TAB>classification model (it is a tool_name-pin
+        struct, not a regex/disjunction over a domain corpus).
+      suggestion: >
+        Remove tool.#Tool/hook.#Agent from the .tsv table model (STS-002). Cover their
+        correctness via STS-005 (catalog↔binder derivation) plus the existing TestTool_*/
+        unify-style tests; update scope.md requirements to match.
+      found_by: [claude-opus, claude-sonnet]
+
+    - id: H6
+      severity: high
+      gate: consistency
+      area: scope
+      description: >
+        STS-008 placement is contradictory: Phase 4 (integration) in tasks.yaml vs batch 1
+        (foundation, no deps) in dependencies.yaml. An implementer could start it before
+        policies.md is stable.
+      suggestion: >
+        Give STS-008 explicit deps on STS-002/STS-003 in dependencies.yaml and move it out of
+        batch 1, or document why policies.md edits are independent of the matcher tests.
+      found_by: [claude-sonnet]
+
+    - id: M1
+      severity: medium
+      gate: feasibility
+      area: integration
+      description: >
+        STS-008 needs a machine-checkable mapping from a policy .cue to its scrut blocks, but
+        policies.md groups blocks by prose headers, not by policy file. The "check that
+        reports gaps" has no defined data source.
+      suggestion: >
+        Define the mapping first (naming convention / manifest / per-block annotation) before
+        building the completeness checker.
+      found_by: [claude-opus]
+
+    - id: M2
+      severity: medium
+      gate: design_depth
+      area: edge_cases
+      description: >
+        The STS-003 differential whitelist could be broad enough to absorb the /etcfoo-class
+        bug it exists to catch, since systemTarget (parsed path) and systemInCommand (raw
+        substring) consume different inputs and differ on many inputs by design.
+      suggestion: >
+        Constrain the differential to the input subset where the two SHOULD agree; enumerate
+        documented divergences exhaustively with per-case justification; add a meta-assertion
+        that the whitelist contains no prefix-boundary case (e.g. /etcfoo).
+      found_by: [claude-opus]
+
+    - id: M3
+      severity: medium
+      gate: clarity
+      area: behavior
+      description: >
+        STS-009 "flag ANY exported stdlib regex literal" does not specify the enumeration
+        strategy (grep =~ literals / curated map / walk the CUE value API) — very different
+        complexity and maintenance.
+      suggestion: >
+        Specify the curated-map approach (consistent with no-new-deps): a map keyed by the
+        actual exported regex string, maintained alongside the stdlib.
+      found_by: [claude-sonnet]
+
+    - id: M4
+      severity: medium
+      gate: constraints
+      area: edge_cases
+      description: >
+        STS-002 authors corpora that contradict the implementation by design; if it surfaces a
+        THIRD matcher bug, the scope says "file as they appear" but gives no decision rule or
+        blocking criterion.
+      suggestion: >
+        Add a rule: on a failing spec-derived case, open a bug with the input, mark the case
+        xfail referencing the issue, and proceed — do not block the STS scope on the fix.
+      found_by: [claude-sonnet]
+
+    - id: M5
+      severity: medium
+      gate: clarity
+      area: design
+      description: >
+        STS-005 "extend beyond event-name drift" is ambiguous against the existing
+        TestEventSet_NoDriftAcrossSources (event names only); an implementer may think it is
+        already done.
+      suggestion: >
+        State explicitly: STS-005 adds catalog.#ToolName↔tool.#Tool and
+        catalog.#AgentType↔hook.#Agent round-trip checks; event names are already covered.
+      found_by: [claude-opus, claude-sonnet]
+
+    - id: M6
+      severity: medium
+      gate: clarity
+      area: constraints
+      description: >
+        validation.yaml marks every ambiguity area "clear" with empty gaps, but the fuzz
+        model, predicate location (M001 open), token-vs-list question, and .tsv schema are
+        genuinely unresolved — readiness is overstated.
+      suggestion: >
+        Downgrade data_model and constraints to partial with the listed gaps; resolve via this
+        review's clarifications.
+      found_by: [claude-opus]
+
+  strengths:
+    - "Mutation discipline is real and verifiable — both known fixes confirmed present (rm.cue:15 [rR]; path.cue:18 ($|/)), so revert-and-check is non-tautological. [both]"
+    - "Oracle-independence (AD-1) correctly root-causes the escaped bugs; rejected alternatives dismissed with reasoning that maps to the failure mode. [both]"
+    - "STS-005 (catalog↔binder derivation) is genuinely new coverage — eventset_drift_test checks event names only. [both]"
+    - "Reuse of the loadSubPkg/unifyExpect*/matchRegexExpect* overlay harness is the right call for the table-driven layers. [both]"
+    - "Constraints accurate: no new deps, forked cue, 'go install before scrut' (hk.pkl:43), fuzz-as-seed-run-only for a deterministic gate. [both]"
+
+# ---------------------------------------------------------------------------
+# Implementation batch reviews (/implement execute, adapted pipeline:
+# author + mutation-verify + 3-harness review). Harnesses: claude-opus,
+# claude-sonnet, pi-gemini (pi now available; default google/gemini provider).
+# ---------------------------------------------------------------------------
+implementation:
+  pipeline: "adapted (author + mutation-verify + review); test-authoring scope"
+  harnesses: [claude-opus, claude-sonnet, pi-gemini]
+  batch_reviews:
+    - batch: 1
+      tasks: [STS-001, STS-005, STS-006, STS-009]
+      files:
+        - cue/testdata/{rm_flags,system_paths,commands,destructive_actions,escalation}.tsv
+        - cue/corpus_test.go
+        - cue/stdlib_derivation_test.go
+        - cue/stdlib_composition_test.go
+        - tests/policy_drift_test.go
+      reviewers:
+        - {id: claude-opus, outcome: approved, issues: 2}      # both low
+        - {id: claude-sonnet, outcome: approved, issues: 3}    # all low
+        - {id: pi-gemini, outcome: changes_requested, issues: 1} # 1 high (resolved)
+      synthesized:
+        gates: {oracle_independence: pass, test_teeth: pass, drift_completeness: pass, correctness: pass, style: pass, scope: pass}
+        go_test: pass
+      issues:
+        high:
+          - id: B1-H1
+            source: pi-gemini
+            file: cue/testdata/rm_flags.tsv
+            finding: "`--recursive=true` labeled match while GNU rm rejects =arg; read as regex-mirror"
+            resolution: "NOT a mirror: shipped golden 'Blocks rm --recursive=true ~' + existing unit assert this is denied. Kept match (over-match is the safe deny direction; matcher change is a non-goal); added intent-rationale comment to the corpus so the row validates without reading the regex."
+            status: resolved
+      deferred_issues:  # low severity, noted for later
+        - "rm_flags.tsv: add -Rd bundle (uppercase R + non-f companion); -Rf/-fR already cover the class [sonnet]"
+        - "corpus_test.go: no explicit malformed-row-rejection subtest (t.Fatalf is correct behavior) [sonnet]"
+        - "stdlib_composition_test.go: composeChain reloads overlay per sub-package; perf only, not a gate [sonnet]"
+        - "stdlib_derivation_test.go: key-set arm is near-vacuous given the comprehension; value-binding arm carries the teeth (present) [opus]"
+      outcome: approved
