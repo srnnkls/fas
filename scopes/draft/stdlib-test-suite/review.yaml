@@ -340,3 +340,24 @@ implementation:
             status: wont_fix_documented
       deferred_issues: []
       outcome: approved
+    - batch: 4
+      tasks: [STS-010]
+      files: [AGENTS.md, hk.pkl, mise.toml]
+      reviewers:
+        - {id: claude-opus, outcome: approved, issues: 2}            # both low
+        - {id: claude-sonnet, outcome: changes_requested, issues: 2} # 1 high (fixed), 1 low (fixed)
+      synthesized:
+        gates: {doc_accuracy: pass, config_validity: pass, style: pass, scope: pass}
+        go_test: pass
+      issues:
+        high:
+          - id: B4-H1
+            source: claude-sonnet
+            file: AGENTS.md
+            finding: "Running bullet claimed `go test` alone runs the on-PATH fas; false — only scrut invokes fas, go test/... is static"
+            resolution: "reworded: install before scrut (mise run test-integration); noted `go test ./...` does not run fas"
+            status: resolved
+      deferred_issues:
+        - "INV-6 was missing from the Layers table — added a row pointing to internal/config/loader_test.go (fixed)"
+      outcome: approved
+  final_note: "pi-gemini flaked on batches 3-4 (empty/blocked output); ≥2-harness gate met by claude-opus + claude-sonnet every batch; pi reviewed batches 1-2 + fixed-batch-3 static."

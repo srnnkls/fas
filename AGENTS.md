@@ -107,3 +107,46 @@ Express these via:
 
 Imports, predeclared names (`string`, `int`, `or`, `len`, ...), hidden local
 helpers, and bare references to sibling top-level rule structs all pass.
+
+## Testing the stdlib
+
+### Oracle independence
+
+Matcher corpora live in `cue/testdata/*.tsv` and state **domain truth** (`man rm`
+recursion intent, path-component semantics), authored WITHOUT reading the matcher
+— a case can contradict the code. Never derive cases from the regex; a corpus
+that mirrors the implementation cannot catch a wrong implementation.
+
+### testdata is single-source
+
+Each `*.tsv` (`input <TAB> {match|nomatch}`) feeds the table tests, the
+differential, AND the fuzz seed corpus. One file per vocabulary, reviewable
+against a man page.
+
+### Layers
+
+| ID | Layer | Where |
+| --- | --- | --- |
+| INV-1 | Spec-derived matcher tables | `stdlib_test.go` ← `testdata/*.tsv` |
+| INV-2 | `systemTarget` ↔ `systemInCommand` differential with an asserted whitelist | `stdlib_differential_test.go` |
+| INV-3 | `FuzzRecursiveFlag` vs a hand-written man-rm reference predicate | `stdlib_fuzz_test.go` |
+| INV-4 | catalog ↔ binder derivation | `stdlib_derivation_test.go` |
+| INV-5 | composition (positive + negative `&` chain) | `stdlib_composition_test.go` |
+| INV-6 | catalog typos rejected at rule load — enforced separately (not this suite's files) | `internal/config/loader_test.go` (`TestLoadRules_TypoedToolRef_Rejected` / `TestLoadRules_TypoedAgentRef_Rejected`) |
+| INV-7 | scrut deny + near-miss-allow completeness | `tests/policy_coverage_test.go` |
+| INV-8 | inline-regex drift guard | `tests/policy_drift_test.go` |
+
+### Running
+
+- `go test ./...` runs everything, including the fuzz seed corpora (the
+  deterministic gate).
+- `mise run test-fuzz` deepens the fuzz target manually (non-gating).
+- ALWAYS `go install ./cmd/fas` (or `mise run install`) before scrut
+  (`mise run test-integration`): scrut's subprocesses invoke the on-PATH `fas`,
+  and a stale binary gives false failures. (`go test ./...` does not run `fas`.)
+
+### New-bug-mid-implementation rule
+
+If a spec-derived case surfaces a NEW matcher bug, open an issue, mark the case
+`xfail` referencing it, and proceed — ship the detection. The fix is a separate
+change; matcher behavior is out of this suite's scope.

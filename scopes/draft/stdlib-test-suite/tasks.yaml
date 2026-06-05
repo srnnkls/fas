@@ -70,14 +70,14 @@ tasks:
 
   - id: STS-010
     content: "CI/docs: wire fuzz/property seed-run into hk.pkl/mise test task (go test runs seed corpus without -fuzz); document oracle-independence + 'go install ./cmd/fas before scrut' + the new-bug-mid-implementation rule in AGENTS.md/test docs"
-    status: pending
+    status: completed
     active_form: "Wiring seed-run and documenting methodology"
     depends_on: [STS-002, STS-003, STS-004, STS-005, STS-006, STS-008, STS-009]
 
 meta:
   created: 2026-06-05
   last_updated: 2026-06-06
-  progress: 10/11
+  progress: 11/11
 
 phases:
   - name: "Phase 1: Foundation"
