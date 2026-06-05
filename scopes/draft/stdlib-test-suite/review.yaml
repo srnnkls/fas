@@ -361,3 +361,44 @@ implementation:
         - "INV-6 was missing from the Layers table — added a row pointing to internal/config/loader_test.go (fixed)"
       outcome: approved
   final_note: "pi-gemini flaked on batches 3-4 (empty/blocked output); ≥2-harness gate met by claude-opus + claude-sonnet every batch; pi reviewed batches 1-2 + fixed-batch-3 static."
+
+final_review:
+  status: completed
+  timestamp: 2026-06-06
+  reviewers: [claude-opus, claude-sonnet]   # pi-gemini flaky on later batches
+  acceptance_criteria:
+    ac1_R_bug: pass        # revert [rR]->r => hasRmRecursive table + FuzzRecursiveFlag seed red on -R/-Rf/-fR
+    ac2_systemTarget: pass # revert ($|/) => differential red on /etcfoo,/devops,/etc_foo
+    ac3_derivation: pass   # add catalog member => derivation red vs independent expected-member oracle (hardened, commit 18522ac)
+    ac4_drift: pass        # inline exported regex in a policy => drift guard red naming the helper
+    ac5_scrut_completeness: pass  # remove a near-miss allow => TestPolicyCoverage gap
+  functional_requirements:
+    spec_derived_tables: pass
+    differential: pass
+    fuzz_vs_reference_predicate: pass
+    catalog_binder_derivation: pass
+    composition_pos_neg: pass
+    scrut_completeness: pass
+    generalized_drift_guard: pass
+  gates: {oracle_independence: pass, correctness: pass, style: pass, scope: pass}
+  scope_compliance:
+    all_tasks_complete: true        # 10 implemented + STS-007 pre-existing
+    acceptance_criteria_met: true
+    test_only_scope_preserved: true # git diff base..HEAD -- cue/*/*.cue empty
+  integration:
+    go_test: "ok (all packages, deterministic, -count=1)"
+    scrut: "38/38 vs freshly go-installed fas"
+  strengths:
+    - "Every acceptance criterion is red-under-mutation (orchestrator + both final harnesses verified independently)"
+    - "Oracle independence enforced throughout; final review caught+fixed the one self-derived oracle (catalog<->binder), now pinned to an independent expected set"
+    - "Fuzz finds real divergences (NUL out-of-domain caught and scoped); seed-run is deterministic, -fuzz is manual/non-gating"
+    - "No matcher behavior changed — test-only scope honored"
+  overall_assessment: "Suite hardened around oracle independence; each known bug class maps to a layer that reds when its fix is reverted."
+  recommendation: ready_to_merge
+readiness:
+  all_batches_reviewed: true
+  critical_issues_resolved: true   # B3-C1 NUL crasher
+  high_issues_resolved: true       # B4-H1 doc accuracy; AC3 oracle-mirroring; B1/B3 --recursive=<x> documented
+  final_review_passed: true
+  tests_passing: true
+  test_only_scope_preserved: true
