@@ -159,6 +159,36 @@ typo: {
 	}
 }
 
+func TestLoadRules_TypoedAgentRef_Rejected(t *testing.T) {
+	// The motivating case: a typo'd built-in subagent constant. hook.#Agent has
+	// Explore/Plan/GeneralPurpose; .Explor is an undefined field nested under
+	// when.agent_type, which the loader's recursive when check must reject
+	// rather than admit as a rule that silently never matches.
+	const src = `package rules
+
+import "github.com/srnnkls/fas/cue/hook"
+
+orient: {
+	when: hook.#SubagentStart & hook.#Agent.Explor
+	then: inject: {
+		rule_id: "x"
+		channel: "agent"
+		text:    "y"
+	}
+}
+`
+	dir := t.TempDir()
+	writeRuleFile(t, dir, "orient.cue", src)
+
+	_, err := config.LoadRules(dir)
+	if err == nil {
+		t.Fatalf("expected error for typo'd hook.#Agent.Explor, got nil")
+	}
+	if msg := strings.ToLower(err.Error()); !strings.Contains(msg, "explor") {
+		t.Fatalf("error should name the undefined field, got: %s", err.Error())
+	}
+}
+
 func TestLoadRules_MultipleRulesDeterministicOrder(t *testing.T) {
 	dir := t.TempDir()
 	// Intentionally write in non-alphabetical order to prove sort is

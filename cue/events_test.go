@@ -201,6 +201,47 @@ func TestEvents_SubagentStart_PinsEventName(t *testing.T) {
 		`{hook_event_name: "Stop"}`)
 }
 
+func TestEvents_Agent_Matchers(t *testing.T) {
+	ctx := cuecontext.New()
+	pkg := loadSubPkg(t, ctx, subPkgHook)
+
+	agent := eventsLookupDef(t, pkg, "Agent")
+	if !agent.Exists() {
+		t.Fatal("definition #Agent not found")
+	}
+	// Each #Agent.X is a matcher struct that pins agent_type — composed with
+	// the event via `&`, not assigned to a field.
+	for field, want := range map[string]string{
+		"Explore":        "Explore",
+		"Plan":           "Plan",
+		"GeneralPurpose": "general-purpose",
+	} {
+		got, err := agent.LookupPath(cue.ParsePath(field + ".agent_type")).String()
+		if err != nil {
+			t.Errorf("#Agent.%s.agent_type: %v", field, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("#Agent.%s.agent_type = %q, want %q", field, got, want)
+		}
+	}
+}
+
+// agent_type stays an open string: a rule keyed on a built-in (via #Agent or a
+// literal) matches, AND a generic SubagentStart rule still matches a custom
+// subagent type. Closing the field would silently break the latter.
+func TestEvents_SubagentStart_AgentTypeOpenForCustom(t *testing.T) {
+	ctx := cuecontext.New()
+	pkg := loadSubPkg(t, ctx, subPkgHook)
+
+	eventsUnifyOK(t, ctx, pkg, "SubagentStart",
+		`{hook_event_name: "SubagentStart", agent_type: "Explore"}`)
+	eventsUnifyOK(t, ctx, pkg, "SubagentStart",
+		`{hook_event_name: "SubagentStart", agent_type: "task-implementer"}`)
+	eventsUnifyOK(t, ctx, pkg, "SubagentStart",
+		`{hook_event_name: "SubagentStart"}`)
+}
+
 func TestEvents_Notification_PinsEventName(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgHook)

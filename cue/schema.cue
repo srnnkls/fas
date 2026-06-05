@@ -16,7 +16,7 @@ package fas
 // reference it without pulling in the core-schema package. Keeping the copy
 // here standalone avoids a module-loader dependency for the in-process
 // schema cache.
-#HookEventName: "PreToolUse" | "PostToolUse" | "UserPromptSubmit" | "Stop" | "SubagentStart" | "Notification"
+#HookEventName: "PreToolUse" | "PostToolUse" | "UserPromptSubmit" | "Stop" | "SubagentStart" | "SubagentStop" | "Notification"
 
 #Input: {
 	hook_event_name: #HookEventName
@@ -26,8 +26,10 @@ package fas
 		parsed?:  #Parsed
 		...
 	}
-	session_id?: string
-	cwd?:        string
+	tool_response?: _
+	agent_type?:    string
+	session_id?:    string
+	cwd?:           string
 	signals?: {[string]: #SignalResult}
 	...
 }

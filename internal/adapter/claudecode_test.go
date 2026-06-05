@@ -79,6 +79,107 @@ func TestClaudeCode_ParseInput_ValidPreToolUseBash(t *testing.T) {
 	}
 }
 
+func TestClaudeCode_ParseInput_SubagentStart_CapturesAgentType(t *testing.T) {
+	raw := json.RawMessage(`{
+	  "hook_event_name": "SubagentStart",
+	  "agent_type": "Explore",
+	  "agent_id": "agent-xyz",
+	  "session_id": "sess-abc",
+	  "cwd": "/tmp/project"
+	}`)
+
+	in, err := newClaude().ParseInput(raw)
+	if err != nil {
+		t.Fatalf("ParseInput: unexpected error: %v", err)
+	}
+	if got, want := in.HookEventName, "SubagentStart"; got != want {
+		t.Errorf("HookEventName = %q, want %q", got, want)
+	}
+	if got, want := in.AgentType, "Explore"; got != want {
+		t.Errorf("AgentType = %q, want %q", got, want)
+	}
+}
+
+func TestClaudeCode_RenderOutput_SubagentStart_OmitsPermissionDecision(t *testing.T) {
+	out := envelope.OutputEnvelope{
+		Category:          envelope.Allowing,
+		AdditionalContext: "Run gestalt map first.",
+	}
+	raw, err := newClaude().RenderOutput(out, "SubagentStart")
+	if err != nil {
+		t.Fatalf("RenderOutput: %v", err)
+	}
+	if bytes.Contains(raw, []byte("permissionDecision")) {
+		t.Errorf("SubagentStart response must not carry permissionDecision; got %s", raw)
+	}
+	resp := decodeCCFromBytes(t, raw)
+	if got, want := resp.HookSpecificOutput.HookEventName, "SubagentStart"; got != want {
+		t.Errorf("hookEventName = %q, want %q", got, want)
+	}
+	if got, want := resp.HookSpecificOutput.AdditionalContext, "Run gestalt map first."; got != want {
+		t.Errorf("additionalContext = %q, want %q", got, want)
+	}
+}
+
+func TestClaudeCode_ParseInput_PostToolUse_CapturesToolResponse(t *testing.T) {
+	raw := json.RawMessage(`{
+	  "hook_event_name": "PostToolUse",
+	  "tool_name": "Grep",
+	  "tool_input": {"pattern": "foo"},
+	  "tool_response": {"numFiles": 0, "filenames": []}
+	}`)
+
+	in, err := newClaude().ParseInput(raw)
+	if err != nil {
+		t.Fatalf("ParseInput: unexpected error: %v", err)
+	}
+	if len(in.ToolResponse) == 0 {
+		t.Fatal("ToolResponse is empty; expected preserved raw object")
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(in.ToolResponse, &decoded); err != nil {
+		t.Fatalf("ToolResponse is not valid JSON: %v", err)
+	}
+	if got, ok := decoded["numFiles"]; !ok || got.(float64) != 0 {
+		t.Errorf("ToolResponse.numFiles = %v, want 0", got)
+	}
+}
+
+func TestClaudeCode_ParseInput_UserPromptSubmit_CapturesPrompt(t *testing.T) {
+	raw := json.RawMessage(`{
+	  "hook_event_name": "UserPromptSubmit",
+	  "prompt": "there is a bug in the parser"
+	}`)
+	in, err := newClaude().ParseInput(raw)
+	if err != nil {
+		t.Fatalf("ParseInput: unexpected error: %v", err)
+	}
+	if got, want := in.Prompt, "there is a bug in the parser"; got != want {
+		t.Errorf("Prompt = %q, want %q", got, want)
+	}
+}
+
+func TestClaudeCode_RenderOutput_SubagentStop_OmitsPermissionDecision(t *testing.T) {
+	out := envelope.OutputEnvelope{
+		Category:          envelope.Allowing,
+		AdditionalContext: "Implementation complete.",
+	}
+	raw, err := newClaude().RenderOutput(out, "SubagentStop")
+	if err != nil {
+		t.Fatalf("RenderOutput: %v", err)
+	}
+	if bytes.Contains(raw, []byte("permissionDecision")) {
+		t.Errorf("SubagentStop response must not carry permissionDecision; got %s", raw)
+	}
+	resp := decodeCCFromBytes(t, raw)
+	if got, want := resp.HookSpecificOutput.HookEventName, "SubagentStop"; got != want {
+		t.Errorf("hookEventName = %q, want %q", got, want)
+	}
+	if got, want := resp.HookSpecificOutput.AdditionalContext, "Implementation complete."; got != want {
+		t.Errorf("additionalContext = %q, want %q", got, want)
+	}
+}
+
 func TestClaudeCode_ParseInput_MissingHookEventName_Errors(t *testing.T) {
 	raw := json.RawMessage(`{"tool_name": "Bash", "tool_input": {"command": "ls"}}`)
 	if _, err := newClaude().ParseInput(raw); err == nil {
@@ -363,6 +464,11 @@ func renderAndDecode(t *testing.T, out envelope.OutputEnvelope, event string) cc
 	if err != nil {
 		t.Fatalf("RenderOutput: %v", err)
 	}
+	return decodeCCFromBytes(t, raw)
+}
+
+func decodeCCFromBytes(t *testing.T, raw []byte) ccResponse {
+	t.Helper()
 	var resp ccResponse
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		t.Fatalf("emitted JSON not parseable: %v (raw=%s)", err, raw)

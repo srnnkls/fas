@@ -856,6 +856,9 @@ func runPreprocessor(input *envelope.Input) (*envelope.Input, error) {
 	out := &envelope.Input{
 		HookEventName: input.HookEventName,
 		ToolName:      input.ToolName,
+		ToolResponse:  input.ToolResponse,
+		Prompt:        input.Prompt,
+		AgentType:     input.AgentType,
 		SessionID:     input.SessionID,
 		CWD:           input.CWD,
 		Signals:       input.Signals,
