@@ -21,6 +21,8 @@
 # not the whole component.
 /etcfoo	nomatch
 /devops	nomatch
+# underscore is a word char, so /etc_foo's leading component is etc_foo, not /etc.
+/etc_foo	nomatch
 /system	nomatch
 /bootloader	nomatch
 /procession	nomatch

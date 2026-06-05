@@ -268,3 +268,40 @@ implementation:
         - "stdlib_composition_test.go: composeChain reloads overlay per sub-package; perf only, not a gate [sonnet]"
         - "stdlib_derivation_test.go: key-set arm is near-vacuous given the comprehension; value-binding arm carries the teeth (present) [opus]"
       outcome: approved
+    - batch: 2
+      tasks: [STS-002, STS-003, STS-011]
+      files:
+        - cue/stdlib_test.go            # STS-002 spec-derived tables
+        - cue/stdlib_differential_test.go  # STS-003
+        - cue/stdlib_fuzz_test.go       # STS-011 spike scaffolding
+        - cue/testdata/system_paths.tsv # STS-003-fix: +/etc_foo nomatch
+      mutation_checks_by_orchestrator:
+        - "revert flag/rm.cue [rR]->r  => TestFlag_hasRmRecursive red on -R/-Rf/-fR; restore => green"
+        - "revert path/path.cue ($|/)  => differential red on /etcfoo,/devops,/etc_foo; restore => green"
+      spike_outcome:
+        sts_011: "live-fuzz viable (~52-143us/call, ~7k-19k matches/sec); STS-004 uses Go fuzz"
+      reviewers:
+        - {id: claude-opus, outcome: approved, issues: 0}
+        - {id: claude-sonnet, outcome: approved, issues: 3}     # all low
+        - {id: pi-gemini, outcome: changes_requested, issues: 3} # 2 medium (fixed), 1 low (non-issue)
+      synthesized:
+        gates: {oracle_independence: pass, differential_discipline: pass, spike_soundness: pass, coverage_preserved: pass, correctness: pass, style: pass, scope: pass}
+        go_test: pass
+      issues:
+        medium:
+          - id: B2-M1
+            source: [pi-gemini, claude-sonnet]
+            file: cue/stdlib_differential_test.go
+            finding: "whitelisted rows skipped without asserting corpus membership or documented divergence direction"
+            resolution: "whitelist keys now asserted present in corpus; each whitelisted row asserted systemTarget=false && systemInCommand=true"
+            status: resolved
+          - id: B2-M2
+            source: pi-gemini
+            file: cue/stdlib_differential_test.go
+            finding: "prefix-boundary meta-assertion used [A-Za-z0-9], omitting _ which systemInCommand treats as a word char; /etc_foo could be whitelisted undetected"
+            resolution: "meta-assertion now [A-Za-z0-9_]; added /etc_foo nomatch to system_paths.tsv (agreement set); mutation re-confirmed teeth on /etc_foo"
+            status: resolved
+      deferred_issues:
+        - "stdlib_fuzz_test.go: comment 'STS-004 extends this file' could read as already-present; trivial wording [sonnet]"
+        - "stdlib_test.go: HEAD's /home/user & 'rm -rf /etc' not literally present (covered by /home/x & 'rm -rf /x') [pi, non-issue]"
+      outcome: approved

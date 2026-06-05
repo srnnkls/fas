@@ -10,19 +10,19 @@ tasks:
 
   - id: STS-002
     content: "Rewrite per-matcher tests as spec-derived tables from testdata (flag.#hasRm*, command.#is*, action.#destructiveAction, escalation.#escalationCommand); include lookalikes, case variants, =value forms (flag long forms), pinned non-matches. tool.#Tool/hook.#Agent are NOT in this set — covered by STS-005."
-    status: pending
+    status: completed
     active_form: "Rewriting matcher tests as spec-derived tables"
     depends_on: [STS-001]
 
   - id: STS-003
     content: "Cross-matcher differential test (new file cue/stdlib_differential_test.go): systemTarget ↔ systemInCommand over the shared path corpus, restricted to the input subset where they SHOULD agree; exhaustive whitelist of documented divergences + meta-assertion that the whitelist contains no prefix-boundary case (e.g. /etcfoo)"
-    status: pending
+    status: completed
     active_form: "Writing systemTarget↔systemInCommand differential test"
     depends_on: [STS-001]
 
   - id: STS-011
     content: "SPIKE: extract a reusable compiled-matcher closure (load flag sub-package + lookupDef ONCE → func(token) bool doing only CompileString+Unify+Validate) and measure throughput; resolve token-level vs list-level model. Outcome gates STS-004: live Go fuzz if fast enough, else table-driven property test over the seed corpus."
-    status: pending
+    status: completed
     active_form: "Spiking reusable compiled-matcher throughput"
     depends_on: [STS-001]
 
@@ -77,7 +77,7 @@ tasks:
 meta:
   created: 2026-06-05
   last_updated: 2026-06-05
-  progress: 5/11
+  progress: 8/11
 
 phases:
   - name: "Phase 1: Foundation"

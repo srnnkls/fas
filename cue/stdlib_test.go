@@ -239,20 +239,25 @@ func TestPath_SystemPrefixes_Contents(t *testing.T) {
 	}
 }
 
+// corpusSubtestName keeps the empty-input row addressable as a subtest.
+func corpusSubtestName(input string) string {
+	if input == "" {
+		return "<empty>"
+	}
+	return input
+}
+
 func TestPath_SystemTarget_Regex(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgPath)
 
-	ok := []string{"/etc/passwd", "/sys/power", "/proc/1/status", "/boot/vmlinuz", "/dev/null", "/etc", "/dev"}
-	for _, s := range ok {
-		t.Run("match/"+s, func(t *testing.T) {
-			matchRegexExpectOK(t, ctx, pkg, "systemTarget", s)
-		})
-	}
-	bad := []string{"/home/user", "/tmp/foo", "./etc/foo", "etc/foo", "/var/log", "/etcfoo", "/devops", "/system", "/bootloader"}
-	for _, s := range bad {
-		t.Run("reject/"+s, func(t *testing.T) {
-			matchRegexExpectFail(t, ctx, pkg, "systemTarget", s)
+	for _, row := range loadCorpus(t, "system_paths.tsv") {
+		t.Run(corpusSubtestName(row.Input), func(t *testing.T) {
+			if row.Match {
+				matchRegexExpectOK(t, ctx, pkg, "systemTarget", row.Input)
+			} else {
+				matchRegexExpectFail(t, ctx, pkg, "systemTarget", row.Input)
+			}
 		})
 	}
 }
@@ -316,14 +321,13 @@ func TestEscalation_Command_Disjunction(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgEscalation)
 
-	for _, s := range []string{"sudo", "doas", "su"} {
-		t.Run("match/"+s, func(t *testing.T) {
-			matchRegexExpectOK(t, ctx, pkg, "escalationCommand", s)
-		})
-	}
-	for _, s := range []string{"sudoers", "subarachnoid", "sudoedit", ""} {
-		t.Run("reject/"+s, func(t *testing.T) {
-			matchRegexExpectFail(t, ctx, pkg, "escalationCommand", s)
+	for _, row := range loadCorpus(t, "escalation.tsv") {
+		t.Run(corpusSubtestName(row.Input), func(t *testing.T) {
+			if row.Match {
+				matchRegexExpectOK(t, ctx, pkg, "escalationCommand", row.Input)
+			} else {
+				matchRegexExpectFail(t, ctx, pkg, "escalationCommand", row.Input)
+			}
 		})
 	}
 }
@@ -381,15 +385,13 @@ func TestAction_Destructive_Disjunction(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgAction)
 
-	for _, s := range []string{"remove", "truncate", "delete", "drop", "destroy"} {
-		t.Run("match/"+s, func(t *testing.T) {
-			matchRegexExpectOK(t, ctx, pkg, "destructiveAction", s)
-		})
-	}
-	// "rm" is a command name, not a semantic verb — must not match.
-	for _, s := range []string{"rm", "psql", "cp", "removed", "removing"} {
-		t.Run("reject/"+s, func(t *testing.T) {
-			matchRegexExpectFail(t, ctx, pkg, "destructiveAction", s)
+	for _, row := range loadCorpus(t, "destructive_actions.tsv") {
+		t.Run(corpusSubtestName(row.Input), func(t *testing.T) {
+			if row.Match {
+				matchRegexExpectOK(t, ctx, pkg, "destructiveAction", row.Input)
+			} else {
+				matchRegexExpectFail(t, ctx, pkg, "destructiveAction", row.Input)
+			}
 		})
 	}
 }
@@ -490,10 +492,24 @@ func TestCommand_Matchers(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgCommand)
 
-	unifyExpectOK(t, ctx, pkg, "isRm", `{tool_input: {command: "rm -rf /etc"}}`)
-	unifyExpectFail(t, ctx, pkg, "isRm", `{tool_input: {command: "ls -la"}}`)
 	unifyExpectOK(t, ctx, pkg, "isTee", `{tool_input: {command: "tee /etc/hosts"}}`)
 	unifyExpectOK(t, ctx, pkg, "isMv", `{tool_input: {command: "mv a b"}}`)
+}
+
+func TestCommand_IsRm_Corpus(t *testing.T) {
+	ctx := cuecontext.New()
+	pkg := loadSubPkg(t, ctx, subPkgCommand)
+
+	for _, row := range loadCorpus(t, "commands.tsv") {
+		input := `{tool_input: {command: ` + cueStringLit(row.Input) + `}}`
+		t.Run(corpusSubtestName(row.Input), func(t *testing.T) {
+			if row.Match {
+				unifyExpectOK(t, ctx, pkg, "isRm", input)
+			} else {
+				unifyExpectFail(t, ctx, pkg, "isRm", input)
+			}
+		})
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -567,21 +583,15 @@ func TestFlag_hasRmRecursive(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgFlag)
 
-	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-r"))
-	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-rf"))
-	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-vrf"))
-	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("--recursive"))
-	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("--recursive=true"))
-
-	// Uppercase -R is recursive too (POSIX/GNU), and bundles may carry other
-	// letters such as -rd.
-	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-R"))
-	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-Rf"))
-	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-fR"))
-	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-rd"))
-
-	unifyExpectFail(t, ctx, pkg, "hasRmRecursive", flagsInput("-f"))
-	unifyExpectFail(t, ctx, pkg, "hasRmRecursive", flagsInput("--force"))
+	for _, row := range loadCorpus(t, "rm_flags.tsv") {
+		t.Run(corpusSubtestName(row.Input), func(t *testing.T) {
+			if row.Match {
+				unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput(row.Input))
+			} else {
+				unifyExpectFail(t, ctx, pkg, "hasRmRecursive", flagsInput(row.Input))
+			}
+		})
+	}
 }
 
 func TestFlag_hasRmInteractive(t *testing.T) {
