@@ -55,48 +55,80 @@ func keySet(m map[string]string) map[string]bool {
 	return out
 }
 
-// assertBijection: each catalog member k→v has a binder member k binding the
-// wire value v, and the binder carries no member the catalog lacks.
-func assertBijection(t *testing.T, axis string, catalog, binder map[string]string) {
+// assertTriad: independent expected oracle ↔ catalog ↔ binder must agree on the
+// member set (both directions) AND on the wire value each member pins.
+func assertTriad(t *testing.T, axis string, expected, catalog, binder map[string]string) {
 	t.Helper()
 
-	if diff := symmetricDiff(keySet(catalog), keySet(binder)); len(diff) > 0 {
-		t.Errorf("%s: member-set drift between catalog and binder: %s differ",
+	if diff := symmetricDiff(keySet(expected), keySet(catalog)); len(diff) > 0 {
+		t.Errorf("%s: member-set drift between expected oracle and catalog: %s differ",
+			axis, strings.Join(diff, ", "))
+	}
+	if diff := symmetricDiff(keySet(expected), keySet(binder)); len(diff) > 0 {
+		t.Errorf("%s: member-set drift between expected oracle and binder: %s differ",
 			axis, strings.Join(diff, ", "))
 	}
 
-	keys := make([]string, 0, len(catalog))
-	for k := range catalog {
+	keys := make([]string, 0, len(expected))
+	for k := range expected {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		bound, ok := binder[k]
-		if !ok {
-			t.Errorf("%s: catalog member %q has no binder member", axis, k)
-			continue
+		want := expected[k]
+		if got, ok := catalog[k]; !ok {
+			t.Errorf("%s: expected member %q absent from catalog", axis, k)
+		} else if got != want {
+			t.Errorf("%s: catalog member %q pins %q, expected %q", axis, k, got, want)
 		}
-		if bound != catalog[k] {
-			t.Errorf("%s: binder member %q binds %q, catalog pins %q",
-				axis, k, bound, catalog[k])
+		if got, ok := binder[k]; !ok {
+			t.Errorf("%s: expected member %q has no binder member", axis, k)
+		} else if got != want {
+			t.Errorf("%s: binder member %q binds %q, expected %q", axis, k, got, want)
 		}
 	}
 }
 
-// TestDerivation_CatalogBinderBijection: each binder member equals exactly one
-// catalog member by key AND by the wire value it pins; drop or mis-bind one and
-// this turns red even if the key set still matches.
+// TestDerivation_CatalogBinderBijection: the binder is a CUE comprehension over
+// the catalog, so the catalog alone cannot be the oracle — these expected maps
+// are the independent oracle, so adding/removing a tool or agent (or mis-binding
+// a wire value) requires an intentional edit here and cannot silently pass.
 func TestDerivation_CatalogBinderBijection(t *testing.T) {
+	wantTools := map[string]string{
+		"Agent":           "Agent",
+		"AskUserQuestion": "AskUserQuestion",
+		"Bash":            "Bash",
+		"Edit":            "Edit",
+		"Glob":            "Glob",
+		"Grep":            "Grep",
+		"NotebookEdit":    "NotebookEdit",
+		"Read":            "Read",
+		"TaskCreate":      "TaskCreate",
+		"TaskGet":         "TaskGet",
+		"TaskList":        "TaskList",
+		"TaskUpdate":      "TaskUpdate",
+		"TaskStop":        "TaskStop",
+		"TodoWrite":       "TodoWrite",
+		"WebFetch":        "WebFetch",
+		"WebSearch":       "WebSearch",
+		"Write":           "Write",
+	}
+	wantAgents := map[string]string{
+		"Explore":        "Explore",
+		"Plan":           "Plan",
+		"GeneralPurpose": "general-purpose",
+	}
+
 	ctx := cuecontext.New()
 	catalogPkg := loadSubPkg(t, ctx, subPkgCatalog)
 	toolPkg := loadSubPkg(t, ctx, subPkgTool)
 	hookPkg := loadSubPkg(t, ctx, subPkgHook)
 
-	assertBijection(t, "ToolName↔#Tool",
+	assertTriad(t, "ToolName↔#Tool", wantTools,
 		catalogMembers(t, catalogPkg, "ToolName"),
 		binderBindings(t, toolPkg, "Tool", "tool_name"))
 
-	assertBijection(t, "AgentType↔#Agent",
+	assertTriad(t, "AgentType↔#Agent", wantAgents,
 		catalogMembers(t, catalogPkg, "AgentType"),
 		binderBindings(t, hookPkg, "Agent", "agent_type"))
 }
