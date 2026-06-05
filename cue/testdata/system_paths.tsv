@@ -1,0 +1,43 @@
+# matcher: path.#systemTarget
+# Each row is a single path string.
+# match   = leading path component is exactly one of /etc /sys /proc /boot /dev
+# nomatch = leading component is not one of those system directories
+#
+# Bare system prefixes and paths beneath them.
+/etc	match
+/sys	match
+/proc	match
+/boot	match
+/dev	match
+/etc/passwd	match
+/etc/shadow	match
+/sys/power	match
+/proc/1/status	match
+/boot/vmlinuz	match
+/dev/null	match
+/dev/sda	match
+#
+# Lookalikes: the system name is only a prefix of the leading component,
+# not the whole component.
+/etcfoo	nomatch
+/devops	nomatch
+# underscore is a word char, so /etc_foo's leading component is etc_foo, not /etc.
+/etc_foo	nomatch
+/system	nomatch
+/bootloader	nomatch
+/procession	nomatch
+/sysctl	nomatch
+#
+# Non-system absolute paths.
+/home/x	nomatch
+/home/alice	nomatch
+/var/log	nomatch
+/tmp/foo	nomatch
+/usr/bin	nomatch
+/opt/app	nomatch
+#
+# Relative paths: no leading slash, so no system component.
+./etc/foo	nomatch
+etc/foo	nomatch
+dev/null	nomatch
+../etc	nomatch

@@ -1,0 +1,34 @@
+# matcher: command.#isRm
+# Each row is a full Bash command string.
+# match   = the leading token of the command is exactly `rm`
+# nomatch = the leading token is anything else
+#
+# A literal TAB in the input column is written as the two chars \t and
+# unescaped by the loader.
+#
+# Leading token is rm.
+rm	match
+rm -rf /x	match
+rm file	match
+rm -r ./build	match
+rm --recursive dir	match
+rm\t-rf /x	match
+#
+# Different command whose name starts with rm but is not rm.
+rmdir /x	nomatch
+rmdir	nomatch
+#
+# Other commands.
+ls -la	nomatch
+cat file	nomatch
+mv a b	nomatch
+cp a b	nomatch
+#
+# rm is present but not the leading token.
+sudo rm -rf /x	nomatch
+env rm file	nomatch
+FOO=1 rm file	nomatch
+echo rm	nomatch
+#
+# Leading whitespace shifts the leading token off the anchor.
+ rm -rf /x	nomatch

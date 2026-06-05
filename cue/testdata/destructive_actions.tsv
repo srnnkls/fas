@@ -1,0 +1,31 @@
+# matcher: action.#destructiveAction
+# Each row is a single semantic-verb token.
+# match   = exact destructive verb: delete drop remove destroy truncate
+# nomatch = command names and verb inflections are not semantic verbs
+#
+# Exact destructive verbs.
+delete	match
+drop	match
+remove	match
+destroy	match
+truncate	match
+#
+# Command names, not semantic verbs.
+rm	nomatch
+psql	nomatch
+dd	nomatch
+cp	nomatch
+#
+# Inflections of destructive verbs are not the exact verb.
+removed	nomatch
+removing	nomatch
+deletes	nomatch
+deleted	nomatch
+dropped	nomatch
+destroyed	nomatch
+truncated	nomatch
+#
+# Unrelated verbs.
+read	nomatch
+list	nomatch
+create	nomatch

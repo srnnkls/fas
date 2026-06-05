@@ -27,6 +27,9 @@ local runners = new Mapping<String, Step> {
     check = "cd {{workspace}} && go build ./..."
     stomp = true
   }
+  // Also replays the fuzz seed corpora (e.g. FuzzRecursiveFlag) as the
+  // deterministic gate; live `-fuzz` deepening is manual/out-of-gate
+  // (`mise run test-fuzz`).
   ["test"] {
     glob = goGlobs
     workspace_indicator = "go.mod"

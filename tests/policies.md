@@ -166,6 +166,22 @@ $ cat << 'EOF' |
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```
 
+### Allows git push -n (dry-run, not the --no-verify bypass)
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "git push -n"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
+```
+
 ## Destructive Home-Directory Commands
 
 `rm -rf $HOME` and `rm -rf ~` are near-certain mistakes. Policy denies them.

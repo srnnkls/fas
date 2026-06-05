@@ -28,6 +28,10 @@ run = "hk run test --all"
 description = "Run Go unit tests"
 run = "go test ./..."
 
+[tasks.test-fuzz]
+description = "Deepen the rm-flag fuzz target (manual, non-gating)"
+run = "go test ./cue/ -run FuzzRecursiveFlag -fuzz=FuzzRecursiveFlag -fuzztime=60s"
+
 [tasks.test-integration]
 description = "Run scrut integration tests"
 depends = ["install"]
