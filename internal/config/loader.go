@@ -341,9 +341,9 @@ func wrapFieldLoadError(rulePath, field string, err error) error {
 
 // buildStdlibOverlay materializes the embedded fas stdlib inside the
 // synthetic module's `cue.mod/pkg/github.com/srnnkls/fas/cue/` tree so
-// every sub-package import (`.../cue/hook`, `.../cue/tool`, `.../cue/path`,
-// `.../cue/escalation`, `.../cue/action`, `.../cue/flag`) resolves from any
-// rule file.
+// every sub-package import (`.../cue/catalog`, `.../cue/hook`, `.../cue/tool`,
+// `.../cue/command`, `.../cue/path`, `.../cue/escalation`, `.../cue/action`,
+// `.../cue/flag`) resolves from any rule file.
 //
 // Sub-directory structure is preserved: `hook/events.cue` lands at
 // `pkg/.../cue/hook/events.cue` so CUE's loader treats the directory as its

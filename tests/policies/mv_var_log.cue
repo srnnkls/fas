@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"github.com/srnnkls/fas/cue/command"
 	"github.com/srnnkls/fas/cue/hook"
 	"github.com/srnnkls/fas/cue/path"
 	"github.com/srnnkls/fas/cue/tool"
@@ -10,7 +11,7 @@ import (
 // incident response depends on. An attacker clearing /var/log/auth.log before
 // exfiltrating data is a classic cover-your-tracks step.
 mv_var_log: {
-	when: hook.#PreToolUse & tool.#isBash & tool.#isMv & {
+	when: hook.#PreToolUse & tool.#Tool.Bash & command.#isMv & {
 		tool_input: command: (path.#InCommandRe & {#prefixes: ["/var/log"]}).out
 	}
 	then: deny: {

@@ -42,8 +42,10 @@ const stdlibModulePath = "fas.test/stdlib@v0"
 type subPkg string
 
 const (
+	subPkgCatalog    subPkg = "catalog"
 	subPkgHook       subPkg = "hook"
 	subPkgTool       subPkg = "tool"
+	subPkgCommand    subPkg = "command"
 	subPkgPath       subPkg = "path"
 	subPkgEscalation subPkg = "escalation"
 	subPkgAction     subPkg = "action"
@@ -241,13 +243,13 @@ func TestPath_SystemTarget_Regex(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgPath)
 
-	ok := []string{"/etc/passwd", "/sys/power", "/proc/1/status", "/boot/vmlinuz", "/dev/null"}
+	ok := []string{"/etc/passwd", "/sys/power", "/proc/1/status", "/boot/vmlinuz", "/dev/null", "/etc", "/dev"}
 	for _, s := range ok {
 		t.Run("match/"+s, func(t *testing.T) {
 			matchRegexExpectOK(t, ctx, pkg, "systemTarget", s)
 		})
 	}
-	bad := []string{"/home/user", "/tmp/foo", "./etc/foo", "etc/foo", "/var/log"}
+	bad := []string{"/home/user", "/tmp/foo", "./etc/foo", "etc/foo", "/var/log", "/etcfoo", "/devops", "/system", "/bootloader"}
 	for _, s := range bad {
 		t.Run("reject/"+s, func(t *testing.T) {
 			matchRegexExpectFail(t, ctx, pkg, "systemTarget", s)
@@ -275,6 +277,8 @@ func TestPath_HasSystemTarget_RejectsRelative(t *testing.T) {
 		`{tool_input: {parsed: {targets: ["./etc/foo"]}}}`)
 	unifyExpectFail(t, ctx, pkg, "hasSystemTarget",
 		`{tool_input: {parsed: {targets: ["/home/alice"]}}}`)
+	unifyExpectFail(t, ctx, pkg, "hasSystemTarget",
+		`{tool_input: {parsed: {targets: ["/devops"]}}}`)
 	unifyExpectFail(t, ctx, pkg, "hasSystemTarget",
 		`{tool_input: {parsed: {targets: []}}}`)
 }
@@ -409,23 +413,91 @@ func TestAction_HasDestructiveAction_VerbsOnly(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// tool package — #isBash
+// catalog package — #ToolName, #AgentType, #EventName identities
 // ---------------------------------------------------------------------------
 
-func TestTool_IsBash(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgTool)
+func catalogString(t *testing.T, pkg cue.Value, def, member string) string {
+	t.Helper()
+	v := pkg.LookupPath(cue.MakePath(cue.Def(def))).LookupPath(cue.ParsePath(member))
+	s, err := v.String()
+	if err != nil {
+		t.Fatalf("catalog.#%s.%s: %v", def, member, err)
+	}
+	return s
+}
 
-	unifyExpectOK(t, ctx, pkg, "isBash",
-		`{tool_name: "Bash"}`)
-	unifyExpectFail(t, ctx, pkg, "isBash",
-		`{tool_name: "Write"}`)
-	unifyExpectFail(t, ctx, pkg, "isBash",
-		`{tool_name: "Edit"}`)
+func TestCatalog_Identities(t *testing.T) {
+	ctx := cuecontext.New()
+	pkg := loadSubPkg(t, ctx, subPkgCatalog)
+
+	for _, tc := range []struct{ def, member, want string }{
+		{"ToolName", "Bash", "Bash"},
+		{"ToolName", "Write", "Write"},
+		{"ToolName", "WebFetch", "WebFetch"},
+		{"AgentType", "Explore", "Explore"},
+		{"AgentType", "GeneralPurpose", "general-purpose"},
+		{"EventName", "PreToolUse", "PreToolUse"},
+		{"EventName", "SubagentStop", "SubagentStop"},
+	} {
+		if got := catalogString(t, pkg, tc.def, tc.member); got != tc.want {
+			t.Errorf("catalog.#%s.%s = %q, want %q", tc.def, tc.member, got, tc.want)
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
-// flag package — #HasFlagMatching plus rm-specific helpers
+// tool package — #Tool matchers (bound from catalog.#ToolName), #KnownTool
+// ---------------------------------------------------------------------------
+
+func TestTool_Tool_Matchers(t *testing.T) {
+	ctx := cuecontext.New()
+	pkg := loadSubPkg(t, ctx, subPkgTool)
+
+	toolDef := lookupDef(t, pkg, "Tool")
+	bash := toolDef.LookupPath(cue.ParsePath("Bash"))
+	if !bash.Exists() {
+		t.Fatal("#Tool.Bash not found")
+	}
+
+	okVal := ctx.CompileString(`{tool_name: "Bash"}`, cue.Filename("ok.cue"))
+	if err := bash.Unify(okVal).Validate(cue.Concrete(false)); err != nil {
+		t.Errorf("#Tool.Bash should match Bash, got: %v", err)
+	}
+	writeVal := ctx.CompileString(`{tool_name: "Write"}`, cue.Filename("write.cue"))
+	if err := bash.Unify(writeVal).Validate(cue.Concrete(false)); err == nil {
+		t.Error("#Tool.Bash should not match Write")
+	}
+	write := toolDef.LookupPath(cue.ParsePath("Write"))
+	if err := write.Unify(writeVal).Validate(cue.Concrete(false)); err != nil {
+		t.Errorf("#Tool.Write should match Write, got: %v", err)
+	}
+}
+
+func TestTool_KnownTool_Disjunction(t *testing.T) {
+	ctx := cuecontext.New()
+	pkg := loadSubPkg(t, ctx, subPkgTool)
+
+	unifyExpectOK(t, ctx, pkg, "KnownTool", `{tool_name: "Bash"}`)
+	unifyExpectOK(t, ctx, pkg, "KnownTool", `{tool_name: "WebSearch"}`)
+	unifyExpectFail(t, ctx, pkg, "KnownTool", `{tool_name: "DefinitelyNotABuiltin"}`)
+}
+
+// ---------------------------------------------------------------------------
+// command package — Bash command matchers (rm, tee, …)
+// ---------------------------------------------------------------------------
+
+func TestCommand_Matchers(t *testing.T) {
+	ctx := cuecontext.New()
+	pkg := loadSubPkg(t, ctx, subPkgCommand)
+
+	unifyExpectOK(t, ctx, pkg, "isRm", `{tool_input: {command: "rm -rf /etc"}}`)
+	unifyExpectFail(t, ctx, pkg, "isRm", `{tool_input: {command: "ls -la"}}`)
+	unifyExpectOK(t, ctx, pkg, "isTee", `{tool_input: {command: "tee /etc/hosts"}}`)
+	unifyExpectOK(t, ctx, pkg, "isMv", `{tool_input: {command: "mv a b"}}`)
+}
+
+// ---------------------------------------------------------------------------
+// flag package — #hasFlagMatching plus rm-specific helpers
 // ---------------------------------------------------------------------------
 
 // flagsInput builds a CUE literal of the shape
@@ -439,105 +511,114 @@ func flagsInput(tokens ...string) string {
 	return "{tool_input: {parsed: {flags: [" + strings.Join(quoted, ", ") + "]}}}"
 }
 
-func TestFlag_HasRmForce_LongForms(t *testing.T) {
+func TestFlag_hasRmForce_LongForms(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgFlag)
 
-	unifyExpectOK(t, ctx, pkg, "HasRmForce", flagsInput("--force"))
-	unifyExpectOK(t, ctx, pkg, "HasRmForce", flagsInput("--force=value"))
-	unifyExpectOK(t, ctx, pkg, "HasRmForce", flagsInput("-force"))
-	unifyExpectOK(t, ctx, pkg, "HasRmForce", flagsInput("-force=value"))
+	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("--force"))
+	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("--force=value"))
+	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-force"))
+	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-force=value"))
 }
 
-func TestFlag_HasRmForce_ShortCombos(t *testing.T) {
+func TestFlag_hasRmForce_ShortCombos(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgFlag)
 
-	unifyExpectOK(t, ctx, pkg, "HasRmForce", flagsInput("-f"))
-	unifyExpectOK(t, ctx, pkg, "HasRmForce", flagsInput("-rf"))
-	unifyExpectOK(t, ctx, pkg, "HasRmForce", flagsInput("-vrf"))
-	unifyExpectOK(t, ctx, pkg, "HasRmForce", flagsInput("-rfi"))
+	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-f"))
+	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-rf"))
+	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-Rf"))
+	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-vrf"))
+	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-rfi"))
 
 	// Letter-order permutation: 'f' must match regardless of its position.
-	unifyExpectOK(t, ctx, pkg, "HasRmForce", flagsInput("-fvr"))
-	unifyExpectOK(t, ctx, pkg, "HasRmRecursive", flagsInput("-fvr"))
-	unifyExpectOK(t, ctx, pkg, "HasRmVerbose", flagsInput("-fvr"))
+	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-fvr"))
+	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-fvr"))
+	unifyExpectOK(t, ctx, pkg, "hasRmVerbose", flagsInput("-fvr"))
 }
 
-func TestFlag_HasRmForce_RejectsMissingLetter(t *testing.T) {
+func TestFlag_hasRmForce_RejectsMissingLetter(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgFlag)
 
-	unifyExpectFail(t, ctx, pkg, "HasRmForce", flagsInput("-r"))
-	unifyExpectFail(t, ctx, pkg, "HasRmForce", flagsInput("-ri"))
-	unifyExpectFail(t, ctx, pkg, "HasRmForce", flagsInput("--recursive"))
+	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-r"))
+	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-ri"))
+	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("--recursive"))
 }
 
-func TestFlag_HasRmForce_AnchorCorrectness(t *testing.T) {
+func TestFlag_hasRmForce_AnchorCorrectness(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgFlag)
 
-	unifyExpectFail(t, ctx, pkg, "HasRmForce", flagsInput("-force-feed"))
-	unifyExpectFail(t, ctx, pkg, "HasRmForce", flagsInput("--forceful"))
+	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-force-feed"))
+	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("--forceful"))
 }
 
-func TestFlag_HasRmForce_RejectsUnknownLetters(t *testing.T) {
+func TestFlag_hasRmForce_RejectsUnknownLetters(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgFlag)
 
-	unifyExpectFail(t, ctx, pkg, "HasRmForce", flagsInput("-x"))
-	unifyExpectFail(t, ctx, pkg, "HasRmForce", flagsInput("-xyz"))
-	unifyExpectFail(t, ctx, pkg, "HasRmForce", flagsInput("-abc"))
+	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-x"))
+	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-xyz"))
+	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-abc"))
 }
 
-func TestFlag_HasRmRecursive(t *testing.T) {
+func TestFlag_hasRmRecursive(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgFlag)
 
-	unifyExpectOK(t, ctx, pkg, "HasRmRecursive", flagsInput("-r"))
-	unifyExpectOK(t, ctx, pkg, "HasRmRecursive", flagsInput("-rf"))
-	unifyExpectOK(t, ctx, pkg, "HasRmRecursive", flagsInput("-vrf"))
-	unifyExpectOK(t, ctx, pkg, "HasRmRecursive", flagsInput("--recursive"))
-	unifyExpectOK(t, ctx, pkg, "HasRmRecursive", flagsInput("--recursive=true"))
+	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-r"))
+	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-rf"))
+	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-vrf"))
+	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("--recursive"))
+	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("--recursive=true"))
 
-	unifyExpectFail(t, ctx, pkg, "HasRmRecursive", flagsInput("-f"))
-	unifyExpectFail(t, ctx, pkg, "HasRmRecursive", flagsInput("--force"))
+	// Uppercase -R is recursive too (POSIX/GNU), and bundles may carry other
+	// letters such as -rd.
+	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-R"))
+	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-Rf"))
+	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-fR"))
+	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-rd"))
+
+	unifyExpectFail(t, ctx, pkg, "hasRmRecursive", flagsInput("-f"))
+	unifyExpectFail(t, ctx, pkg, "hasRmRecursive", flagsInput("--force"))
 }
 
-func TestFlag_HasRmInteractive(t *testing.T) {
+func TestFlag_hasRmInteractive(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgFlag)
 
-	unifyExpectOK(t, ctx, pkg, "HasRmInteractive", flagsInput("-i"))
-	unifyExpectOK(t, ctx, pkg, "HasRmInteractive", flagsInput("-ri"))
-	unifyExpectOK(t, ctx, pkg, "HasRmInteractive", flagsInput("--interactive"))
-	unifyExpectFail(t, ctx, pkg, "HasRmInteractive", flagsInput("-f"))
-	unifyExpectFail(t, ctx, pkg, "HasRmInteractive", flagsInput("-x"))
+	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("-i"))
+	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("-I"))
+	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("-ri"))
+	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("--interactive"))
+	unifyExpectFail(t, ctx, pkg, "hasRmInteractive", flagsInput("-f"))
+	unifyExpectFail(t, ctx, pkg, "hasRmInteractive", flagsInput("-x"))
 
 	// Two-letter permutation: -if contains both 'i' and 'f'.
-	unifyExpectOK(t, ctx, pkg, "HasRmInteractive", flagsInput("-if"))
-	unifyExpectOK(t, ctx, pkg, "HasRmForce", flagsInput("-if"))
+	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("-if"))
+	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-if"))
 }
 
-func TestFlag_HasRmVerbose(t *testing.T) {
+func TestFlag_hasRmVerbose(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgFlag)
 
-	unifyExpectOK(t, ctx, pkg, "HasRmVerbose", flagsInput("-v"))
-	unifyExpectOK(t, ctx, pkg, "HasRmVerbose", flagsInput("-vrf"))
-	unifyExpectOK(t, ctx, pkg, "HasRmVerbose", flagsInput("--verbose"))
-	unifyExpectOK(t, ctx, pkg, "HasRmVerbose", flagsInput("--verbose=1"))
-	unifyExpectFail(t, ctx, pkg, "HasRmVerbose", flagsInput("-r"))
+	unifyExpectOK(t, ctx, pkg, "hasRmVerbose", flagsInput("-v"))
+	unifyExpectOK(t, ctx, pkg, "hasRmVerbose", flagsInput("-vrf"))
+	unifyExpectOK(t, ctx, pkg, "hasRmVerbose", flagsInput("--verbose"))
+	unifyExpectOK(t, ctx, pkg, "hasRmVerbose", flagsInput("--verbose=1"))
+	unifyExpectFail(t, ctx, pkg, "hasRmVerbose", flagsInput("-r"))
 }
 
 // AND composition — building a rule condition that requires multiple flag
 // constraints at once.
-func TestFlag_HasRmForce_AND_Recursive(t *testing.T) {
+func TestFlag_hasRmForce_AND_Recursive(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgFlag)
 
-	force := lookupDef(t, pkg, "HasRmForce")
-	recursive := lookupDef(t, pkg, "HasRmRecursive")
+	force := lookupDef(t, pkg, "hasRmForce")
+	recursive := lookupDef(t, pkg, "hasRmRecursive")
 	both := force.Unify(recursive)
 
 	okVal := ctx.CompileString(flagsInput("-rf"), cue.Filename("both-ok.cue"))
@@ -545,7 +626,7 @@ func TestFlag_HasRmForce_AND_Recursive(t *testing.T) {
 		t.Fatalf("compile -rf input: %v", err)
 	}
 	if err := both.Unify(okVal).Validate(cue.Concrete(false)); err != nil {
-		t.Errorf("expected HasRmForce & HasRmRecursive to match -rf, got %v", err)
+		t.Errorf("expected hasRmForce & hasRmRecursive to match -rf, got %v", err)
 	}
 
 	failVal := ctx.CompileString(flagsInput("-f"), cue.Filename("both-fail.cue"))
@@ -553,47 +634,57 @@ func TestFlag_HasRmForce_AND_Recursive(t *testing.T) {
 		t.Fatalf("compile -f input: %v", err)
 	}
 	if err := both.Unify(failVal).Validate(cue.Concrete(false)); err == nil {
-		t.Errorf("expected HasRmForce & HasRmRecursive to fail on -f, but it matched")
+		t.Errorf("expected hasRmForce & hasRmRecursive to fail on -f, but it matched")
 	}
 }
 
-// The shared building block #HasFlagMatching must be usable directly with a
+// The shared building block #hasFlagMatching must be usable directly with a
 // #re parameter so per-tool flag files can build on it without duplication.
-func TestFlag_HasFlagMatching_BuildingBlock(t *testing.T) {
+func TestFlag_hasFlagMatching_BuildingBlock(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgFlag)
 
-	cons := lookupDef(t, pkg, "HasFlagMatching")
+	cons := lookupDef(t, pkg, "hasFlagMatching")
 	withRE := cons.Unify(ctx.CompileString(`{#re: "^--debug$"}`, cue.Filename("re.cue")))
 	if err := withRE.Err(); err != nil {
-		t.Fatalf("setting #re on #HasFlagMatching errored: %v", err)
+		t.Fatalf("setting #re on #hasFlagMatching errored: %v", err)
 	}
 
 	okVal := ctx.CompileString(flagsInput("--debug"), cue.Filename("debug-ok.cue"))
 	if err := withRE.Unify(okVal).Validate(cue.Concrete(false)); err != nil {
-		t.Errorf("expected #HasFlagMatching{#re:^--debug$} to match --debug, got %v", err)
+		t.Errorf("expected #hasFlagMatching{#re:^--debug$} to match --debug, got %v", err)
 	}
 
 	failVal := ctx.CompileString(flagsInput("--quiet"), cue.Filename("debug-fail.cue"))
 	if err := withRE.Unify(failVal).Validate(cue.Concrete(false)); err == nil {
-		t.Errorf("expected #HasFlagMatching{#re:^--debug$} to reject --quiet")
+		t.Errorf("expected #hasFlagMatching{#re:^--debug$} to reject --quiet")
 	}
 }
 
-// The rm short-letter class is a concrete string constant so regex
-// construction is deterministic at parse time.
-func TestFlag_RmShortClass_IsConcreteString(t *testing.T) {
+// Cross-subfield composition: command.#isRm touches tool_input.command while
+// flag.#hasRmRecursive touches tool_input.parsed.flags. Both matchers must
+// stay open at every level of tool_input so they unify under & without a
+// "field not allowed" error.
+func TestCompose_CommandAndFlag_Unify(t *testing.T) {
 	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgFlag)
+	cmdPkg := loadSubPkg(t, ctx, subPkgCommand)
+	flagPkg := loadSubPkg(t, ctx, subPkgFlag)
 
-	v := lookupDef(t, pkg, "rmShortClass")
-	got, err := v.String()
-	if err != nil {
-		t.Fatalf("#rmShortClass not a concrete string: %v", err)
+	isRm := lookupDef(t, cmdPkg, "isRm")
+	hasRecursive := lookupDef(t, flagPkg, "hasRmRecursive")
+	composed := isRm.Unify(hasRecursive)
+	if err := composed.Err(); err != nil {
+		t.Fatalf("command.#isRm & flag.#hasRmRecursive errored: %v", err)
 	}
-	for _, want := range []rune{'f', 'r', 'i', 'v'} {
-		if !strings.ContainsRune(got, want) {
-			t.Errorf("#rmShortClass %q missing letter %q", got, string(want))
-		}
+
+	okVal := ctx.CompileString(
+		`{tool_input: {command: "rm -rf x", parsed: {flags: ["-rf"]}}}`,
+		cue.Filename("compose-ok.cue"),
+	)
+	if err := okVal.Err(); err != nil {
+		t.Fatalf("compile compose input: %v", err)
+	}
+	if err := composed.Unify(okVal).Validate(cue.Concrete(false)); err != nil {
+		t.Errorf("expected command.#isRm & flag.#hasRmRecursive to match composed input, got: %v", err)
 	}
 }

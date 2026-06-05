@@ -1,28 +1,23 @@
-// Package tool defines per-tool matchers for the `tool_name` dispatched by
-// the harness. New tool matchers (Write, Edit, etc.) get added here as the
-// policy surface grows.
+// Package tool binds the tool identities in cue/catalog to the harness wire
+// field `tool_name`. Rules match a specific tool by composing the event with a
+// member — hook.#PreToolUse & tool.#Tool.Bash. Matchers over the *command* a
+// Bash call runs (rm, tee, …) live in cue/command.
 package tool
 
-// #isBash: the invocation targets the Bash tool.
-#isBash: {
-	tool_name: "Bash"
-	...
+import "github.com/srnnkls/fas/cue/catalog"
+
+// #Tool is the matcher set for the built-in tools: each member pins tool_name
+// to one catalog identity, so it composes with an event via `&` the same way
+// the command and path matchers do. A typo'd member (tool.#Tool.Bsh) is an
+// undefined field the loader rejects, not a silent non-match. The event shapes
+// keep tool_name an open string, so custom MCP/skill tools still match via
+// {tool_name: "your-tool"}.
+#Tool: {
+	for k, v in catalog.#ToolName {
+		(k): {tool_name: v, ...}
+	}
 }
 
-// Write-class command matchers — unify with #isBash to constrain the
-// specific executable invoked inside the shell.
-
-#isRm: {tool_input: command:       =~"^rm\\b", ...}
-#isChmod: {tool_input: command:    =~"^chmod\\b", ...}
-#isChown: {tool_input: command:    =~"^chown\\b", ...}
-#isChgrp: {tool_input: command:    =~"^chgrp\\b", ...}
-#isDd: {tool_input: command:       =~"^dd\\b", ...}
-#isTruncate: {tool_input: command: =~"^truncate\\b", ...}
-#isTee: {tool_input: command:      =~"^tee\\b", ...}
-#isInstall: {tool_input: command:  =~"^install\\b", ...}
-#isCp: {tool_input: command:       =~"^cp\\b", ...}
-#isMv: {tool_input: command:       =~"^mv\\b", ...}
-#isLn: {tool_input: command:       =~"^ln\\b", ...}
-#isMkdir: {tool_input: command:    =~"^mkdir\\b", ...}
-#isRmdir: {tool_input: command:    =~"^rmdir\\b", ...}
-#isTouch: {tool_input: command:    =~"^touch\\b", ...}
+// #KnownTool matches any built-in tool — the disjunction of the #Tool members.
+// Compose as hook.#PreToolUse & tool.#KnownTool.
+#KnownTool: or([for _, m in #Tool {m}])

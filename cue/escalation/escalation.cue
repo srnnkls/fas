@@ -16,6 +16,6 @@ import "list"
 // `tool_input.parsed.attributes.prefix_commands` contains at least one entry
 // matching #escalationCommand.
 #hasPrivilegeEscalation: {
-	tool_input: parsed: attributes: prefix_commands: list.MatchN(>0, #escalationCommand)
+	tool_input: {parsed: {attributes: {prefix_commands: list.MatchN(>0, #escalationCommand), ...}, ...}, ...}
 	...
 }

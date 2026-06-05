@@ -17,11 +17,13 @@ dialect and no embedded scripting; the rule language is CUE itself.
 
 The runtime reads JSON on stdin and writes its decision on stdout. An
 embedded stdlib bundles rule-authoring vocabularies for the domains *fas*
-already knows about — `cue/hook` and `cue/tool` for AI coding agent
-harnesses (`PreToolUse`, `PostToolUse`, …), `cue/path` for filesystem
-patterns, `cue/flag` for command-line flag shapes, and so on — so rules
-compose pre-built constraints (`hook.#PreToolUse & tool.#isBash &
-path.#hasSystemTarget`) instead of restating each protocol from scratch.
+already knows about — `cue/catalog` for the harness-agnostic vocabulary of
+tool, subagent, and event names; `cue/hook` and `cue/tool` for AI coding
+agent harnesses (`PreToolUse`, `PostToolUse`, …); `cue/command` for the
+executable inside a Bash call; `cue/path` for filesystem patterns; `cue/flag`
+for command-line flag shapes; and so on — so rules compose pre-built
+constraints (`hook.#PreToolUse & tool.#Tool.Bash & path.#hasSystemTarget`)
+instead of restating each protocol from scratch.
 
 ## Install
 
@@ -53,7 +55,7 @@ import (
 )
 
 no_rm_home: {
-	when: hook.#PreToolUse & tool.#isBash & {
+	when: hook.#PreToolUse & tool.#Tool.Bash & {
 		tool_input: {
 			command: =~"^rm\\b"
 			parsed: {

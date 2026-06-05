@@ -4,11 +4,11 @@ package flag
 
 import "list"
 
-// #HasFlagMatching is the generic building block: unify with `{#re: "^--x$"}`
+// #hasFlagMatching is the generic building block: unify with `{#re: "^--x$"}`
 // to produce a constraint that matches any `tool_input.parsed.flags` list
 // containing at least one entry matching the regex.
-#HasFlagMatching: {
+#hasFlagMatching: {
 	#re: string
-	tool_input: parsed: flags: list.MatchN(>0, =~#re)
+	tool_input: {parsed: {flags: list.MatchN(>0, =~#re), ...}, ...}
 	...
 }

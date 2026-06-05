@@ -62,7 +62,7 @@ import (
 )
 
 system_path: {
-	when: hook.#PreToolUse & tool.#isBash & path.#hasSystemTarget
+	when: hook.#PreToolUse & tool.#Tool.Bash & path.#hasSystemTarget
 	then: deny: {
 		rule_id: "sys-path"
 		reason:  "System path blocked"
@@ -120,7 +120,7 @@ import (
 )
 
 rm_force: {
-	when: hook.#PreToolUse & tool.#isBash & flag.#HasRmForce
+	when: hook.#PreToolUse & tool.#Tool.Bash & flag.#hasRmForce
 	then: deny: {
 		rule_id: "rm-force"
 		reason:  "rm -f blocked"
@@ -132,7 +132,7 @@ rm_force: {
 
 	rules, err := config.LoadRules(dir)
 	if err != nil {
-		t.Fatalf("LoadRules must resolve flag.#HasRmForce, got: %v", err)
+		t.Fatalf("LoadRules must resolve flag.#hasRmForce, got: %v", err)
 	}
 	if len(rules) != 1 {
 		t.Fatalf("expected 1 rule, got %d", len(rules))
@@ -146,7 +146,7 @@ rm_force: {
 		tool_input: parsed: flags: ["-rf"]
 	}`)
 	if !ruleMatches(t, r, match) {
-		t.Error("rule using flag.#HasRmForce should match flags=[-rf]")
+		t.Error("rule using flag.#hasRmForce should match flags=[-rf]")
 	}
 
 	miss := compileInput(t, ctx, `{
@@ -155,7 +155,7 @@ rm_force: {
 		tool_input: parsed: flags: ["-x"]
 	}`)
 	if ruleMatches(t, r, miss) {
-		t.Error("rule using flag.#HasRmForce must NOT match flags=[-x]")
+		t.Error("rule using flag.#hasRmForce must NOT match flags=[-x]")
 	}
 }
 
@@ -218,7 +218,7 @@ import (
 )
 
 typed_system_path: {
-	when: hook.#PreToolUse & tool.#isBash & path.#hasSystemTarget
+	when: hook.#PreToolUse & tool.#Tool.Bash & path.#hasSystemTarget
 	then: deny: {
 		rule_id: "typed-pretooluse"
 		reason:  "typed #PreToolUse + system path"

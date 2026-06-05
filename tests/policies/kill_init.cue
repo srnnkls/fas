@@ -12,16 +12,16 @@ import (
 // and reason keep the policy surface legible while still allowing harmless
 // signal delivery to ordinary processes.
 //
-// `|` binds looser than `&`, so the outer `hook.#PreToolUse & tool.#isBash`
+// `|` binds looser than `&`, so the outer `hook.#PreToolUse & tool.#Tool.Bash`
 // is repeated on each disjunct to keep the grouping explicit and readable.
 kill_init: {
 	when: {
 		hook.#PreToolUse
-		tool.#isBash
+		tool.#Tool.Bash
 		tool_input: command: =~"^kill\\s+(-[A-Z0-9]+\\s+)?1(\\s|$)"
 	} | {
 		hook.#PreToolUse
-		tool.#isBash
+		tool.#Tool.Bash
 		tool_input: command: =~"^killall\\s+(-[A-Z0-9]+\\s+)?(systemd|init)(\\s|$)"
 	}
 	then: deny: {

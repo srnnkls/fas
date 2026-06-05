@@ -16,6 +16,6 @@ import "list"
 // #hasDestructiveAction asserts that `tool_input.parsed.actions` contains at
 // least one entry matching #destructiveAction.
 #hasDestructiveAction: {
-	tool_input: parsed: actions: list.MatchN(>0, #destructiveAction)
+	tool_input: {parsed: {actions: list.MatchN(>0, #destructiveAction), ...}, ...}
 	...
 }
