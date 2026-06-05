@@ -65,6 +65,22 @@ $ cat << 'EOF' |
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"System path blocked"}} (no-eol)
 ```
 
+### Allows rm -rf /devops (prefix is not a complete path component)
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "rm -rf /devops"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
+```
+
 ### Allows rm -rf ./build (relative path outside system prefixes)
 
 ```scrut
@@ -195,6 +211,38 @@ $ cat << 'EOF' |
 >   "hook_event_name": "PreToolUse",
 >   "tool_name": "Bash",
 >   "tool_input": {"command": "rm --recursive=true ~"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Recursive deletion of the home directory is blocked"}} (no-eol)
+```
+
+### Blocks rm -R ~
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "rm -R ~"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Recursive deletion of the home directory is blocked"}} (no-eol)
+```
+
+### Blocks rm -rd ~
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "rm -rd ~"},
 >   "session_id": "test",
 >   "cwd": "/tmp"
 > }

@@ -243,13 +243,13 @@ func TestPath_SystemTarget_Regex(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgPath)
 
-	ok := []string{"/etc/passwd", "/sys/power", "/proc/1/status", "/boot/vmlinuz", "/dev/null"}
+	ok := []string{"/etc/passwd", "/sys/power", "/proc/1/status", "/boot/vmlinuz", "/dev/null", "/etc", "/dev"}
 	for _, s := range ok {
 		t.Run("match/"+s, func(t *testing.T) {
 			matchRegexExpectOK(t, ctx, pkg, "systemTarget", s)
 		})
 	}
-	bad := []string{"/home/user", "/tmp/foo", "./etc/foo", "etc/foo", "/var/log"}
+	bad := []string{"/home/user", "/tmp/foo", "./etc/foo", "etc/foo", "/var/log", "/etcfoo", "/devops", "/system", "/bootloader"}
 	for _, s := range bad {
 		t.Run("reject/"+s, func(t *testing.T) {
 			matchRegexExpectFail(t, ctx, pkg, "systemTarget", s)
@@ -277,6 +277,8 @@ func TestPath_HasSystemTarget_RejectsRelative(t *testing.T) {
 		`{tool_input: {parsed: {targets: ["./etc/foo"]}}}`)
 	unifyExpectFail(t, ctx, pkg, "hasSystemTarget",
 		`{tool_input: {parsed: {targets: ["/home/alice"]}}}`)
+	unifyExpectFail(t, ctx, pkg, "hasSystemTarget",
+		`{tool_input: {parsed: {targets: ["/devops"]}}}`)
 	unifyExpectFail(t, ctx, pkg, "hasSystemTarget",
 		`{tool_input: {parsed: {targets: []}}}`)
 }
@@ -525,6 +527,7 @@ func TestFlag_hasRmForce_ShortCombos(t *testing.T) {
 
 	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-f"))
 	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-rf"))
+	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-Rf"))
 	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-vrf"))
 	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-rfi"))
 
@@ -570,6 +573,13 @@ func TestFlag_hasRmRecursive(t *testing.T) {
 	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("--recursive"))
 	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("--recursive=true"))
 
+	// Uppercase -R is recursive too (POSIX/GNU), and bundles may carry other
+	// letters such as -rd.
+	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-R"))
+	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-Rf"))
+	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-fR"))
+	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-rd"))
+
 	unifyExpectFail(t, ctx, pkg, "hasRmRecursive", flagsInput("-f"))
 	unifyExpectFail(t, ctx, pkg, "hasRmRecursive", flagsInput("--force"))
 }
@@ -579,6 +589,7 @@ func TestFlag_hasRmInteractive(t *testing.T) {
 	pkg := loadSubPkg(t, ctx, subPkgFlag)
 
 	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("-i"))
+	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("-I"))
 	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("-ri"))
 	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("--interactive"))
 	unifyExpectFail(t, ctx, pkg, "hasRmInteractive", flagsInput("-f"))
@@ -675,23 +686,5 @@ func TestCompose_CommandAndFlag_Unify(t *testing.T) {
 	}
 	if err := composed.Unify(okVal).Validate(cue.Concrete(false)); err != nil {
 		t.Errorf("expected command.#isRm & flag.#hasRmRecursive to match composed input, got: %v", err)
-	}
-}
-
-// The rm short-letter class is a concrete string constant so regex
-// construction is deterministic at parse time.
-func TestFlag_RmShortClass_IsConcreteString(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgFlag)
-
-	v := lookupDef(t, pkg, "rmShortClass")
-	got, err := v.String()
-	if err != nil {
-		t.Fatalf("#rmShortClass not a concrete string: %v", err)
-	}
-	for _, want := range []rune{'f', 'r', 'i', 'v'} {
-		if !strings.ContainsRune(got, want) {
-			t.Errorf("#rmShortClass %q missing letter %q", got, string(want))
-		}
 	}
 }

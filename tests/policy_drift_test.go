@@ -13,7 +13,7 @@ import (
 // any key has drifted from the canonical catalog.
 var bannedInline = map[string]string{
 	`(^|[^A-Za-z0-9_])/(etc|sys|proc|boot|dev)(/|$|[^A-Za-z0-9_])`: "use path.#hasSystemInCommand",
-	`^-[a-zA-Z]*r[a-zA-Z]*$|^--recursive$`:                         "use flag.#HasRmRecursive",
+	`^-[a-zA-Z]*r[a-zA-Z]*$|^--recursive$`:                         "use flag.#hasRmRecursive",
 	`=~"^rm\\b"`:                                                   "use command.#isRm",
 }
 

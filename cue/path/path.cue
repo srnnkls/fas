@@ -12,10 +12,10 @@ import (
 // fas treats as "never-touch" targets.
 #SystemPrefixes: ["/etc", "/sys", "/proc", "/boot", "/dev"]
 
-// #systemTarget matches a single path string that begins with one of
-// #SystemPrefixes. The anchor is deliberately strict: `./etc/foo` must NOT
-// match (sdl-mcp false-positive guard).
-#systemTarget: =~"^(\(strings.Join(#SystemPrefixes, "|")))"
+// #systemTarget matches a single path string whose leading component is one
+// of #SystemPrefixes. The prefix must be a complete component (end-of-string
+// or followed by `/`), so `/etcfoo` and `./etc/foo` do NOT match.
+#systemTarget: =~"^(\(strings.Join(#SystemPrefixes, "|")))($|/)"
 
 // #hasSystemTarget asserts that `tool_input.parsed.targets` contains at
 // least one entry matching #systemTarget.
