@@ -8,9 +8,11 @@
 // without relying on the module loader.
 package fas
 
-// #HookEventName enumerates every hook event fas evaluates. Retyping
-// #Input.hook_event_name against this disjunction turns typos like
-// "PreToolUsex" into load-time failures instead of silent policy misses.
+// #HookEventName enumerates every hook event fas evaluates. It types
+// #Input.hook_event_name, so a bad event name fails when input is validated
+// against #Input (ValidateInput) — a CUE-level check exercised in tests. The
+// eval path does not validate input against #Input; at runtime an event name
+// matters only insofar as a rule's `when` (hook.#PreToolUse, …) constrains it.
 //
 // The sub-package `cue/hook` re-declares the same set so rule authors can
 // reference it without pulling in the core-schema package. Keeping the copy

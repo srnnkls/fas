@@ -187,6 +187,22 @@ $ cat << 'EOF' |
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Recursive deletion of the home directory is blocked"}} (no-eol)
 ```
 
+### Blocks rm --recursive=true ~
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "rm --recursive=true ~"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Recursive deletion of the home directory is blocked"}} (no-eol)
+```
+
 ### Allows rm -rf ./node_modules
 
 ```scrut

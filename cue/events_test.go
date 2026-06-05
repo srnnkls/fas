@@ -69,7 +69,7 @@ func eventsUnifyFail(t *testing.T, ctx *cue.Context, pkg cue.Value, defName, val
 }
 
 // ---------------------------------------------------------------------------
-// #HookEventName — closed disjunction over the six supported hook names
+// #HookEventName — closed disjunction over the seven supported hook names
 // ---------------------------------------------------------------------------
 
 func TestEvents_HookEventName_AcceptsKnown(t *testing.T) {
@@ -82,6 +82,7 @@ func TestEvents_HookEventName_AcceptsKnown(t *testing.T) {
 		"UserPromptSubmit",
 		"Stop",
 		"SubagentStart",
+		"SubagentStop",
 		"Notification",
 	}
 	for _, name := range names {

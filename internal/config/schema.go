@@ -15,10 +15,11 @@ func SchemaSource() []byte {
 	return fascue.SchemaSource()
 }
 
-// ValidateInput unifies raw adapter JSON against the `#Input` CUE schema as a
-// defense-in-depth check before the evaluator runs. It returns a non-nil
-// error when the input fails to satisfy the schema; the error names the
-// violated constraint.
+// ValidateInput unifies raw adapter JSON against `#Input` and returns a
+// non-nil error naming the violated constraint. It is a CUE-level check used
+// in tests, not a runtime gate: `fas eval` does not call it — the eval path
+// gates only on each rule's `when`, staying permissive about wire fields it
+// does not police so a new Claude Code hook event cannot break evaluation.
 func ValidateInput(raw []byte) error {
 	var decoded any
 	if err := json.Unmarshal(raw, &decoded); err != nil {

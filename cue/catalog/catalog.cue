@@ -1,10 +1,10 @@
-// Package catalog is the harness-agnostic vocabulary fas matches against: the
-// canonical identities of the tools, subagent types, and hook events Claude
-// Code dispatches. These are pure name tables — no wire-field binding. The
-// wire layer (cue/hook event shapes, cue/tool matchers) references them, so a
-// renamed field or a second harness reshapes the binding while the names here
-// stay put. The tables mirror the published tools reference, so a member typo
-// (catalog.#ToolName.Bsh) is an undefined field the loader rejects.
+// Package catalog is the canonical vocabulary fas matches against: the wire
+// identities of the tools, subagent types, and hook events Claude Code
+// dispatches. These are pure name tables — no wire-field binding; the wire
+// layer (cue/hook event shapes, cue/tool matchers) references them. One name,
+// one source of truth: a member typo (catalog.#ToolName.Bsh) is an undefined
+// field the loader rejects, not a silent non-match. The values are Claude
+// Code's own identities; a different harness would ship its own catalog.
 package catalog
 
 // #ToolName names the built-in tools a policy keys on. Custom MCP or skill

@@ -27,9 +27,7 @@ targets: {
 // substrings inside unrelated identifiers. `./build`, `./node_modules`, and
 // `src/main.py` never contain `/etc|/sys|/proc|/boot|/dev` after a boundary.
 for_loop: {
-	when: hook.#PreToolUse & tool.#Tool.Bash & {
-		tool_input: command: =~"(^|[^A-Za-z0-9_])/(etc|sys|proc|boot|dev)(/|$|[^A-Za-z0-9_])"
-	}
+	when: hook.#PreToolUse & tool.#Tool.Bash & path.#hasSystemInCommand
 	then: deny: {
 		rule_id:  "system-path-command"
 		reason:   "System path blocked"

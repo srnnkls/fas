@@ -9,8 +9,8 @@ import (
 )
 
 // schemaBundle caches the compiled schema together with the pre-looked-up
-// `#Input` and `#Rule` values so hot paths (ValidateInput, LoadRules) avoid
-// re-parsing schema.cue on every call.
+// `#Input` and `#Rule` values so callers (LoadRules on the eval path,
+// ValidateInput in tests) avoid re-parsing schema.cue on every call.
 type schemaBundle struct {
 	ctx      *cue.Context
 	schema   cue.Value
