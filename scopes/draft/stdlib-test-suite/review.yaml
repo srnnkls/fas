@@ -305,3 +305,38 @@ implementation:
         - "stdlib_fuzz_test.go: comment 'STS-004 extends this file' could read as already-present; trivial wording [sonnet]"
         - "stdlib_test.go: HEAD's /home/user & 'rm -rf /etc' not literally present (covered by /home/x & 'rm -rf /x') [pi, non-issue]"
       outcome: approved
+    - batch: 3
+      tasks: [STS-004, STS-008]
+      files:
+        - cue/stdlib_fuzz_test.go        # STS-004 live fuzz + reference predicate
+        - tests/policy_coverage_test.go  # STS-008 manifest + completeness test
+        - tests/policies.md              # STS-008 + near-miss allow (git push dry-run)
+      mutation_checks_by_orchestrator:
+        - "revert flag/rm.cue [rR]->r => FuzzRecursiveFlag seed run red (divergence -R/-Rf/-fR); restore => green"
+        - "remove a near-miss allow header => TestPolicyCoverage reports the gap; restore => green"
+      integration:
+        scrut: "38/38 pass vs freshly go-installed fas (go install ./cmd/fas before scrut)"
+      reviewers:
+        - {id: claude-opus, outcome: approved, issues: 0}
+        - {id: claude-sonnet, outcome: changes_requested, issues: 2}  # 1 critical (fixed), 1 low (fixed)
+        - {id: pi-gemini, outcome: changes_requested, issues: 1}      # 1 high (documented, not actionable)
+      synthesized:
+        gates: {predicate_independence: pass, fuzz_domain_guard: pass, coverage_manifest: pass, correctness: pass, style: pass, scope: pass}
+        go_test: pass
+      issues:
+        critical:
+          - id: B3-C1
+            source: claude-sonnet
+            file: cue/stdlib_fuzz_test.go
+            finding: "isFlagToken admitted NUL bytes; oracle accepted -recursive=\\x00 while CUE matcher rejected it; live fuzz saved a crasher making go test fail deterministically"
+            resolution: "isFlagToken now excludes NUL (execve forbids NUL in argv = out-of-domain, same class as newline); crasher trashed; 15s fuzz finds no divergence; -R teeth re-verified intact"
+            status: resolved
+        high:
+          - id: B3-H1
+            source: pi-gemini
+            file: cue/stdlib_fuzz_test.go
+            finding: "reference predicate accepts --recursive=<x>/-recursive=<x> (strict GNU rm rejects =arg); claims weakened independence"
+            resolution: "NOT actionable: design.md §Reference predicate explicitly prescribes accepting --recursive=<x>; shipped golden denies `rm --recursive=true ~`. Rejecting it would make the predicate disagree with matcher+corpus and red the seed run. Predicate is intent-based Go (not regex transcription); -R-class teeth proven non-vacuous. Same disposition as B1-H1."
+            status: wont_fix_documented
+      deferred_issues: []
+      outcome: approved

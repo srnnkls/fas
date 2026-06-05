@@ -28,7 +28,7 @@ tasks:
 
   - id: STS-004
     content: "Property/fuzz (new file cue/stdlib_fuzz_test.go): rm-flag family vs hand-written man-rm-derived reference predicate (authored WITHOUT reading rm.cue). Mode (live fuzz vs property-table) per STS-011 outcome. Go fuzz seeds as []byte under testdata/fuzz/<Fn>/ generated from the .tsv corpus."
-    status: pending
+    status: completed
     active_form: "Building rm-flag fuzz/property harness vs reference predicate"
     depends_on: [STS-001, STS-011]
 
@@ -58,7 +58,7 @@ tasks:
 
   - id: STS-008
     content: "Scrut completeness: every shipped policy has ≥1 deny AND ≥1 near-miss allow (def + per-policy example in design.md §Near-miss allow); add missing allow cases; add a gap-reporting check. Requires a policy.cue→scrut-block mapping (naming convention or manifest) defined first."
-    status: pending
+    status: completed
     active_form: "Pinning scrut allow/deny coverage per policy"
     depends_on: [STS-002, STS-003]
 
@@ -76,8 +76,8 @@ tasks:
 
 meta:
   created: 2026-06-05
-  last_updated: 2026-06-05
-  progress: 8/11
+  last_updated: 2026-06-06
+  progress: 10/11
 
 phases:
   - name: "Phase 1: Foundation"
