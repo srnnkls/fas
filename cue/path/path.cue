@@ -20,7 +20,7 @@ import (
 // #hasSystemTarget asserts that `tool_input.parsed.targets` contains at
 // least one entry matching #systemTarget.
 #hasSystemTarget: {
-	tool_input: parsed: targets: list.MatchN(>0, #systemTarget)
+	tool_input: {parsed: {targets: list.MatchN(>0, #systemTarget), ...}, ...}
 	...
 }
 
@@ -44,6 +44,6 @@ import (
 // #hasSystemInCommand asserts that `tool_input.command` contains a reference
 // to one of the system directories, e.g. `cat /etc/passwd` or `ls /proc`.
 #hasSystemInCommand: {
-	tool_input: command: #systemInCommand
+	tool_input: {command: #systemInCommand, ...}
 	...
 }

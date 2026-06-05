@@ -10,13 +10,7 @@ import (
 )
 
 destructive_home: {
-	when: {
-		hook.#PreToolUse
-		tool.#Tool.Bash
-		command.#isRm
-		flag.#HasRmRecursive
-		tool_input: parsed: targets: list.MatchN(>0, =~"^(~|\\$HOME)$")
-	}
+	when: hook.#PreToolUse & tool.#Tool.Bash & command.#isRm & flag.#hasRmRecursive & {tool_input: parsed: targets: list.MatchN(>0, =~"^(~|\\$HOME)$")}
 	then: deny: {
 		rule_id:  "destructive-home"
 		reason:   "Recursive deletion of the home directory is blocked"
