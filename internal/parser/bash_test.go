@@ -67,7 +67,7 @@ func TestBash_RemoveAction(t *testing.T) {
 	if diff := cmp.Diff([]string{"/etc"}, got.Targets, sliceOpts); diff != "" {
 		t.Errorf("targets (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff([]string{"-rf"}, got.Flags, sliceOpts); diff != "" {
+	if diff := cmp.Diff([]string{"-r", "-f"}, got.Flags, sliceOpts); diff != "" {
 		t.Errorf("flags (-want +got):\n%s", diff)
 	}
 }
@@ -119,11 +119,16 @@ func TestBash_UnmappedCommand_NoActions(t *testing.T) {
 	}
 }
 
-func TestBash_Flags_RawTokens(t *testing.T) {
+func TestBash_Flags_Debundled(t *testing.T) {
 	got := parser.ParseBash("rm --force --recursive=true /tmp")
-	want := []string{"--force", "--recursive=true"}
-	if diff := cmp.Diff(want, got.Flags, sliceOpts); diff != "" {
-		t.Errorf("flags must preserve raw tokens (-want +got):\n%s", diff)
+	// Membership, not order: long opts split at the first `=`, value dropped.
+	for _, want := range []string{"--force", "--recursive"} {
+		if !slices.Contains(got.Flags, want) {
+			t.Errorf("Flags %v missing debundled %q", got.Flags, want)
+		}
+	}
+	if slices.Contains(got.Flags, "--recursive=true") {
+		t.Errorf("Flags %v must not contain glued token %q", got.Flags, "--recursive=true")
 	}
 	// Flags must never be normalized into Attributes as {"force": true}.
 	for _, forbidden := range []string{"force", "recursive"} {
@@ -242,7 +247,7 @@ func TestBash_Table(t *testing.T) {
 			command:     "ls -la /home",
 			wantActions: []string{"list"},
 			wantTargets: []string{"/home"},
-			wantFlags:   []string{"-la"},
+			wantFlags:   []string{"-l", "-a"},
 			forbidAct:   []string{"ls"},
 		},
 		{
@@ -250,7 +255,7 @@ func TestBash_Table(t *testing.T) {
 			command:     "rm -rf /etc",
 			wantActions: []string{"remove"},
 			wantTargets: []string{"/etc"},
-			wantFlags:   []string{"-rf"},
+			wantFlags:   []string{"-r", "-f"},
 			forbidAct:   []string{"rm"},
 		},
 		{
@@ -354,5 +359,269 @@ func TestBash_CmdSubstitution_NotInTargets(t *testing.T) {
 	}
 	if v, ok := got.Attributes["subshell"].(bool); !ok || !v {
 		t.Errorf("Attributes.subshell = %#v; want true", got.Attributes["subshell"])
+	}
+}
+
+// --- T1: parsed.Commands -----------------------------------------------------
+
+// TestBash_Commands_ResolvedName asserts Parsed.Commands exposes the resolved
+// command name (one entry per CallExpr), after escalation strip and after shell
+// env-assignments are excluded.
+func TestBash_Commands_ResolvedName(t *testing.T) {
+	cases := []struct {
+		in     string
+		want   string
+		forbid []string // names that must NOT appear in Commands
+	}{
+		{in: "rm -rf /etc", want: "rm"},
+		{in: "sudo rm -rf /etc", want: "rm", forbid: []string{"sudo"}},
+		{in: "FOO=1 rm -rf /etc", want: "rm", forbid: []string{"FOO=1", "FOO"}},
+		{in: "git commit", want: "git"},
+		{in: "kill 1", want: "kill"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			got := parser.ParseBash(tc.in)
+			if !slices.Contains(got.Commands, tc.want) {
+				t.Errorf("Commands %v missing resolved command %q", got.Commands, tc.want)
+			}
+			for _, bad := range tc.forbid {
+				if slices.Contains(got.Commands, bad) {
+					t.Errorf("Commands %v must not contain %q", got.Commands, bad)
+				}
+			}
+		})
+	}
+}
+
+// TestBash_Commands_SudoStaysInPrefix asserts that for `sudo rm`, the resolved
+// command is "rm" while sudo remains in Attributes.prefix_commands.
+func TestBash_Commands_SudoStaysInPrefix(t *testing.T) {
+	got := parser.ParseBash("sudo rm -rf /etc")
+	if !slices.Contains(got.Commands, "rm") {
+		t.Errorf("Commands %v missing %q", got.Commands, "rm")
+	}
+	if slices.Contains(got.Commands, "sudo") {
+		t.Errorf("Commands %v must not contain escalation prefix %q", got.Commands, "sudo")
+	}
+	prefixes, ok := got.Attributes["prefix_commands"].([]string)
+	if !ok || !slices.Contains(prefixes, "sudo") {
+		t.Errorf("Attributes.prefix_commands must still contain %q; got %#v", "sudo", got.Attributes["prefix_commands"])
+	}
+}
+
+// TestBash_Commands_EvalHidesVerb pins residual bypass R9: the real verb hidden
+// inside a quoted argument is NOT surfaced; only the literal command "eval" is.
+func TestBash_Commands_EvalHidesVerb(t *testing.T) {
+	got := parser.ParseBash("eval 'rm -rf ~'")
+	if diff := cmp.Diff([]string{"eval"}, got.Commands, sliceOpts); diff != "" {
+		t.Errorf("Commands (-want +got):\n%s", diff)
+	}
+	if slices.Contains(got.Commands, "rm") {
+		t.Errorf("Commands %v must not contain verb hidden in quoted string (R9)", got.Commands)
+	}
+}
+
+// TestBash_Commands_ParseError asserts that on parse_error the early return
+// yields empty Commands — the contract the T4 parse-error raw-regex fallback
+// depends on (no parsed.commands means callers must fall back to raw matching).
+func TestBash_Commands_ParseError(t *testing.T) {
+	got := parser.ParseBash(`rm "unterminated`)
+	if len(got.Commands) != 0 {
+		t.Errorf("parse_error must yield empty Commands; got %v", got.Commands)
+	}
+	if msg, ok := got.Attributes["parse_error"].(string); !ok || msg == "" {
+		t.Errorf("malformed input must surface Attributes.parse_error; got %#v", got.Attributes["parse_error"])
+	}
+}
+
+// TestBash_Commands_Pipeline asserts each CallExpr in a pipeline contributes one entry to Commands.
+func TestBash_Commands_Pipeline(t *testing.T) {
+	got := parser.ParseBash("ls | grep foo")
+	for _, want := range []string{"ls", "grep"} {
+		if !slices.Contains(got.Commands, want) {
+			t.Errorf("Commands %v missing %q from pipeline", got.Commands, want)
+		}
+	}
+}
+
+// TestBash_Commands_Compound asserts compound lines are flattened: both command names surface (R10).
+func TestBash_Commands_Compound(t *testing.T) {
+	got := parser.ParseBash("rm /tmp && echo done")
+	for _, want := range []string{"rm", "echo"} {
+		if !slices.Contains(got.Commands, want) {
+			t.Errorf("Commands %v missing %q from compound line", got.Commands, want)
+		}
+	}
+}
+
+// --- T1: parsed.Subcommands --------------------------------------------------
+
+// TestBash_Subcommands_KnownSet asserts Parsed.Subcommands exposes the first
+// positional matching the tool's registered subcommand set, robust to
+// value-leaking global flags (R1).
+func TestBash_Subcommands_KnownSet(t *testing.T) {
+	cases := []struct {
+		in     string
+		want   string
+		forbid []string // tokens that must NOT appear in Subcommands
+	}{
+		{in: "git commit --no-verify", want: "commit"},
+		{in: "git -C /repo add .env", want: "add", forbid: []string{"/repo", ".env"}},
+		{in: "git -c user.name=x commit", want: "commit", forbid: []string{"user.name=x", "-c"}},
+		{in: "git branch -D feature", want: "branch", forbid: []string{"feature"}},
+		{in: "apt install curl", want: "install", forbid: []string{"curl"}},
+		{in: "apt remove curl", want: "remove", forbid: []string{"curl"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			got := parser.ParseBash(tc.in)
+			if !slices.Contains(got.Subcommands, tc.want) {
+				t.Errorf("Subcommands %v missing %q", got.Subcommands, tc.want)
+			}
+			for _, bad := range tc.forbid {
+				if slices.Contains(got.Subcommands, bad) {
+					t.Errorf("Subcommands %v must not contain %q", got.Subcommands, bad)
+				}
+			}
+		})
+	}
+}
+
+// TestBash_Subcommands_ValueShadowBypass pins the deny-safe over-match that
+// closes the value-shadow bypass: a leaked global-flag value that happens to be
+// a registered subcommand ("git -C commit ...") must never hide the real
+// subcommand ("add") from Subcommands.
+func TestBash_Subcommands_ValueShadowBypass(t *testing.T) {
+	got := parser.ParseBash("git -C commit add foo")
+	if !slices.Contains(got.Subcommands, "add") {
+		t.Errorf("Subcommands %v must contain real subcommand %q (value-shadow bypass)", got.Subcommands, "add")
+	}
+	if !slices.Contains(got.Subcommands, "commit") {
+		t.Errorf("Subcommands %v must contain leaked flag value %q (deny-safe over-match)", got.Subcommands, "commit")
+	}
+}
+
+// TestBash_Subcommands_Empty asserts commands with no registered subcommands
+// (or whose first positional is a target, not a subcommand) yield no subcommand.
+func TestBash_Subcommands_Empty(t *testing.T) {
+	cases := []struct {
+		in     string
+		forbid []string
+	}{
+		{in: "rm /etc", forbid: []string{"/etc"}},
+		{in: "kill 10", forbid: []string{"10"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			got := parser.ParseBash(tc.in)
+			if len(got.Subcommands) != 0 {
+				t.Errorf("Subcommands must be empty for %q; got %v", tc.in, got.Subcommands)
+			}
+			for _, bad := range tc.forbid {
+				if slices.Contains(got.Subcommands, bad) {
+					t.Errorf("Subcommands %v must not contain %q", got.Subcommands, bad)
+				}
+			}
+		})
+	}
+}
+
+// --- T1: flag debundling -----------------------------------------------------
+
+// TestBash_Debundle_ShortBundle asserts short flag bundles split per-char.
+func TestBash_Debundle_ShortBundle(t *testing.T) {
+	got := parser.ParseBash("rm -Rf /etc")
+	for _, want := range []string{"-R", "-f"} {
+		if !slices.Contains(got.Flags, want) {
+			t.Errorf("Flags %v missing debundled %q", got.Flags, want)
+		}
+	}
+	if slices.Contains(got.Flags, "-Rf") {
+		t.Errorf("Flags %v must not contain bundled token %q", got.Flags, "-Rf")
+	}
+}
+
+// TestBash_Debundle_LongOptValue asserts long opts split at the first `=`, with
+// the value dropped, including the empty-value case.
+func TestBash_Debundle_LongOptValue(t *testing.T) {
+	got := parser.ParseBash("rm --recursive=true /tmp")
+	if !slices.Contains(got.Flags, "--recursive") {
+		t.Errorf("Flags %v missing %q (split at first =)", got.Flags, "--recursive")
+	}
+	if slices.Contains(got.Flags, "--recursive=true") {
+		t.Errorf("Flags %v must not contain glued token %q", got.Flags, "--recursive=true")
+	}
+
+	gotEmpty := parser.ParseBash("cmd --opt= foo")
+	if !slices.Contains(gotEmpty.Flags, "--opt") {
+		t.Errorf("Flags %v missing %q for empty-value long opt", gotEmpty.Flags, "--opt")
+	}
+}
+
+// TestBash_Debundle_EmptyLongName asserts a long opt with no name before `=`
+// ("--=x") is not split into a bare ambiguous "--" flag token.
+func TestBash_Debundle_EmptyLongName(t *testing.T) {
+	got := parser.ParseBash("cmd --=x")
+	if slices.Contains(got.Flags, "--") {
+		t.Errorf("Flags %v must not contain bare %q from %q", got.Flags, "--", "--=x")
+	}
+}
+
+// TestBash_Debundle_AfterDoubleDash asserts `--` ends flags BEFORE debundling:
+// a dash-prefixed token after `--` is a target, not a debundled flag.
+func TestBash_Debundle_AfterDoubleDash(t *testing.T) {
+	got := parser.ParseBash("rm -- -rf foo")
+	if diff := cmp.Diff([]string(nil), got.Flags, sliceOpts); diff != "" {
+		t.Errorf("Flags must be empty after `--` (-want +got):\n%s", diff)
+	}
+	if !slices.Contains(got.Targets, "-rf") {
+		t.Errorf("Targets %v must contain %q (post-`--` token, not debundled)", got.Targets, "-rf")
+	}
+	for _, bad := range []string{"-r", "-f"} {
+		if slices.Contains(got.Flags, bad) {
+			t.Errorf("Flags %v must not debundle post-`--` token into %q", got.Flags, bad)
+		}
+	}
+}
+
+// TestBash_Debundle_SingleCharStays asserts a lone single-char short flag is
+// preserved unchanged.
+func TestBash_Debundle_SingleCharStays(t *testing.T) {
+	got := parser.ParseBash("git branch -D feature")
+	if !slices.Contains(got.Flags, "-D") {
+		t.Errorf("Flags %v missing single-char flag %q", got.Flags, "-D")
+	}
+}
+
+// TestBash_Debundle_OverSplitLimitations pins the documented R6 over-split
+// behavior so a future correctness fix is a deliberate test change, not a
+// silent regression. These are KNOWN LIMITATIONS, not desired semantics.
+func TestBash_Debundle_OverSplitLimitations(t *testing.T) {
+	// Attached short value over-splits: -mfoo -> -m -f -o (documented false-deny risk).
+	attached := parser.ParseBash("cmd -mfoo")
+	for _, want := range []string{"-m", "-f"} {
+		if !slices.Contains(attached.Flags, want) {
+			t.Errorf("Flags %v missing over-split %q for -mfoo (R6)", attached.Flags, want)
+		}
+	}
+
+	// Single-dash long option splits per-char: -name -> -n -a -m -e (documented).
+	longSingle := parser.ParseBash("find -name foo")
+	if !slices.Contains(longSingle.Flags, "-n") {
+		t.Errorf("Flags %v missing over-split %q for -name (R6)", longSingle.Flags, "-n")
+	}
+}
+
+// TestBash_Debundle_KillSignalTargetSurvives asserts kill_init policy keeps
+// working: command resolves to kill and the PID target survives, regardless of
+// how -SIGKILL debundles.
+func TestBash_Debundle_KillSignalTargetSurvives(t *testing.T) {
+	got := parser.ParseBash("kill -SIGKILL 1")
+	if !slices.Contains(got.Commands, "kill") {
+		t.Errorf("Commands %v missing %q", got.Commands, "kill")
+	}
+	if !slices.Contains(got.Targets, "1") {
+		t.Errorf("Targets %v must contain PID target %q", got.Targets, "1")
 	}
 }
