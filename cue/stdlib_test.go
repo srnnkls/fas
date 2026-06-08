@@ -640,11 +640,6 @@ func TestCompose_CommandAndFlag_Unify(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// T3 — generic parser-backed matchers: command.#command, command.#subcommand,
-// flag.#hasOption, and the flat flag.opt spelling library.
-// ---------------------------------------------------------------------------
-
 // commandsInput builds {tool_input: {parsed: {commands: [<tokens...>]}}}.
 func commandsInput(tokens ...string) string {
 	quoted := make([]string, len(tokens))

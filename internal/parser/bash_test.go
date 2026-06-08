@@ -362,8 +362,6 @@ func TestBash_CmdSubstitution_NotInTargets(t *testing.T) {
 	}
 }
 
-// --- T1: parsed.Commands -----------------------------------------------------
-
 // TestBash_Commands_ResolvedName asserts Parsed.Commands exposes the resolved
 // command name (one entry per CallExpr), after escalation strip and after shell
 // env-assignments are excluded.
@@ -455,8 +453,6 @@ func TestBash_Commands_Compound(t *testing.T) {
 	}
 }
 
-// --- T1: parsed.Subcommands --------------------------------------------------
-
 // TestBash_Subcommands_KnownSet asserts Parsed.Subcommands exposes the first
 // positional matching the tool's registered subcommand set, robust to
 // value-leaking global flags (R1).
@@ -526,8 +522,6 @@ func TestBash_Subcommands_Empty(t *testing.T) {
 		})
 	}
 }
-
-// --- T1: flag debundling -----------------------------------------------------
 
 // TestBash_Debundle_ShortBundle asserts short flag bundles split per-char.
 func TestBash_Debundle_ShortBundle(t *testing.T) {
