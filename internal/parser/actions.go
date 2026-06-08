@@ -31,6 +31,13 @@ var bashSubcommandVerbs = map[string]string{
 	"apt purge":    "remove",
 }
 
+// bashKnownSubcommands registers subcommands that must be detected without
+// resolveVerb fabricating an action (e.g. "git add" has no verb). Keyed by
+// "<cmd> <sub>".
+var bashKnownSubcommands = map[string]struct{}{
+	"git add": {},
+}
+
 // escalationPrefixes are commands that elevate privilege and wrap the real
 // command. They appear in Attributes.prefix_commands, not in Actions.
 var escalationPrefixes = map[string]struct{}{

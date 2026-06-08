@@ -12,7 +12,7 @@ import (
 // redirect restrictions. CRITICAL severity ensures this reason surfaces even
 // when the generic system-path rules also fire.
 tee_system: {
-	when: hook.#PreToolUse & tool.#Tool.Bash & command.#isTee & path.#hasSystemInCommand
+	when: hook.#PreToolUse & tool.#Tool.Bash & (command.#commandRobust & {#name: "tee"}) & path.#hasSystemInCommand
 	then: deny: {
 		rule_id:  "tee-system-path"
 		reason:   "Writing to system paths via tee is blocked"

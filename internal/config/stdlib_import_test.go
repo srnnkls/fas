@@ -107,9 +107,10 @@ system_path: {
 	}
 }
 
-// TestLoadRules_RuleCanImportFlagConstraints covers the `cue/flag/rm.cue`
-// slice of the stdlib so the feature doesn't regress to shipping only the
-// root file.
+// TestLoadRules_RuleCanImportFlagConstraints covers the `cue/flag` slice of the
+// stdlib so the feature doesn't regress to shipping only the root file. Input
+// flags are debundled (the parser splits -rf into -r and -f), matching what
+// #hasOption & opt.force consumes.
 func TestLoadRules_RuleCanImportFlagConstraints(t *testing.T) {
 	src := `package rules
 
@@ -120,7 +121,7 @@ import (
 )
 
 rm_force: {
-	when: hook.#PreToolUse & tool.#Tool.Bash & flag.#hasRmForce
+	when: hook.#PreToolUse & tool.#Tool.Bash & (flag.#hasOption & flag.opt.force)
 	then: deny: {
 		rule_id: "rm-force"
 		reason:  "rm -f blocked"
@@ -132,7 +133,7 @@ rm_force: {
 
 	rules, err := config.LoadRules(dir)
 	if err != nil {
-		t.Fatalf("LoadRules must resolve flag.#hasRmForce, got: %v", err)
+		t.Fatalf("LoadRules must resolve flag.#hasOption & flag.opt.force, got: %v", err)
 	}
 	if len(rules) != 1 {
 		t.Fatalf("expected 1 rule, got %d", len(rules))
@@ -143,10 +144,10 @@ rm_force: {
 	match := compileInput(t, ctx, `{
 		hook_event_name: "PreToolUse"
 		tool_name:       "Bash"
-		tool_input: parsed: flags: ["-rf"]
+		tool_input: parsed: flags: ["-r", "-f"]
 	}`)
 	if !ruleMatches(t, r, match) {
-		t.Error("rule using flag.#hasRmForce should match flags=[-rf]")
+		t.Error("rule using flag.#hasOption & opt.force should match flags=[-r, -f]")
 	}
 
 	miss := compileInput(t, ctx, `{
@@ -155,7 +156,7 @@ rm_force: {
 		tool_input: parsed: flags: ["-x"]
 	}`)
 	if ruleMatches(t, r, miss) {
-		t.Error("rule using flag.#hasRmForce must NOT match flags=[-x]")
+		t.Error("rule using flag.#hasOption & opt.force must NOT match flags=[-x]")
 	}
 }
 

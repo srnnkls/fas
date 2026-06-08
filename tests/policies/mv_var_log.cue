@@ -11,7 +11,7 @@ import (
 // incident response depends on. An attacker clearing /var/log/auth.log before
 // exfiltrating data is a classic cover-your-tracks step.
 mv_var_log: {
-	when: hook.#PreToolUse & tool.#Tool.Bash & command.#isMv & {
+	when: hook.#PreToolUse & tool.#Tool.Bash & (command.#commandRobust & {#name: "mv"}) & {
 		tool_input: command: (path.#InCommandRe & {#prefixes: ["/var/log"]}).out
 	}
 	then: deny: {

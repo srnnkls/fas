@@ -13,7 +13,7 @@ import (
 // risk applies to other system directories, so the matcher extends the system
 // set with /run via #InCommandRe's #extra hook.
 chmod_runtime_blocklist: {
-	when: hook.#PreToolUse & tool.#Tool.Bash & command.#isChmod & {
+	when: hook.#PreToolUse & tool.#Tool.Bash & (command.#commandRobust & {#name: "chmod"}) & {
 		tool_input: command: (path.#InCommandRe & {
 			#prefixes: path.#SystemPrefixes
 			#extra: ["/run"]

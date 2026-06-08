@@ -46,10 +46,12 @@ package fas
 // arrives. Rule authors or the sub-packages tighten the type at the
 // composition point.
 #Parsed: {
-	actions?:    _
-	targets?:    _
-	flags?:      _
-	attributes?: {...}
+	actions?:     _
+	commands?:    _
+	subcommands?: _
+	targets?:     _
+	flags?:       _
+	attributes?:  {...}
 	...
 }
 

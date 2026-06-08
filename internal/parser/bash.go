@@ -90,6 +90,7 @@ func extractCall(call *syntax.CallExpr, out *Parsed) {
 
 	name := tokens[0].text
 	rest := tokens[1:]
+	out.Commands = append(out.Commands, name)
 
 	// Identify the subcommand as the first non-flag, non-substitution token
 	// that the subcommand tables actually recognize for this command. This
@@ -130,8 +131,13 @@ func extractCall(call *syntax.CallExpr, out *Parsed) {
 			continue
 		}
 		if !endOfFlags && isFlag(t.text) {
-			flags = append(flags, t.text)
+			flags = append(flags, debundleFlag(t.text)...)
 			continue
+		}
+		// Deny-safe over-match: expose every registered-subcommand token so a
+		// leaked flag value ("git -C commit") can't shadow the real subcommand.
+		if isKnownSubcommand(name, t.text) {
+			out.Subcommands = append(out.Subcommands, t.text)
 		}
 		// Drop the resolved subcommand from positional Targets so only real
 		// refs remain.
@@ -164,11 +170,35 @@ func isKnownSubcommand(name, candidate string) bool {
 	if _, ok := destructiveFlagVerbs[key]; ok {
 		return true
 	}
+	if _, ok := bashKnownSubcommands[key]; ok {
+		return true
+	}
 	return false
 }
 
 func isFlag(token string) bool {
 	return strings.HasPrefix(token, "-") && token != "-"
+}
+
+// debundleFlag splits short bundles (-rf -> -r -f) and long opts with values
+// (--opt=v -> --opt). It is arity-blind, so attached short values (-mfoo) and
+// single-dash long options (-name) over-split per char (documented R6 limit).
+func debundleFlag(token string) []string {
+	if strings.HasPrefix(token, "--") {
+		if eq := strings.IndexByte(token, '='); eq > 2 {
+			return []string{token[:eq]}
+		}
+		return []string{token}
+	}
+	chars := token[1:]
+	if len(chars) < 2 {
+		return []string{token}
+	}
+	out := make([]string, 0, len(chars))
+	for _, c := range chars {
+		out = append(out, "-"+string(c))
+	}
+	return out
 }
 
 func resolveVerb(name, subcommand string, flags []string) string {

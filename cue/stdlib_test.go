@@ -13,6 +13,7 @@ import (
 	"cuelang.org/go/cue/load"
 
 	fascue "github.com/srnnkls/fas/cue"
+	"github.com/srnnkls/fas/internal/parser"
 )
 
 // stdlibModuleRoot is the synthetic root the sub-package test harness uses
@@ -488,28 +489,62 @@ func TestTool_KnownTool_Disjunction(t *testing.T) {
 // command package — Bash command matchers (rm, tee, …)
 // ---------------------------------------------------------------------------
 
-func TestCommand_Matchers(t *testing.T) {
+// TestCommand_Command_Corpus drives command.#command{rm} from the real parser:
+// each raw string is fed through parser.ParseBash and its parsed.commands tested.
+func TestCommand_Command_Corpus(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgCommand)
 
-	unifyExpectOK(t, ctx, pkg, "isTee", `{tool_input: {command: "tee /etc/hosts"}}`)
-	unifyExpectOK(t, ctx, pkg, "isMv", `{tool_input: {command: "mv a b"}}`)
-}
-
-func TestCommand_IsRm_Corpus(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgCommand)
+	rm := setParam(t, ctx, pkg, "command", `{#name: "rm"}`)
 
 	for _, row := range loadCorpus(t, "commands.tsv") {
-		input := `{tool_input: {command: ` + cueStringLit(row.Input) + `}}`
+		commands := parser.ParseBash(row.Input).Commands
+		input := commandsInput(commands...)
 		t.Run(corpusSubtestName(row.Input), func(t *testing.T) {
 			if row.Match {
-				unifyExpectOK(t, ctx, pkg, "isRm", input)
+				paramExpectOK(t, ctx, rm, "#command{rm}", input)
 			} else {
-				unifyExpectFail(t, ctx, pkg, "isRm", input)
+				paramExpectFail(t, ctx, rm, "#command{rm}", input)
 			}
 		})
 	}
+}
+
+func TestCommand_CommandRobust(t *testing.T) {
+	ctx := cuecontext.New()
+	pkg := loadSubPkg(t, ctx, subPkgCommand)
+
+	tee := setParam(t, ctx, pkg, "commandRobust", `{#name: "tee"}`)
+
+	// 1. Normal path: "tee" in parsed.commands, no parse_error needed.
+	paramExpectOK(t, ctx, tee, "#commandRobust{tee} normal",
+		`{tool_input: {parsed: {commands: ["tee"]}}}`)
+
+	// 2. Parse-error fallback: commands empty, but parse_error present and the
+	// raw command is anchored ^tee\b → disjunct 2 fires.
+	paramExpectOK(t, ctx, tee, "#commandRobust{tee} parse-error fallback",
+		`{tool_input: {command: "tee /etc/x", parsed: {commands: [], attributes: {parse_error: "some error"}}}}`)
+
+	// 3. Parse-error but wrong command: raw does not start with tee → no match.
+	// Deny-direction stays anchored, not catch-all.
+	paramExpectFail(t, ctx, tee, "#commandRobust{tee} parse-error wrong cmd",
+		`{tool_input: {command: "ls /etc", parsed: {commands: [], attributes: {parse_error: "x"}}}}`)
+
+	// 4. No parse_error, not in commands, but raw starts with "tee": still
+	// UNIFIES under this harness. The gate is `parse_error: string`, but
+	// Unify+Validate(Concrete(false)) treats an absent non-concrete field as
+	// fillable, so it cannot prove the parse_error gate — only the evaluator's
+	// Subsume(cue.Final()) can (it rejects this input via disjunct 2). The
+	// authoritative gate check lives in the policy scrut suite (tests/policies.md).
+	paramExpectOK(t, ctx, tee, "#commandRobust{tee} no parse_error, raw ^tee\\b unifies (gate unprovable here)",
+		`{tool_input: {command: "tee /etc/x", parsed: {commands: ["ls"]}}}`)
+
+	// 5. Anchoring limitation: under parse_error, the raw fallback is ^tee\b
+	// anchored, so a leading "sudo tee" does NOT match via the fallback. This
+	// is deny-safe because well-parsed `sudo tee` resolves commands:["tee"] and
+	// is covered by disjunct 1.
+	paramExpectFail(t, ctx, tee, "#commandRobust{tee} parse-error sudo prefix",
+		`{tool_input: {command: "sudo tee /etc/x", parsed: {commands: [], attributes: {parse_error: "x"}}}}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -527,124 +562,26 @@ func flagsInput(tokens ...string) string {
 	return "{tool_input: {parsed: {flags: [" + strings.Join(quoted, ", ") + "]}}}"
 }
 
-func TestFlag_hasRmForce_LongForms(t *testing.T) {
+// TestFlag_HasOption_Recursive_Corpus pins #hasOption & opt.recursive over the
+// debundled-token corpus (each row is a single token the parser would emit).
+func TestFlag_HasOption_Recursive_Corpus(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgFlag)
 
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("--force"))
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("--force=value"))
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-force"))
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-force=value"))
-}
-
-func TestFlag_hasRmForce_ShortCombos(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgFlag)
-
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-f"))
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-rf"))
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-Rf"))
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-vrf"))
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-rfi"))
-
-	// Letter-order permutation: 'f' must match regardless of its position.
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-fvr"))
-	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-fvr"))
-	unifyExpectOK(t, ctx, pkg, "hasRmVerbose", flagsInput("-fvr"))
-}
-
-func TestFlag_hasRmForce_RejectsMissingLetter(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgFlag)
-
-	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-r"))
-	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-ri"))
-	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("--recursive"))
-}
-
-func TestFlag_hasRmForce_AnchorCorrectness(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgFlag)
-
-	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-force-feed"))
-	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("--forceful"))
-}
-
-func TestFlag_hasRmForce_RejectsUnknownLetters(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgFlag)
-
-	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-x"))
-	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-xyz"))
-	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-abc"))
-}
-
-func TestFlag_hasRmRecursive(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgFlag)
+	hasOption := lookupDef(t, pkg, "hasOption")
+	recursive := hasOption.Unify(pkg.LookupPath(cue.ParsePath("opt")).LookupPath(cue.ParsePath("recursive")))
+	if err := recursive.Err(); err != nil {
+		t.Fatalf("#hasOption & opt.recursive errored: %v", err)
+	}
 
 	for _, row := range loadCorpus(t, "rm_flags.tsv") {
 		t.Run(corpusSubtestName(row.Input), func(t *testing.T) {
 			if row.Match {
-				unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput(row.Input))
+				paramExpectOK(t, ctx, recursive, "#hasOption & opt.recursive", flagsInput(row.Input))
 			} else {
-				unifyExpectFail(t, ctx, pkg, "hasRmRecursive", flagsInput(row.Input))
+				paramExpectFail(t, ctx, recursive, "#hasOption & opt.recursive", flagsInput(row.Input))
 			}
 		})
-	}
-}
-
-func TestFlag_hasRmInteractive(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgFlag)
-
-	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("-i"))
-	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("-I"))
-	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("-ri"))
-	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("--interactive"))
-	unifyExpectFail(t, ctx, pkg, "hasRmInteractive", flagsInput("-f"))
-	unifyExpectFail(t, ctx, pkg, "hasRmInteractive", flagsInput("-x"))
-
-	// Two-letter permutation: -if contains both 'i' and 'f'.
-	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("-if"))
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-if"))
-}
-
-func TestFlag_hasRmVerbose(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgFlag)
-
-	unifyExpectOK(t, ctx, pkg, "hasRmVerbose", flagsInput("-v"))
-	unifyExpectOK(t, ctx, pkg, "hasRmVerbose", flagsInput("-vrf"))
-	unifyExpectOK(t, ctx, pkg, "hasRmVerbose", flagsInput("--verbose"))
-	unifyExpectOK(t, ctx, pkg, "hasRmVerbose", flagsInput("--verbose=1"))
-	unifyExpectFail(t, ctx, pkg, "hasRmVerbose", flagsInput("-r"))
-}
-
-// AND composition — building a rule condition that requires multiple flag
-// constraints at once.
-func TestFlag_hasRmForce_AND_Recursive(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgFlag)
-
-	force := lookupDef(t, pkg, "hasRmForce")
-	recursive := lookupDef(t, pkg, "hasRmRecursive")
-	both := force.Unify(recursive)
-
-	okVal := ctx.CompileString(flagsInput("-rf"), cue.Filename("both-ok.cue"))
-	if err := okVal.Err(); err != nil {
-		t.Fatalf("compile -rf input: %v", err)
-	}
-	if err := both.Unify(okVal).Validate(cue.Concrete(false)); err != nil {
-		t.Errorf("expected hasRmForce & hasRmRecursive to match -rf, got %v", err)
-	}
-
-	failVal := ctx.CompileString(flagsInput("-f"), cue.Filename("both-fail.cue"))
-	if err := failVal.Err(); err != nil {
-		t.Fatalf("compile -f input: %v", err)
-	}
-	if err := both.Unify(failVal).Validate(cue.Concrete(false)); err == nil {
-		t.Errorf("expected hasRmForce & hasRmRecursive to fail on -f, but it matched")
 	}
 }
 
@@ -671,30 +608,275 @@ func TestFlag_hasFlagMatching_BuildingBlock(t *testing.T) {
 	}
 }
 
-// Cross-subfield composition: command.#isRm touches tool_input.command while
-// flag.#hasRmRecursive touches tool_input.parsed.flags. Both matchers must
-// stay open at every level of tool_input so they unify under & without a
-// "field not allowed" error.
+// Cross-subfield composition: command.#command reads parsed.commands while
+// flag.#hasOption reads parsed.flags. Both matchers must stay open at every
+// level of tool_input so they unify under & without a "field not allowed"
+// error. Input carries debundled flags, as the parser now emits them.
 func TestCompose_CommandAndFlag_Unify(t *testing.T) {
 	ctx := cuecontext.New()
 	cmdPkg := loadSubPkg(t, ctx, subPkgCommand)
 	flagPkg := loadSubPkg(t, ctx, subPkgFlag)
 
-	isRm := lookupDef(t, cmdPkg, "isRm")
-	hasRecursive := lookupDef(t, flagPkg, "hasRmRecursive")
-	composed := isRm.Unify(hasRecursive)
+	rm := setParam(t, ctx, cmdPkg, "command", `{#name: "rm"}`)
+	hasOption := lookupDef(t, flagPkg, "hasOption")
+	recursive := hasOption.Unify(flagPkg.LookupPath(cue.ParsePath("opt")).LookupPath(cue.ParsePath("recursive")))
+	if err := recursive.Err(); err != nil {
+		t.Fatalf("#hasOption & opt.recursive errored: %v", err)
+	}
+	composed := rm.Unify(recursive)
 	if err := composed.Err(); err != nil {
-		t.Fatalf("command.#isRm & flag.#hasRmRecursive errored: %v", err)
+		t.Fatalf("command.#command{rm} & (flag.#hasOption & opt.recursive) errored: %v", err)
 	}
 
 	okVal := ctx.CompileString(
-		`{tool_input: {command: "rm -rf x", parsed: {flags: ["-rf"]}}}`,
+		`{tool_input: {parsed: {commands: ["rm"], flags: ["-r", "-f"]}}}`,
 		cue.Filename("compose-ok.cue"),
 	)
 	if err := okVal.Err(); err != nil {
 		t.Fatalf("compile compose input: %v", err)
 	}
 	if err := composed.Unify(okVal).Validate(cue.Concrete(false)); err != nil {
-		t.Errorf("expected command.#isRm & flag.#hasRmRecursive to match composed input, got: %v", err)
+		t.Errorf("expected command.#command{rm} & (flag.#hasOption & opt.recursive) to match composed input, got: %v", err)
 	}
+}
+
+// commandsInput builds {tool_input: {parsed: {commands: [<tokens...>]}}}.
+func commandsInput(tokens ...string) string {
+	quoted := make([]string, len(tokens))
+	for i, tok := range tokens {
+		quoted[i] = cueStringLit(tok)
+	}
+	return "{tool_input: {parsed: {commands: [" + strings.Join(quoted, ", ") + "]}}}"
+}
+
+// subcommandsInput builds a parsed input carrying both commands and subcommands.
+func subcommandsInput(commands, subcommands []string) string {
+	quote := func(in []string) string {
+		out := make([]string, len(in))
+		for i, tok := range in {
+			out[i] = cueStringLit(tok)
+		}
+		return strings.Join(out, ", ")
+	}
+	return "{tool_input: {parsed: {commands: [" + quote(commands) +
+		"], subcommands: [" + quote(subcommands) + "]}}}"
+}
+
+// setParam unifies a definition with a hidden-param struct literal (e.g.
+// `{#name: "rm"}`), returning the parameterized constraint.
+func setParam(t *testing.T, ctx *cue.Context, pkg cue.Value, defName, paramExpr string) cue.Value {
+	t.Helper()
+	cons := lookupDef(t, pkg, defName)
+	withParam := cons.Unify(ctx.CompileString(paramExpr, cue.Filename("param.cue")))
+	if err := withParam.Err(); err != nil {
+		t.Fatalf("setting %s on %s errored: %v", paramExpr, defName, err)
+	}
+	return withParam
+}
+
+// paramExpectOK / paramExpectFail validate a parameterized constraint against a
+// parsed input literal through the real Concrete(false) path.
+func paramExpectOK(t *testing.T, ctx *cue.Context, cons cue.Value, label, valueExpr string) {
+	t.Helper()
+	val := ctx.CompileString(valueExpr, cue.Filename("value.cue"))
+	if err := val.Err(); err != nil {
+		t.Fatalf("value compile error (%s): %v", valueExpr, err)
+	}
+	if err := cons.Unify(val).Validate(cue.Concrete(false)); err != nil {
+		t.Errorf("expected %s to match %s, got error: %v", label, valueExpr, err)
+	}
+}
+
+func paramExpectFail(t *testing.T, ctx *cue.Context, cons cue.Value, label, valueExpr string) {
+	t.Helper()
+	val := ctx.CompileString(valueExpr, cue.Filename("value.cue"))
+	if err := val.Err(); err != nil {
+		t.Fatalf("value compile error (%s): %v", valueExpr, err)
+	}
+	if err := cons.Unify(val).Validate(cue.Concrete(false)); err == nil {
+		t.Errorf("expected %s to fail for %s, but unification succeeded", label, valueExpr)
+	}
+}
+
+func TestCommand_Command_Matches(t *testing.T) {
+	ctx := cuecontext.New()
+	pkg := loadSubPkg(t, ctx, subPkgCommand)
+
+	rm := setParam(t, ctx, pkg, "command", `{#name: "rm"}`)
+
+	paramExpectOK(t, ctx, rm, "#command{rm}", commandsInput("rm"))
+	paramExpectFail(t, ctx, rm, "#command{rm}", commandsInput("chmod"))
+	paramExpectFail(t, ctx, rm, "#command{rm}", commandsInput())
+
+	// `sudo rm` parses to commands:["rm"]; the match must hold regardless of
+	// the raw command string, since only parsed.commands is consulted.
+	paramExpectOK(t, ctx, rm, "#command{rm}",
+		`{tool_input: {command: "sudo rm -rf /", parsed: {commands: ["rm"]}}}`)
+}
+
+func TestCommand_Command_Disjunction(t *testing.T) {
+	ctx := cuecontext.New()
+	pkg := loadSubPkg(t, ctx, subPkgCommand)
+
+	rmOrChmod := setParam(t, ctx, pkg, "command", `{#name: "rm" | "chmod"}`)
+
+	paramExpectOK(t, ctx, rmOrChmod, "#command{rm|chmod}", commandsInput("chmod"))
+	paramExpectOK(t, ctx, rmOrChmod, "#command{rm|chmod}", commandsInput("rm"))
+	paramExpectFail(t, ctx, rmOrChmod, "#command{rm|chmod}", commandsInput("mv"))
+}
+
+func TestCommand_Subcommand(t *testing.T) {
+	ctx := cuecontext.New()
+	pkg := loadSubPkg(t, ctx, subPkgCommand)
+
+	gitCommitMerge := setParam(t, ctx, pkg, "subcommand",
+		`{#of: "git", #name: "commit" | "merge"}`)
+
+	paramExpectOK(t, ctx, gitCommitMerge, "#subcommand{git,commit|merge}",
+		subcommandsInput([]string{"git"}, []string{"commit"}))
+	paramExpectOK(t, ctx, gitCommitMerge, "#subcommand{git,commit|merge}",
+		subcommandsInput([]string{"git"}, []string{"merge"}))
+	paramExpectFail(t, ctx, gitCommitMerge, "#subcommand{git,commit|merge}",
+		subcommandsInput([]string{"git"}, []string{"push"}))
+	// Wrong #of: commands must contain "git", not "docker".
+	paramExpectFail(t, ctx, gitCommitMerge, "#subcommand{git,commit|merge}",
+		subcommandsInput([]string{"docker"}, []string{"commit"}))
+	// No subcommand present at all.
+	paramExpectFail(t, ctx, gitCommitMerge, "#subcommand{git,commit|merge}",
+		subcommandsInput([]string{"git"}, []string{}))
+}
+
+func TestCommand_Subcommand_ValueShadowDenySafe(t *testing.T) {
+	ctx := cuecontext.New()
+	pkg := loadSubPkg(t, ctx, subPkgCommand)
+
+	gitAdd := setParam(t, ctx, pkg, "subcommand", `{#of: "git", #name: "add"}`)
+
+	// subcommands is the flat set of all known-subcommand positionals (R13):
+	// `git -C commit add <secret>` exposes both "commit" (the shadow value)
+	// and "add" (the real subcommand). #subcommand{git,add} MUST still match.
+	paramExpectOK(t, ctx, gitAdd, "#subcommand{git,add}",
+		subcommandsInput([]string{"git"}, []string{"commit", "add"}))
+
+	// Deny-safe boundary: a shadow value spelling a different known subcommand
+	// ("commit") must not satisfy a rule keyed on "add".
+	paramExpectFail(t, ctx, gitAdd, "#subcommand{git,add}",
+		subcommandsInput([]string{"git"}, []string{"commit"}))
+}
+
+func TestFlag_HasOption_SetMembership(t *testing.T) {
+	ctx := cuecontext.New()
+	pkg := loadSubPkg(t, ctx, subPkgFlag)
+
+	recursive := setParam(t, ctx, pkg, "hasOption",
+		`{#spellings: ["-r", "-R", "--recursive"]}`)
+
+	paramExpectOK(t, ctx, recursive, "#hasOption{recursive}", flagsInput("-R"))
+	paramExpectOK(t, ctx, recursive, "#hasOption{recursive}", flagsInput("--recursive"))
+	paramExpectOK(t, ctx, recursive, "#hasOption{recursive}", flagsInput("-r"))
+	paramExpectFail(t, ctx, recursive, "#hasOption{recursive}", flagsInput("-f"))
+	paramExpectFail(t, ctx, recursive, "#hasOption{recursive}", flagsInput())
+
+	// Exact set membership, regex-free: a single-element spelling matches only
+	// that exact token. "--no-verify" must not match "-n".
+	noVerify := setParam(t, ctx, pkg, "hasOption", `{#spellings: ["--no-verify"]}`)
+	paramExpectOK(t, ctx, noVerify, "#hasOption{--no-verify}", flagsInput("--no-verify"))
+	paramExpectFail(t, ctx, noVerify, "#hasOption{--no-verify}", flagsInput("-n"))
+}
+
+func optSpellings(t *testing.T, optTable cue.Value, name string) map[string]bool {
+	t.Helper()
+	entry := optTable.LookupPath(cue.ParsePath(name))
+	if !entry.Exists() {
+		t.Fatalf("opt.%s not found", name)
+	}
+	spellings := entry.LookupPath(cue.ParsePath("#spellings"))
+	iter, err := spellings.List()
+	if err != nil {
+		t.Fatalf("opt.%s.#spellings not a list: %v", name, err)
+	}
+	got := map[string]bool{}
+	for iter.Next() {
+		s, err := iter.Value().String()
+		if err != nil {
+			t.Fatalf("opt.%s.#spellings non-string entry: %v", name, err)
+		}
+		got[s] = true
+	}
+	return got
+}
+
+func TestFlag_Opt_Library(t *testing.T) {
+	ctx := cuecontext.New()
+	pkg := loadSubPkg(t, ctx, subPkgFlag)
+
+	optTable := pkg.LookupPath(cue.ParsePath("opt"))
+	if !optTable.Exists() {
+		t.Fatalf("flag.opt library not found")
+	}
+
+	for _, tc := range []struct {
+		name string
+		want []string
+	}{
+		{"recursive", []string{"-r", "-R", "--recursive"}},
+		{"force", []string{"-f", "--force"}},
+		{"noVerify", []string{"--no-verify"}},
+		{"noVerifyCommit", []string{"--no-verify", "-n"}},
+	} {
+		got := optSpellings(t, optTable, tc.name)
+		for _, w := range tc.want {
+			if !got[w] {
+				t.Errorf("opt.%s.#spellings missing %q", tc.name, w)
+			}
+		}
+		if len(got) != len(tc.want) {
+			t.Errorf("opt.%s.#spellings has %d entries, want %d", tc.name, len(got), len(tc.want))
+		}
+	}
+
+	// R4: noVerifyCommit (commit/merge) accepts -n; noVerify (push, long-only)
+	// must reject -n so `git push -n` (dry-run) stays allowed.
+	hasOption := lookupDef(t, pkg, "hasOption")
+
+	noVerifyCommit := hasOption.Unify(optTable.LookupPath(cue.ParsePath("noVerifyCommit")))
+	if err := noVerifyCommit.Err(); err != nil {
+		t.Fatalf("#hasOption & opt.noVerifyCommit errored: %v", err)
+	}
+	paramExpectOK(t, ctx, noVerifyCommit, "#hasOption & opt.noVerifyCommit", flagsInput("-n"))
+	paramExpectOK(t, ctx, noVerifyCommit, "#hasOption & opt.noVerifyCommit", flagsInput("--no-verify"))
+
+	noVerify := hasOption.Unify(optTable.LookupPath(cue.ParsePath("noVerify")))
+	if err := noVerify.Err(); err != nil {
+		t.Fatalf("#hasOption & opt.noVerify errored: %v", err)
+	}
+	paramExpectOK(t, ctx, noVerify, "#hasOption & opt.noVerify", flagsInput("--no-verify"))
+	paramExpectFail(t, ctx, noVerify, "#hasOption & opt.noVerify", flagsInput("-n"))
+}
+
+// Cross-package composition: command.#command reads parsed.commands while
+// flag.#hasOption reads parsed.flags. Both must keep `...` at every level so
+// they unify under & without a "field not allowed" error.
+func TestCompose_CommandSubcommandOption(t *testing.T) {
+	ctx := cuecontext.New()
+	cmdPkg := loadSubPkg(t, ctx, subPkgCommand)
+	flagPkg := loadSubPkg(t, ctx, subPkgFlag)
+
+	git := setParam(t, ctx, cmdPkg, "command", `{#name: "git"}`)
+
+	hasOption := lookupDef(t, flagPkg, "hasOption")
+	force := hasOption.Unify(flagPkg.LookupPath(cue.ParsePath("opt")).LookupPath(cue.ParsePath("force")))
+	if err := force.Err(); err != nil {
+		t.Fatalf("#hasOption & opt.force errored: %v", err)
+	}
+
+	composed := git.Unify(force)
+	if err := composed.Err(); err != nil {
+		t.Fatalf("command.#command{git} & (flag.#hasOption & opt.force) errored: %v", err)
+	}
+
+	paramExpectOK(t, ctx, composed, "command{git} & hasOption{force}",
+		`{tool_input: {parsed: {commands: ["git"], flags: ["-f"]}}}`)
+	paramExpectFail(t, ctx, composed, "command{git} & hasOption{force}",
+		`{tool_input: {parsed: {commands: ["git"], flags: []}}}`)
 }
