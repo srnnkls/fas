@@ -352,6 +352,22 @@ $ cat << 'EOF' |
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Refusing to stage a likely secret file"}} (no-eol)
 ```
 
+### Blocks git -C commit add .env
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "git -C commit add .env"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Refusing to stage a likely secret file"}} (no-eol)
+```
+
 ### Allows git add src/main.py
 
 ```scrut

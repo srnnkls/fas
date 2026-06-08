@@ -489,14 +489,6 @@ func TestTool_KnownTool_Disjunction(t *testing.T) {
 // command package — Bash command matchers (rm, tee, …)
 // ---------------------------------------------------------------------------
 
-func TestCommand_Matchers(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgCommand)
-
-	unifyExpectOK(t, ctx, pkg, "isTee", `{tool_input: {command: "tee /etc/hosts"}}`)
-	unifyExpectOK(t, ctx, pkg, "isMv", `{tool_input: {command: "mv a b"}}`)
-}
-
 // TestCommand_Command_Corpus drives command.#command{rm} from the real parser:
 // each raw string is fed through parser.ParseBash and its parsed.commands tested.
 func TestCommand_Command_Corpus(t *testing.T) {
@@ -570,58 +562,6 @@ func flagsInput(tokens ...string) string {
 	return "{tool_input: {parsed: {flags: [" + strings.Join(quoted, ", ") + "]}}}"
 }
 
-func TestFlag_hasRmForce_LongForms(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgFlag)
-
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("--force"))
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("--force=value"))
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-force"))
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-force=value"))
-}
-
-func TestFlag_hasRmForce_ShortCombos(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgFlag)
-
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-f"))
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-rf"))
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-Rf"))
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-vrf"))
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-rfi"))
-
-	// Letter-order permutation: 'f' must match regardless of its position.
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-fvr"))
-	unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput("-fvr"))
-	unifyExpectOK(t, ctx, pkg, "hasRmVerbose", flagsInput("-fvr"))
-}
-
-func TestFlag_hasRmForce_RejectsMissingLetter(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgFlag)
-
-	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-r"))
-	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-ri"))
-	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("--recursive"))
-}
-
-func TestFlag_hasRmForce_AnchorCorrectness(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgFlag)
-
-	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-force-feed"))
-	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("--forceful"))
-}
-
-func TestFlag_hasRmForce_RejectsUnknownLetters(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgFlag)
-
-	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-x"))
-	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-xyz"))
-	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-abc"))
-}
-
 // TestFlag_HasOption_Recursive_Corpus pins #hasOption & opt.recursive over the
 // debundled-token corpus (each row is a single token the parser would emit).
 func TestFlag_HasOption_Recursive_Corpus(t *testing.T) {
@@ -642,60 +582,6 @@ func TestFlag_HasOption_Recursive_Corpus(t *testing.T) {
 				paramExpectFail(t, ctx, recursive, "#hasOption & opt.recursive", flagsInput(row.Input))
 			}
 		})
-	}
-}
-
-func TestFlag_hasRmInteractive(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgFlag)
-
-	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("-i"))
-	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("-I"))
-	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("-ri"))
-	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("--interactive"))
-	unifyExpectFail(t, ctx, pkg, "hasRmInteractive", flagsInput("-f"))
-	unifyExpectFail(t, ctx, pkg, "hasRmInteractive", flagsInput("-x"))
-
-	// Two-letter permutation: -if contains both 'i' and 'f'.
-	unifyExpectOK(t, ctx, pkg, "hasRmInteractive", flagsInput("-if"))
-	unifyExpectOK(t, ctx, pkg, "hasRmForce", flagsInput("-if"))
-}
-
-func TestFlag_hasRmVerbose(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgFlag)
-
-	unifyExpectOK(t, ctx, pkg, "hasRmVerbose", flagsInput("-v"))
-	unifyExpectOK(t, ctx, pkg, "hasRmVerbose", flagsInput("-vrf"))
-	unifyExpectOK(t, ctx, pkg, "hasRmVerbose", flagsInput("--verbose"))
-	unifyExpectOK(t, ctx, pkg, "hasRmVerbose", flagsInput("--verbose=1"))
-	unifyExpectFail(t, ctx, pkg, "hasRmVerbose", flagsInput("-r"))
-}
-
-// AND composition — building a rule condition that requires multiple flag
-// constraints at once.
-func TestFlag_hasRmForce_AND_Recursive(t *testing.T) {
-	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgFlag)
-
-	force := lookupDef(t, pkg, "hasRmForce")
-	recursive := lookupDef(t, pkg, "hasRmRecursive")
-	both := force.Unify(recursive)
-
-	okVal := ctx.CompileString(flagsInput("-rf"), cue.Filename("both-ok.cue"))
-	if err := okVal.Err(); err != nil {
-		t.Fatalf("compile -rf input: %v", err)
-	}
-	if err := both.Unify(okVal).Validate(cue.Concrete(false)); err != nil {
-		t.Errorf("expected hasRmForce & hasRmRecursive to match -rf, got %v", err)
-	}
-
-	failVal := ctx.CompileString(flagsInput("-f"), cue.Filename("both-fail.cue"))
-	if err := failVal.Err(); err != nil {
-		t.Fatalf("compile -f input: %v", err)
-	}
-	if err := both.Unify(failVal).Validate(cue.Concrete(false)); err == nil {
-		t.Errorf("expected hasRmForce & hasRmRecursive to fail on -f, but it matched")
 	}
 }
 

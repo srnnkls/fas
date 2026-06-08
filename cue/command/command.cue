@@ -3,10 +3,6 @@
 // parsed.commands/subcommands, so `sudo rm`, `FOO=1 rm`, and leading whitespace
 // all match. Compose with tool.#Tool.Bash:
 // hook.#PreToolUse & tool.#Tool.Bash & (command.#command & {#name: "rm"}).
-//
-// The legacy #isRm/#isChmod/#isTee/#isMv defs anchor on the raw command string
-// (^cmd\b) and therefore do NOT survive sudo/env/whitespace prefixes. They are
-// deprecated pending removal (T6); use #command instead.
 package command
 
 import "list"
@@ -51,8 +47,3 @@ import "list"
 	}
 	...
 }
-
-#isRm: {tool_input: {command: =~"^rm\\b", ...}, ...}
-#isChmod: {tool_input: {command: =~"^chmod\\b", ...}, ...}
-#isTee: {tool_input: {command: =~"^tee\\b", ...}, ...}
-#isMv: {tool_input: {command: =~"^mv\\b", ...}, ...}
