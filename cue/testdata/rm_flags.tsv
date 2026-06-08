@@ -1,28 +1,16 @@
-# matcher: flag.#hasRmRecursive
-# Each row is a single rm flag token. Authored from `man rm` (GNU + BSD).
-# match   = token means "recurse into directories"
-# nomatch = token does not request recursion
+# matcher: flag.#hasOption & flag.opt.recursive
+# Each row is a single DEBUNDLED flag token, as the parser now emits (e.g.
+# `-rf` debundles to `-r` and `-f`). The oracle is exact set membership over
+# opt.recursive's spellings (-r, -R, --recursive), not the old bundle regex.
+# match   = token is one of opt.recursive's recursive spellings
+# nomatch = token is not a recursive spelling
 #
-# Recursive forms (GNU rm: -r, -R, --recursive). Short bundles carry the
-# recursive letter alongside other letters in any order.
+# Recursive spellings (GNU rm: -r, -R, --recursive).
 -r	match
 -R	match
 --recursive	match
-# --recursive=<x> expresses recursive intent, so the policy denies it (golden:
-# `rm --recursive=true ~`) even though GNU rm rejects the =arg syntax.
---recursive=true	match
--rf	match
--Rf	match
--fR	match
--fr	match
--rd	match
--vrf	match
--rfi	match
--fvr	match
--rv	match
--rfv	match
 #
-# Non-recursive forms.
+# Non-recursive debundled tokens.
 -f	nomatch
 --force	nomatch
 -i	nomatch
@@ -35,6 +23,4 @@
 -d	nomatch
 --dir	nomatch
 --recursively	nomatch
--fi	nomatch
--vf	nomatch
 --no-preserve-root	nomatch

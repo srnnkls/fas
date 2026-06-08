@@ -1,12 +1,14 @@
-# matcher: command.#isRm
-# Each row is a full Bash command string.
-# match   = the leading token of the command is exactly `rm`
-# nomatch = the leading token is anything else
+# matcher: command.#command & {#name: "rm"}
+# Each row is a full Bash command string. The verdict is checked against the
+# ACTUAL parser output: the row is run through parser.ParseBash and the
+# resulting parsed.commands list is fed to #command{rm}.
+# match   = parsed.commands contains "rm" (the resolved executable name)
+# nomatch = parsed.commands does not contain "rm"
 #
 # A literal TAB in the input column is written as the two chars \t and
 # unescaped by the loader.
 #
-# Leading token is rm.
+# rm is the resolved command.
 rm	match
 rm -rf /x	match
 rm file	match
@@ -24,11 +26,16 @@ cat file	nomatch
 mv a b	nomatch
 cp a b	nomatch
 #
-# rm is present but not the leading token.
-sudo rm -rf /x	nomatch
-env rm file	nomatch
-FOO=1 rm file	nomatch
-echo rm	nomatch
+# Escalation/env/whitespace prefixes: under #command{rm} the matcher reads
+# parsed.commands, so the escalation prefix is stripped (sudo) and the leading
+# whitespace / assignment prefix no longer hides rm — these now MATCH. This is
+# the R3 semantic reversal vs. the old ^rm\b raw-string matcher.
+sudo rm -rf /x	match
+FOO=1 rm file	match
+ rm -rf /x	match
 #
-# Leading whitespace shifts the leading token off the anchor.
- rm -rf /x	nomatch
+# `env rm` resolves to commands=["env"] (env is not an escalation prefix; it
+# becomes the leading command), and `echo rm` resolves to commands=["echo"]:
+# rm is an argument, not the executable. Both stay nomatch.
+env rm file	nomatch
+echo rm	nomatch

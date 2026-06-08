@@ -8,7 +8,8 @@ import (
 )
 
 // composeChain mirrors destructive_home.cue's when chain:
-// hook.#PreToolUse & tool.#Tool.Bash & command.#isRm & flag.#hasRmRecursive.
+// hook.#PreToolUse & tool.#Tool.Bash & command.#command{rm} &
+// (flag.#hasOption & flag.opt.recursive).
 func composeChain(t *testing.T, ctx *cue.Context) cue.Value {
 	t.Helper()
 	preToolUse := lookupDef(t, loadSubPkg(t, ctx, subPkgHook), "PreToolUse")
@@ -16,10 +17,15 @@ func composeChain(t *testing.T, ctx *cue.Context) cue.Value {
 	if !bash.Exists() {
 		t.Fatal("#Tool.Bash not found")
 	}
-	isRm := lookupDef(t, loadSubPkg(t, ctx, subPkgCommand), "isRm")
-	hasRecursive := lookupDef(t, loadSubPkg(t, ctx, subPkgFlag), "hasRmRecursive")
+	rm := setParam(t, ctx, loadSubPkg(t, ctx, subPkgCommand), "command", `{#name: "rm"}`)
+	flagPkg := loadSubPkg(t, ctx, subPkgFlag)
+	hasOption := lookupDef(t, flagPkg, "hasOption")
+	recursive := hasOption.Unify(flagPkg.LookupPath(cue.ParsePath("opt")).LookupPath(cue.ParsePath("recursive")))
+	if err := recursive.Err(); err != nil {
+		t.Fatalf("#hasOption & opt.recursive errored: %v", err)
+	}
 
-	chain := preToolUse.Unify(bash).Unify(isRm).Unify(hasRecursive)
+	chain := preToolUse.Unify(bash).Unify(rm).Unify(recursive)
 	if err := chain.Err(); err != nil {
 		t.Fatalf("compose 4-way chain errored: %v", err)
 	}
@@ -31,7 +37,7 @@ func TestComposition_FourWayChain_MatchesSatisfyingInput(t *testing.T) {
 	chain := composeChain(t, ctx)
 
 	input := ctx.CompileString(
-		`{hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: {command: "rm -rf ~", parsed: {flags: ["-rf"]}}}`,
+		`{hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: {parsed: {commands: ["rm"], flags: ["-r", "-f"]}}}`,
 		cue.Filename("chain-ok.cue"),
 	)
 	if err := input.Err(); err != nil {
@@ -52,10 +58,10 @@ func TestComposition_FourWayChain_FailsWhenAnyConjunctFails(t *testing.T) {
 		broken string
 		input  string
 	}{
-		{"hook.#PreToolUse", `{hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: {command: "rm -rf ~", parsed: {flags: ["-rf"]}}}`},
-		{"tool.#Tool.Bash", `{hook_event_name: "PreToolUse", tool_name: "Write", tool_input: {command: "rm -rf ~", parsed: {flags: ["-rf"]}}}`},
-		{"command.#isRm", `{hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: {command: "ls -rf ~", parsed: {flags: ["-rf"]}}}`},
-		{"flag.#hasRmRecursive", `{hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: {command: "rm -rf ~", parsed: {flags: ["-f"]}}}`},
+		{"hook.#PreToolUse", `{hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: {parsed: {commands: ["rm"], flags: ["-r", "-f"]}}}`},
+		{"tool.#Tool.Bash", `{hook_event_name: "PreToolUse", tool_name: "Write", tool_input: {parsed: {commands: ["rm"], flags: ["-r", "-f"]}}}`},
+		{"command.#command{rm}", `{hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: {parsed: {commands: ["ls"], flags: ["-r", "-f"]}}}`},
+		{"flag.#hasOption&opt.recursive", `{hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: {parsed: {commands: ["rm"], flags: ["-f"]}}}`},
 	}
 	for _, row := range rows {
 		t.Run("broken/"+row.broken, func(t *testing.T) {

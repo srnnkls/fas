@@ -34,6 +34,24 @@ import "list"
 	...
 }
 
+// #commandRobust matches #name in parsed.commands, OR — when the parser failed
+// (attributes.parse_error present) — falls back to an anchored scan of the raw
+// command string, so deny coverage survives malformed-but-executable input.
+// #name must be a single literal command name (the fallback derives ^<name>\b).
+#commandRobust: {
+	#name: string
+	tool_input: {parsed: {commands: list.MatchN(>0, #name), ...}, ...}
+	...
+} | {
+	#name: string
+	tool_input: {
+		command: =~"^\(#name)\\b"
+		parsed: {attributes: {parse_error: string, ...}, ...}
+		...
+	}
+	...
+}
+
 #isRm: {tool_input: {command: =~"^rm\\b", ...}, ...}
 #isChmod: {tool_input: {command: =~"^chmod\\b", ...}, ...}
 #isTee: {tool_input: {command: =~"^tee\\b", ...}, ...}

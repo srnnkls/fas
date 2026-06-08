@@ -15,9 +15,9 @@ type corpusRow struct {
 
 // corpusFiles lists every testdata corpus alongside the matcher it pins.
 var corpusFiles = map[string]string{
-	"rm_flags.tsv":            "flag.#hasRmRecursive",
+	"rm_flags.tsv":            "flag.#hasOption & flag.opt.recursive",
 	"system_paths.tsv":        "path.#systemTarget",
-	"commands.tsv":            "command.#isRm",
+	"commands.tsv":            "command.#command & {#name: \"rm\"}",
 	"destructive_actions.tsv": "action.#destructiveAction",
 	"escalation.tsv":          "escalation.#escalationCommand",
 }

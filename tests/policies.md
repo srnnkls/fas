@@ -219,6 +219,22 @@ $ cat << 'EOF' |
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Recursive deletion of the home directory is blocked"}} (no-eol)
 ```
 
+### Blocks leading-whitespace rm -rf ~
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "   rm -rf ~"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Recursive deletion of the home directory is blocked"}} (no-eol)
+```
+
 ### Blocks rm --recursive=true ~
 
 ```scrut
@@ -403,6 +419,45 @@ $ cat << 'EOF' |
 > EOF
 > fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
+```
+
+## Compound no-verify (R10)
+
+The parsed payload flattens compound lines into merged `subcommands`/`flags`
+lists. A `git` no-verify shape anywhere in a compound therefore denies the whole
+line — an accepted false-deny in the safe (never-loosened) direction. These cases
+record that behavior change so it is tested, not silent.
+
+### Blocks git push -n && git commit (R10 compound false-deny, accepted)
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "git push -n && git commit -m x"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Git --no-verify is not permitted; commit/push hooks must run"}} (no-eol)
+```
+
+### Blocks docker commit && git push --no-verify (R10)
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "docker commit && git push --no-verify"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Git --no-verify is not permitted; commit/push hooks must run"}} (no-eol)
 ```
 
 ## Init Process Protection (struct-level disjunction)
@@ -645,6 +700,22 @@ $ cat << 'EOF' |
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Writing to system paths via tee is blocked"}} (no-eol)
 ```
 
+### Blocks sudo tee /etc/sudoers.d/override
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "sudo tee /etc/sudoers.d/override"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Writing to system paths via tee is blocked"}} (no-eol)
+```
+
 ### Blocks tee -a /etc/cron.d/task
 
 ```scrut
@@ -653,6 +724,22 @@ $ cat << 'EOF' |
 >   "hook_event_name": "PreToolUse",
 >   "tool_name": "Bash",
 >   "tool_input": {"command": "tee -a /etc/cron.d/task"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Writing to system paths via tee is blocked"}} (no-eol)
+```
+
+### Blocks malformed tee /etc (parse-error fallback)
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "tee /etc/cron.d/override '"},
 >   "session_id": "test",
 >   "cwd": "/tmp"
 > }

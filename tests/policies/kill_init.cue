@@ -1,8 +1,11 @@
 package rules
 
 import (
+	"list"
+
 	"github.com/srnnkls/fas/cue/hook"
 	"github.com/srnnkls/fas/cue/tool"
+	"github.com/srnnkls/fas/cue/command"
 )
 
 // A single rule that denies two closely related shapes via struct-level `|`:
@@ -18,11 +21,13 @@ kill_init: {
 	when: {
 		hook.#PreToolUse
 		tool.#Tool.Bash
-		tool_input: command: =~"^kill\\s+(-[A-Z0-9]+\\s+)?1(\\s|$)"
+		command.#command & {#name: "kill"}
+		tool_input: parsed: targets: list.MatchN(>0, "1")
 	} | {
 		hook.#PreToolUse
 		tool.#Tool.Bash
-		tool_input: command: =~"^killall\\s+(-[A-Z0-9]+\\s+)?(systemd|init)(\\s|$)"
+		command.#command & {#name: "killall"}
+		tool_input: parsed: targets: list.MatchN(>0, "systemd" | "init")
 	}
 	then: deny: {
 		rule_id:  "kill-init"

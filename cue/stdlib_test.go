@@ -13,6 +13,7 @@ import (
 	"cuelang.org/go/cue/load"
 
 	fascue "github.com/srnnkls/fas/cue"
+	"github.com/srnnkls/fas/internal/parser"
 )
 
 // stdlibModuleRoot is the synthetic root the sub-package test harness uses
@@ -496,20 +497,62 @@ func TestCommand_Matchers(t *testing.T) {
 	unifyExpectOK(t, ctx, pkg, "isMv", `{tool_input: {command: "mv a b"}}`)
 }
 
-func TestCommand_IsRm_Corpus(t *testing.T) {
+// TestCommand_Command_Corpus drives command.#command{rm} from the real parser:
+// each raw string is fed through parser.ParseBash and its parsed.commands tested.
+func TestCommand_Command_Corpus(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgCommand)
 
+	rm := setParam(t, ctx, pkg, "command", `{#name: "rm"}`)
+
 	for _, row := range loadCorpus(t, "commands.tsv") {
-		input := `{tool_input: {command: ` + cueStringLit(row.Input) + `}}`
+		commands := parser.ParseBash(row.Input).Commands
+		input := commandsInput(commands...)
 		t.Run(corpusSubtestName(row.Input), func(t *testing.T) {
 			if row.Match {
-				unifyExpectOK(t, ctx, pkg, "isRm", input)
+				paramExpectOK(t, ctx, rm, "#command{rm}", input)
 			} else {
-				unifyExpectFail(t, ctx, pkg, "isRm", input)
+				paramExpectFail(t, ctx, rm, "#command{rm}", input)
 			}
 		})
 	}
+}
+
+func TestCommand_CommandRobust(t *testing.T) {
+	ctx := cuecontext.New()
+	pkg := loadSubPkg(t, ctx, subPkgCommand)
+
+	tee := setParam(t, ctx, pkg, "commandRobust", `{#name: "tee"}`)
+
+	// 1. Normal path: "tee" in parsed.commands, no parse_error needed.
+	paramExpectOK(t, ctx, tee, "#commandRobust{tee} normal",
+		`{tool_input: {parsed: {commands: ["tee"]}}}`)
+
+	// 2. Parse-error fallback: commands empty, but parse_error present and the
+	// raw command is anchored ^tee\b → disjunct 2 fires.
+	paramExpectOK(t, ctx, tee, "#commandRobust{tee} parse-error fallback",
+		`{tool_input: {command: "tee /etc/x", parsed: {commands: [], attributes: {parse_error: "some error"}}}}`)
+
+	// 3. Parse-error but wrong command: raw does not start with tee → no match.
+	// Deny-direction stays anchored, not catch-all.
+	paramExpectFail(t, ctx, tee, "#commandRobust{tee} parse-error wrong cmd",
+		`{tool_input: {command: "ls /etc", parsed: {commands: [], attributes: {parse_error: "x"}}}}`)
+
+	// 4. No parse_error, not in commands, but raw starts with "tee": still
+	// UNIFIES under this harness. The gate is `parse_error: string`, but
+	// Unify+Validate(Concrete(false)) treats an absent non-concrete field as
+	// fillable, so it cannot prove the parse_error gate — only the evaluator's
+	// Subsume(cue.Final()) can (it rejects this input via disjunct 2). The
+	// authoritative gate check lives in the policy scrut suite (tests/policies.md).
+	paramExpectOK(t, ctx, tee, "#commandRobust{tee} no parse_error, raw ^tee\\b unifies (gate unprovable here)",
+		`{tool_input: {command: "tee /etc/x", parsed: {commands: ["ls"]}}}`)
+
+	// 5. Anchoring limitation: under parse_error, the raw fallback is ^tee\b
+	// anchored, so a leading "sudo tee" does NOT match via the fallback. This
+	// is deny-safe because well-parsed `sudo tee` resolves commands:["tee"] and
+	// is covered by disjunct 1.
+	paramExpectFail(t, ctx, tee, "#commandRobust{tee} parse-error sudo prefix",
+		`{tool_input: {command: "sudo tee /etc/x", parsed: {commands: [], attributes: {parse_error: "x"}}}}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -579,16 +622,24 @@ func TestFlag_hasRmForce_RejectsUnknownLetters(t *testing.T) {
 	unifyExpectFail(t, ctx, pkg, "hasRmForce", flagsInput("-abc"))
 }
 
-func TestFlag_hasRmRecursive(t *testing.T) {
+// TestFlag_HasOption_Recursive_Corpus pins #hasOption & opt.recursive over the
+// debundled-token corpus (each row is a single token the parser would emit).
+func TestFlag_HasOption_Recursive_Corpus(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgFlag)
+
+	hasOption := lookupDef(t, pkg, "hasOption")
+	recursive := hasOption.Unify(pkg.LookupPath(cue.ParsePath("opt")).LookupPath(cue.ParsePath("recursive")))
+	if err := recursive.Err(); err != nil {
+		t.Fatalf("#hasOption & opt.recursive errored: %v", err)
+	}
 
 	for _, row := range loadCorpus(t, "rm_flags.tsv") {
 		t.Run(corpusSubtestName(row.Input), func(t *testing.T) {
 			if row.Match {
-				unifyExpectOK(t, ctx, pkg, "hasRmRecursive", flagsInput(row.Input))
+				paramExpectOK(t, ctx, recursive, "#hasOption & opt.recursive", flagsInput(row.Input))
 			} else {
-				unifyExpectFail(t, ctx, pkg, "hasRmRecursive", flagsInput(row.Input))
+				paramExpectFail(t, ctx, recursive, "#hasOption & opt.recursive", flagsInput(row.Input))
 			}
 		})
 	}
@@ -671,31 +722,35 @@ func TestFlag_hasFlagMatching_BuildingBlock(t *testing.T) {
 	}
 }
 
-// Cross-subfield composition: command.#isRm touches tool_input.command while
-// flag.#hasRmRecursive touches tool_input.parsed.flags. Both matchers must
-// stay open at every level of tool_input so they unify under & without a
-// "field not allowed" error.
+// Cross-subfield composition: command.#command reads parsed.commands while
+// flag.#hasOption reads parsed.flags. Both matchers must stay open at every
+// level of tool_input so they unify under & without a "field not allowed"
+// error. Input carries debundled flags, as the parser now emits them.
 func TestCompose_CommandAndFlag_Unify(t *testing.T) {
 	ctx := cuecontext.New()
 	cmdPkg := loadSubPkg(t, ctx, subPkgCommand)
 	flagPkg := loadSubPkg(t, ctx, subPkgFlag)
 
-	isRm := lookupDef(t, cmdPkg, "isRm")
-	hasRecursive := lookupDef(t, flagPkg, "hasRmRecursive")
-	composed := isRm.Unify(hasRecursive)
+	rm := setParam(t, ctx, cmdPkg, "command", `{#name: "rm"}`)
+	hasOption := lookupDef(t, flagPkg, "hasOption")
+	recursive := hasOption.Unify(flagPkg.LookupPath(cue.ParsePath("opt")).LookupPath(cue.ParsePath("recursive")))
+	if err := recursive.Err(); err != nil {
+		t.Fatalf("#hasOption & opt.recursive errored: %v", err)
+	}
+	composed := rm.Unify(recursive)
 	if err := composed.Err(); err != nil {
-		t.Fatalf("command.#isRm & flag.#hasRmRecursive errored: %v", err)
+		t.Fatalf("command.#command{rm} & (flag.#hasOption & opt.recursive) errored: %v", err)
 	}
 
 	okVal := ctx.CompileString(
-		`{tool_input: {command: "rm -rf x", parsed: {flags: ["-rf"]}}}`,
+		`{tool_input: {parsed: {commands: ["rm"], flags: ["-r", "-f"]}}}`,
 		cue.Filename("compose-ok.cue"),
 	)
 	if err := okVal.Err(); err != nil {
 		t.Fatalf("compile compose input: %v", err)
 	}
 	if err := composed.Unify(okVal).Validate(cue.Concrete(false)); err != nil {
-		t.Errorf("expected command.#isRm & flag.#hasRmRecursive to match composed input, got: %v", err)
+		t.Errorf("expected command.#command{rm} & (flag.#hasOption & opt.recursive) to match composed input, got: %v", err)
 	}
 }
 
