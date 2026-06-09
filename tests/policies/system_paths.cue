@@ -10,7 +10,7 @@ import (
 // commands and compound forms whose AST walker surfaces the path in targets
 // (e.g. `echo start && rm -rf /etc/passwd` — both commands' args are walked).
 targets: {
-	when: hook.#PreToolUse & tool.#Tool.Bash & path.#hasSystemTarget
+	when: hook.#PreToolUse & tool.#Bash & path.#hasSystemTarget
 	then: deny: {
 		rule_id:  "system-path"
 		reason:   "System path blocked"
@@ -27,7 +27,7 @@ targets: {
 // substrings inside unrelated identifiers. `./build`, `./node_modules`, and
 // `src/main.py` never contain `/etc|/sys|/proc|/boot|/dev` after a boundary.
 for_loop: {
-	when: hook.#PreToolUse & tool.#Tool.Bash & path.#hasSystemInCommand
+	when: hook.#PreToolUse & tool.#Bash & path.#hasSystemInCommand
 	then: deny: {
 		rule_id:  "system-path-command"
 		reason:   "System path blocked"

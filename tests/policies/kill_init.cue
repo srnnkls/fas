@@ -5,7 +5,7 @@ import (
 
 	"github.com/srnnkls/fas/cue/hook"
 	"github.com/srnnkls/fas/cue/tool"
-	"github.com/srnnkls/fas/cue/command"
+	"github.com/srnnkls/fas/cue/bash"
 )
 
 // A single rule that denies two closely related shapes via struct-level `|`:
@@ -15,18 +15,18 @@ import (
 // and reason keep the policy surface legible while still allowing harmless
 // signal delivery to ordinary processes.
 //
-// `|` binds looser than `&`, so the outer `hook.#PreToolUse & tool.#Tool.Bash`
+// `|` binds looser than `&`, so the outer `hook.#PreToolUse & tool.#Bash`
 // is repeated on each disjunct to keep the grouping explicit and readable.
 kill_init: {
 	when: {
 		hook.#PreToolUse
-		tool.#Tool.Bash
-		command.#command & {#name: "kill"}
+		tool.#Bash
+		bash.#command & {#name: "kill"}
 		tool_input: parsed: targets: list.MatchN(>0, "1")
 	} | {
 		hook.#PreToolUse
-		tool.#Tool.Bash
-		command.#command & {#name: "killall"}
+		tool.#Bash
+		bash.#command & {#name: "killall"}
 		tool_input: parsed: targets: list.MatchN(>0, "systemd" | "init")
 	}
 	then: deny: {

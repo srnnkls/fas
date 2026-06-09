@@ -215,7 +215,7 @@ func extractFileRules(ruleDef cue.Value, fileVal cue.Value, rulePath string) ([]
 		// the offending leaf field, NOT on `when` itself — CUE keeps such
 		// errors localized, so a top-level when.Err() (and even
 		// when.Validate) misses a typo'd stdlib reference like
-		// `hook.#Agent.Explor`. Walk the subtree so it fails the load
+		// `agent.#Explor`. Walk the subtree so it fails the load
 		// instead of being smuggled in as silent bottom that never matches.
 		if when := unified.LookupPath(cue.ParsePath("when")); when.Exists() {
 			if err := whenFieldErr(when, 0); err != nil {
@@ -246,7 +246,7 @@ func extractFileRules(ruleDef cue.Value, fileVal cue.Value, rulePath string) ([]
 
 // whenFieldErr walks a compiled `when` value and returns the first field that
 // carries a localized error. CUE keeps reference errors (e.g. "undefined field"
-// from a typo'd stdlib member such as hook.#Agent.Explor) on the offending leaf
+// from a typo'd stdlib member such as agent.#Explor) on the offending leaf
 // rather than bubbling them to the parent, so a top-level when.Err() misses
 // them. Abstract pattern constraints — regex (=~), bounds (>0), disjunctions,
 // list.MatchN — carry no error and are never flagged (verified against the full
@@ -342,8 +342,8 @@ func wrapFieldLoadError(rulePath, field string, err error) error {
 // buildStdlibOverlay materializes the embedded fas stdlib inside the
 // synthetic module's `cue.mod/pkg/github.com/srnnkls/fas/cue/` tree so
 // every sub-package import (`.../cue/catalog`, `.../cue/hook`, `.../cue/tool`,
-// `.../cue/command`, `.../cue/path`, `.../cue/escalation`, `.../cue/action`,
-// `.../cue/flag`) resolves from any rule file.
+// `.../cue/agent`, `.../cue/bash`, `.../cue/path`, `.../cue/escalation`,
+// `.../cue/action`, `.../cue/flag`) resolves from any rule file.
 //
 // Sub-directory structure is preserved: `hook/events.cue` lands at
 // `pkg/.../cue/hook/events.cue` so CUE's loader treats the directory as its

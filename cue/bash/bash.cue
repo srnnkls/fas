@@ -1,9 +1,9 @@
-// Package command matches the executable (and subcommand) invoked inside a Bash
+// Package bash matches the executable (and subcommand) invoked inside a Bash
 // command. Prefer the parsed-fact matchers #command and #subcommand: they read
 // parsed.commands/subcommands, so `sudo rm`, `FOO=1 rm`, and leading whitespace
-// all match. Compose with tool.#Tool.Bash:
-// hook.#PreToolUse & tool.#Tool.Bash & (command.#command & {#name: "rm"}).
-package command
+// all match. Compose with tool.#Bash:
+// hook.#PreToolUse & tool.#Bash & (bash.#command & {#name: "rm"}).
+package bash
 
 import "list"
 
@@ -30,11 +30,11 @@ import "list"
 	...
 }
 
-// #commandRobust matches #name in parsed.commands, OR — when the parser failed
+// #commandOrRaw matches #name in parsed.commands, OR — when the parser failed
 // (attributes.parse_error present) — falls back to an anchored scan of the raw
 // command string, so deny coverage survives malformed-but-executable input.
 // #name must be a single literal command name (the fallback derives ^<name>\b).
-#commandRobust: {
+#commandOrRaw: {
 	#name: string
 	tool_input: {parsed: {commands: list.MatchN(>0, #name), ...}, ...}
 	...

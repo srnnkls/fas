@@ -11,7 +11,7 @@ import (
 // bannedInline is maintained alongside the stdlib — an exported matcher added without a key here is a reviewable omission.
 //
 // The parse-error fallback regex (^<name>\b) lives in the stdlib
-// (command.#commandRobust), not in policy files; this guard only scans
+// (bash.#commandOrRaw), not in policy files; this guard only scans
 // tests/policies/, so no policy-side carve-out is needed for it.
 var bannedInline = map[string]string{
 	// flag/options.cue (opt spelling library)
@@ -24,17 +24,17 @@ var bannedInline = map[string]string{
 	`^(/etc|/sys|/proc|/boot|/dev)($|/)`:                           "use path.#systemTarget / path.#hasSystemTarget",
 	`(^|[^A-Za-z0-9_])/(etc|sys|proc|boot|dev)(/|$|[^A-Za-z0-9_])`: "use path.#systemInCommand / path.#hasSystemInCommand",
 
-	// command/command.cue (command-name matchers)
-	`=~"^rm\\b"`:    "use command.#command / #commandRobust",
-	`=~"^chmod\\b"`: "use command.#command / #commandRobust",
-	`=~"^tee\\b"`:   "use command.#command / #commandRobust",
-	`=~"^mv\\b"`:    "use command.#command / #commandRobust",
+	// bash/bash.cue (command-name matchers)
+	`=~"^rm\\b"`:    "use bash.#command / #commandOrRaw",
+	`=~"^chmod\\b"`: "use bash.#command / #commandOrRaw",
+	`=~"^tee\\b"`:   "use bash.#command / #commandOrRaw",
+	`=~"^mv\\b"`:    "use bash.#command / #commandOrRaw",
 
 	// raw command/subcommand regexes removed by parser-backed matching
-	`^git\\s+(commit|merge)`:      "use command.#subcommand & {#of: \"git\", #name: \"commit\" | \"merge\"}",
-	`^git\\s+push`:                "use command.#subcommand & {#of: \"git\", #name: \"push\"}",
-	`^git\\s+add`:                 "use command.#subcommand & {#of: \"git\", #name: \"add\"}",
-	`^kill\\s+(-[A-Z0-9]+\\s+)?1`: "use command.#command & {#name: \"kill\"} with target \"1\"",
+	`^git\\s+(commit|merge)`:      "use bash.#subcommand & {#of: \"git\", #name: \"commit\" | \"merge\"}",
+	`^git\\s+push`:                "use bash.#subcommand & {#of: \"git\", #name: \"push\"}",
+	`^git\\s+add`:                 "use bash.#subcommand & {#of: \"git\", #name: \"add\"}",
+	`^kill\\s+(-[A-Z0-9]+\\s+)?1`: "use bash.#command & {#name: \"kill\"} with target \"1\"",
 
 	// action/action.cue
 	`or(["delete", "drop", "remove", "destroy", "truncate"])`: "use action.#destructiveAction / action.#hasDestructiveAction",

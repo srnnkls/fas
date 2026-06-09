@@ -144,7 +144,7 @@ func classifyCueErrors(leaves []cueerrors.Error) (code, title string) {
 }
 
 // isWhenReferenceError reports whether a CUE leaf is an unresolved reference
-// inside `when`: a typo'd stdlib member (e.g. hook.#Agent.Explor) or a missing
+// inside `when`: a typo'd stdlib member (e.g. agent.#Explor) or a missing
 // definition surfaces as an "undefined field" / "not found" error on a path
 // that runs through `when`. These are scope/binding failures (E0501), not
 // `then` action-schema problems. CUE keeps such errors on the offending leaf,

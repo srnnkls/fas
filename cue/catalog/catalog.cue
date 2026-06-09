@@ -16,6 +16,7 @@ package catalog
 	Edit:            "Edit"
 	Glob:            "Glob"
 	Grep:            "Grep"
+	MultiEdit:       "MultiEdit"
 	NotebookEdit:    "NotebookEdit"
 	Read:            "Read"
 	TaskCreate:      "TaskCreate"

@@ -1,7 +1,7 @@
 package rules
 
 import (
-	"github.com/srnnkls/fas/cue/command"
+	"github.com/srnnkls/fas/cue/bash"
 	"github.com/srnnkls/fas/cue/hook"
 	"github.com/srnnkls/fas/cue/path"
 	"github.com/srnnkls/fas/cue/tool"
@@ -13,7 +13,7 @@ import (
 // risk applies to other system directories, so the matcher extends the system
 // set with /run via #InCommandRe's #extra hook.
 chmod_runtime_blocklist: {
-	when: hook.#PreToolUse & tool.#Tool.Bash & (command.#commandRobust & {#name: "chmod"}) & {
+	when: hook.#PreToolUse & tool.#Bash & (bash.#commandOrRaw & {#name: "chmod"}) & {
 		tool_input: command: (path.#InCommandRe & {
 			#prefixes: path.#SystemPrefixes
 			#extra: ["/run"]

@@ -46,7 +46,8 @@ const (
 	subPkgCatalog    subPkg = "catalog"
 	subPkgHook       subPkg = "hook"
 	subPkgTool       subPkg = "tool"
-	subPkgCommand    subPkg = "command"
+	subPkgAgent      subPkg = "agent"
+	subPkgBash       subPkg = "bash"
 	subPkgPath       subPkg = "path"
 	subPkgEscalation subPkg = "escalation"
 	subPkgAction     subPkg = "action"
@@ -449,30 +450,26 @@ func TestCatalog_Identities(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// tool package — #Tool matchers (bound from catalog.#ToolName), #KnownTool
+// tool package — flat tool matchers (bound from catalog.#ToolName), #Known
 // ---------------------------------------------------------------------------
 
 func TestTool_Tool_Matchers(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgTool)
 
-	toolDef := lookupDef(t, pkg, "Tool")
-	bash := toolDef.LookupPath(cue.ParsePath("Bash"))
-	if !bash.Exists() {
-		t.Fatal("#Tool.Bash not found")
-	}
+	bash := lookupDef(t, pkg, "Bash")
 
 	okVal := ctx.CompileString(`{tool_name: "Bash"}`, cue.Filename("ok.cue"))
 	if err := bash.Unify(okVal).Validate(cue.Concrete(false)); err != nil {
-		t.Errorf("#Tool.Bash should match Bash, got: %v", err)
+		t.Errorf("#Bash should match Bash, got: %v", err)
 	}
 	writeVal := ctx.CompileString(`{tool_name: "Write"}`, cue.Filename("write.cue"))
 	if err := bash.Unify(writeVal).Validate(cue.Concrete(false)); err == nil {
-		t.Error("#Tool.Bash should not match Write")
+		t.Error("#Bash should not match Write")
 	}
-	write := toolDef.LookupPath(cue.ParsePath("Write"))
+	write := lookupDef(t, pkg, "Write")
 	if err := write.Unify(writeVal).Validate(cue.Concrete(false)); err != nil {
-		t.Errorf("#Tool.Write should match Write, got: %v", err)
+		t.Errorf("#Write should match Write, got: %v", err)
 	}
 }
 
@@ -480,20 +477,20 @@ func TestTool_KnownTool_Disjunction(t *testing.T) {
 	ctx := cuecontext.New()
 	pkg := loadSubPkg(t, ctx, subPkgTool)
 
-	unifyExpectOK(t, ctx, pkg, "KnownTool", `{tool_name: "Bash"}`)
-	unifyExpectOK(t, ctx, pkg, "KnownTool", `{tool_name: "WebSearch"}`)
-	unifyExpectFail(t, ctx, pkg, "KnownTool", `{tool_name: "DefinitelyNotABuiltin"}`)
+	unifyExpectOK(t, ctx, pkg, "Known", `{tool_name: "Bash"}`)
+	unifyExpectOK(t, ctx, pkg, "Known", `{tool_name: "WebSearch"}`)
+	unifyExpectFail(t, ctx, pkg, "Known", `{tool_name: "DefinitelyNotABuiltin"}`)
 }
 
 // ---------------------------------------------------------------------------
-// command package — Bash command matchers (rm, tee, …)
+// bash package — Bash command matchers (rm, tee, …)
 // ---------------------------------------------------------------------------
 
-// TestCommand_Command_Corpus drives command.#command{rm} from the real parser:
+// TestCommand_Command_Corpus drives bash.#command{rm} from the real parser:
 // each raw string is fed through parser.ParseBash and its parsed.commands tested.
 func TestCommand_Command_Corpus(t *testing.T) {
 	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgCommand)
+	pkg := loadSubPkg(t, ctx, subPkgBash)
 
 	rm := setParam(t, ctx, pkg, "command", `{#name: "rm"}`)
 
@@ -512,22 +509,22 @@ func TestCommand_Command_Corpus(t *testing.T) {
 
 func TestCommand_CommandRobust(t *testing.T) {
 	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgCommand)
+	pkg := loadSubPkg(t, ctx, subPkgBash)
 
-	tee := setParam(t, ctx, pkg, "commandRobust", `{#name: "tee"}`)
+	tee := setParam(t, ctx, pkg, "commandOrRaw", `{#name: "tee"}`)
 
 	// 1. Normal path: "tee" in parsed.commands, no parse_error needed.
-	paramExpectOK(t, ctx, tee, "#commandRobust{tee} normal",
+	paramExpectOK(t, ctx, tee, "#commandOrRaw{tee} normal",
 		`{tool_input: {parsed: {commands: ["tee"]}}}`)
 
 	// 2. Parse-error fallback: commands empty, but parse_error present and the
 	// raw command is anchored ^tee\b → disjunct 2 fires.
-	paramExpectOK(t, ctx, tee, "#commandRobust{tee} parse-error fallback",
+	paramExpectOK(t, ctx, tee, "#commandOrRaw{tee} parse-error fallback",
 		`{tool_input: {command: "tee /etc/x", parsed: {commands: [], attributes: {parse_error: "some error"}}}}`)
 
 	// 3. Parse-error but wrong command: raw does not start with tee → no match.
 	// Deny-direction stays anchored, not catch-all.
-	paramExpectFail(t, ctx, tee, "#commandRobust{tee} parse-error wrong cmd",
+	paramExpectFail(t, ctx, tee, "#commandOrRaw{tee} parse-error wrong cmd",
 		`{tool_input: {command: "ls /etc", parsed: {commands: [], attributes: {parse_error: "x"}}}}`)
 
 	// 4. No parse_error, not in commands, but raw starts with "tee": still
@@ -536,14 +533,14 @@ func TestCommand_CommandRobust(t *testing.T) {
 	// fillable, so it cannot prove the parse_error gate — only the evaluator's
 	// Subsume(cue.Final()) can (it rejects this input via disjunct 2). The
 	// authoritative gate check lives in the policy scrut suite (tests/policies.md).
-	paramExpectOK(t, ctx, tee, "#commandRobust{tee} no parse_error, raw ^tee\\b unifies (gate unprovable here)",
+	paramExpectOK(t, ctx, tee, "#commandOrRaw{tee} no parse_error, raw ^tee\\b unifies (gate unprovable here)",
 		`{tool_input: {command: "tee /etc/x", parsed: {commands: ["ls"]}}}`)
 
 	// 5. Anchoring limitation: under parse_error, the raw fallback is ^tee\b
 	// anchored, so a leading "sudo tee" does NOT match via the fallback. This
 	// is deny-safe because well-parsed `sudo tee` resolves commands:["tee"] and
 	// is covered by disjunct 1.
-	paramExpectFail(t, ctx, tee, "#commandRobust{tee} parse-error sudo prefix",
+	paramExpectFail(t, ctx, tee, "#commandOrRaw{tee} parse-error sudo prefix",
 		`{tool_input: {command: "sudo tee /etc/x", parsed: {commands: [], attributes: {parse_error: "x"}}}}`)
 }
 
@@ -608,13 +605,13 @@ func TestFlag_hasFlagMatching_BuildingBlock(t *testing.T) {
 	}
 }
 
-// Cross-subfield composition: command.#command reads parsed.commands while
+// Cross-subfield composition: bash.#command reads parsed.commands while
 // flag.#hasOption reads parsed.flags. Both matchers must stay open at every
 // level of tool_input so they unify under & without a "field not allowed"
 // error. Input carries debundled flags, as the parser now emits them.
 func TestCompose_CommandAndFlag_Unify(t *testing.T) {
 	ctx := cuecontext.New()
-	cmdPkg := loadSubPkg(t, ctx, subPkgCommand)
+	cmdPkg := loadSubPkg(t, ctx, subPkgBash)
 	flagPkg := loadSubPkg(t, ctx, subPkgFlag)
 
 	rm := setParam(t, ctx, cmdPkg, "command", `{#name: "rm"}`)
@@ -625,7 +622,7 @@ func TestCompose_CommandAndFlag_Unify(t *testing.T) {
 	}
 	composed := rm.Unify(recursive)
 	if err := composed.Err(); err != nil {
-		t.Fatalf("command.#command{rm} & (flag.#hasOption & opt.recursive) errored: %v", err)
+		t.Fatalf("bash.#command{rm} & (flag.#hasOption & opt.recursive) errored: %v", err)
 	}
 
 	okVal := ctx.CompileString(
@@ -636,7 +633,7 @@ func TestCompose_CommandAndFlag_Unify(t *testing.T) {
 		t.Fatalf("compile compose input: %v", err)
 	}
 	if err := composed.Unify(okVal).Validate(cue.Concrete(false)); err != nil {
-		t.Errorf("expected command.#command{rm} & (flag.#hasOption & opt.recursive) to match composed input, got: %v", err)
+		t.Errorf("expected bash.#command{rm} & (flag.#hasOption & opt.recursive) to match composed input, got: %v", err)
 	}
 }
 
@@ -700,7 +697,7 @@ func paramExpectFail(t *testing.T, ctx *cue.Context, cons cue.Value, label, valu
 
 func TestCommand_Command_Matches(t *testing.T) {
 	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgCommand)
+	pkg := loadSubPkg(t, ctx, subPkgBash)
 
 	rm := setParam(t, ctx, pkg, "command", `{#name: "rm"}`)
 
@@ -716,7 +713,7 @@ func TestCommand_Command_Matches(t *testing.T) {
 
 func TestCommand_Command_Disjunction(t *testing.T) {
 	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgCommand)
+	pkg := loadSubPkg(t, ctx, subPkgBash)
 
 	rmOrChmod := setParam(t, ctx, pkg, "command", `{#name: "rm" | "chmod"}`)
 
@@ -727,7 +724,7 @@ func TestCommand_Command_Disjunction(t *testing.T) {
 
 func TestCommand_Subcommand(t *testing.T) {
 	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgCommand)
+	pkg := loadSubPkg(t, ctx, subPkgBash)
 
 	gitCommitMerge := setParam(t, ctx, pkg, "subcommand",
 		`{#of: "git", #name: "commit" | "merge"}`)
@@ -748,7 +745,7 @@ func TestCommand_Subcommand(t *testing.T) {
 
 func TestCommand_Subcommand_ValueShadowDenySafe(t *testing.T) {
 	ctx := cuecontext.New()
-	pkg := loadSubPkg(t, ctx, subPkgCommand)
+	pkg := loadSubPkg(t, ctx, subPkgBash)
 
 	gitAdd := setParam(t, ctx, pkg, "subcommand", `{#of: "git", #name: "add"}`)
 
@@ -854,12 +851,12 @@ func TestFlag_Opt_Library(t *testing.T) {
 	paramExpectFail(t, ctx, noVerify, "#hasOption & opt.noVerify", flagsInput("-n"))
 }
 
-// Cross-package composition: command.#command reads parsed.commands while
+// Cross-package composition: bash.#command reads parsed.commands while
 // flag.#hasOption reads parsed.flags. Both must keep `...` at every level so
 // they unify under & without a "field not allowed" error.
 func TestCompose_CommandSubcommandOption(t *testing.T) {
 	ctx := cuecontext.New()
-	cmdPkg := loadSubPkg(t, ctx, subPkgCommand)
+	cmdPkg := loadSubPkg(t, ctx, subPkgBash)
 	flagPkg := loadSubPkg(t, ctx, subPkgFlag)
 
 	git := setParam(t, ctx, cmdPkg, "command", `{#name: "git"}`)
@@ -872,7 +869,7 @@ func TestCompose_CommandSubcommandOption(t *testing.T) {
 
 	composed := git.Unify(force)
 	if err := composed.Err(); err != nil {
-		t.Fatalf("command.#command{git} & (flag.#hasOption & opt.force) errored: %v", err)
+		t.Fatalf("bash.#command{git} & (flag.#hasOption & opt.force) errored: %v", err)
 	}
 
 	paramExpectOK(t, ctx, composed, "command{git} & hasOption{force}",

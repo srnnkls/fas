@@ -6,7 +6,7 @@
 //
 // Rule authors compose these with other sub-package constraints:
 //
-//	when: hook.#PreToolUse & tool.#Tool.Bash & path.#hasSystemTarget
+//	when: hook.#PreToolUse & tool.#Bash & path.#hasSystemTarget
 package hook
 
 import "github.com/srnnkls/fas/cue/catalog"
@@ -52,29 +52,8 @@ import "github.com/srnnkls/fas/cue/catalog"
 	...
 }
 
-// #Agent binds the subagent identities in cue/catalog to the wire field
-// agent_type. Compose a member with the event, the same way tool.#Tool and the
-// command matchers compose:
-//
-//	when: hook.#SubagentStart & hook.#Agent.Explore
-//
-// Each constrains only agent_type, so the same matcher works for SubagentStart
-// and SubagentStop. A typo'd member (hook.#Agent.Explor) is an "undefined field"
-// the loader rejects, not a silent non-match. The event definitions keep
-// agent_type an open string, so custom subagents (your own .claude/agents, task
-// runners, …) still match via {agent_type: "your-agent"}.
-#Agent: {
-	for k, v in catalog.#AgentType {
-		(k): {agent_type: v, ...}
-	}
-}
-
-// #KnownAgentType matches any built-in subagent — the disjunction of the #Agent
-// matchers. Compose as hook.#SubagentStart & hook.#KnownAgentType.
-#KnownAgentType: or([for _, m in #Agent {m}])
-
 // #SubagentStart: a subagent is about to start — agent_type names the starting
-// subagent. Target a specific kind with `& hook.#Agent.Explore` (built-ins) or
+// subagent. Target a specific kind with `& agent.#Explore` (built-ins) or
 // `& {agent_type: "your-agent"}` for custom subagents.
 #SubagentStart: {
 	hook_event_name: catalog.#EventName.SubagentStart

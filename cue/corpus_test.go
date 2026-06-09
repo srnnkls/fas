@@ -17,7 +17,7 @@ type corpusRow struct {
 var corpusFiles = map[string]string{
 	"rm_flags.tsv":            "flag.#hasOption & flag.opt.recursive",
 	"system_paths.tsv":        "path.#systemTarget",
-	"commands.tsv":            "command.#command & {#name: \"rm\"}",
+	"commands.tsv":            "bash.#command & {#name: \"rm\"}",
 	"destructive_actions.tsv": "action.#destructiveAction",
 	"escalation.tsv":          "escalation.#escalationCommand",
 }

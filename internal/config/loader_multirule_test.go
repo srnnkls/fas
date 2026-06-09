@@ -307,7 +307,7 @@ import (
 )
 
 system_deny: {
-	when: hook.#PreToolUse & tool.#Tool.Bash & path.#hasSystemTarget
+	when: hook.#PreToolUse & tool.#Bash & path.#hasSystemTarget
 	then: deny: {
 		rule_id: "sys-path"
 		reason:  "System path blocked"

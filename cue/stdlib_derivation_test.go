@@ -27,20 +27,21 @@ func catalogMembers(t *testing.T, pkg cue.Value, def string) map[string]string {
 	return out
 }
 
-func binderBindings(t *testing.T, pkg cue.Value, def, wireField string) map[string]string {
+// topLevelBindings reads every top-level #Member definition on a binder package
+// (tool, agent) and maps the member name to the wire value it pins. The #Known
+// disjunction pins no single concrete wire value, so it is skipped.
+func topLevelBindings(t *testing.T, pkg cue.Value, wireField string) map[string]string {
 	t.Helper()
-	v := lookupDef(t, pkg, def)
-	iter, err := v.Fields(cue.Definitions(false), cue.Hidden(false))
+	iter, err := pkg.Fields(cue.Definitions(true))
 	if err != nil {
-		t.Fatalf("%s not a struct: %v", def, err)
+		t.Fatalf("binder package not a struct: %v", err)
 	}
 	out := map[string]string{}
 	for iter.Next() {
-		member := iter.Selector().String()
-		wire := iter.Value().LookupPath(cue.ParsePath(wireField))
-		s, err := wire.String()
+		member := strings.TrimPrefix(iter.Selector().String(), "#")
+		s, err := iter.Value().LookupPath(cue.ParsePath(wireField)).String()
 		if err != nil {
-			t.Fatalf("%s.%s.%s not a concrete string: %v", def, member, wireField, err)
+			continue
 		}
 		out[member] = s
 	}
@@ -101,6 +102,7 @@ func TestDerivation_CatalogBinderBijection(t *testing.T) {
 		"Edit":            "Edit",
 		"Glob":            "Glob",
 		"Grep":            "Grep",
+		"MultiEdit":       "MultiEdit",
 		"NotebookEdit":    "NotebookEdit",
 		"Read":            "Read",
 		"TaskCreate":      "TaskCreate",
@@ -122,13 +124,13 @@ func TestDerivation_CatalogBinderBijection(t *testing.T) {
 	ctx := cuecontext.New()
 	catalogPkg := loadSubPkg(t, ctx, subPkgCatalog)
 	toolPkg := loadSubPkg(t, ctx, subPkgTool)
-	hookPkg := loadSubPkg(t, ctx, subPkgHook)
+	agentPkg := loadSubPkg(t, ctx, subPkgAgent)
 
-	assertTriad(t, "ToolName↔#Tool", wantTools,
+	assertTriad(t, "ToolName↔tool", wantTools,
 		catalogMembers(t, catalogPkg, "ToolName"),
-		binderBindings(t, toolPkg, "Tool", "tool_name"))
+		topLevelBindings(t, toolPkg, "tool_name"))
 
-	assertTriad(t, "AgentType↔#Agent", wantAgents,
+	assertTriad(t, "AgentType↔agent", wantAgents,
 		catalogMembers(t, catalogPkg, "AgentType"),
-		binderBindings(t, hookPkg, "Agent", "agent_type"))
+		topLevelBindings(t, agentPkg, "agent_type"))
 }

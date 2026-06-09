@@ -160,16 +160,19 @@ typo: {
 }
 
 func TestLoadRules_TypoedAgentRef_Rejected(t *testing.T) {
-	// The motivating case: a typo'd built-in subagent constant. hook.#Agent has
+	// The motivating case: a typo'd built-in subagent constant. agent has
 	// Explore/Plan/GeneralPurpose; .Explor is an undefined field nested under
 	// when.agent_type, which the loader's recursive when check must reject
 	// rather than admit as a rule that silently never matches.
 	const src = `package rules
 
-import "github.com/srnnkls/fas/cue/hook"
+import (
+	"github.com/srnnkls/fas/cue/hook"
+	"github.com/srnnkls/fas/cue/agent"
+)
 
 orient: {
-	when: hook.#SubagentStart & hook.#Agent.Explor
+	when: hook.#SubagentStart & agent.#Explor
 	then: inject: {
 		rule_id: "x"
 		channel: "agent"
@@ -182,7 +185,7 @@ orient: {
 
 	_, err := config.LoadRules(dir)
 	if err == nil {
-		t.Fatalf("expected error for typo'd hook.#Agent.Explor, got nil")
+		t.Fatalf("expected error for typo'd agent.#Explor, got nil")
 	}
 	if msg := strings.ToLower(err.Error()); !strings.Contains(msg, "explor") {
 		t.Fatalf("error should name the undefined field, got: %s", err.Error())
@@ -190,7 +193,7 @@ orient: {
 }
 
 func TestLoadRules_TypoedToolRef_Rejected(t *testing.T) {
-	// Parity with the #Agent case: tool.#Tool has Bash/Edit/…; .Bsh is an
+	// Parity with the agent case: tool has Bash/Edit/…; .Bsh is an
 	// undefined field nested under when.tool_name, which the loader must reject
 	// rather than admit as a rule that silently never matches.
 	const src = `package rules
@@ -201,7 +204,7 @@ import (
 )
 
 guard: {
-	when: hook.#PreToolUse & tool.#Tool.Bsh
+	when: hook.#PreToolUse & tool.#Bsh
 	then: deny: {
 		rule_id: "x"
 		reason:  "y"
@@ -213,7 +216,7 @@ guard: {
 
 	_, err := config.LoadRules(dir)
 	if err == nil {
-		t.Fatalf("expected error for typo'd tool.#Tool.Bsh, got nil")
+		t.Fatalf("expected error for typo'd tool.#Bsh, got nil")
 	}
 	if msg := strings.ToLower(err.Error()); !strings.Contains(msg, "bsh") {
 		t.Fatalf("error should name the undefined field, got: %s", err.Error())

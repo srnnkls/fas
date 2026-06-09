@@ -118,7 +118,7 @@ func claudeBashInput(command string) []byte {
 // -----------------------------------------------------------------------------
 
 // denySystemTargetRule blocks Bash calls whose parsed targets look like a
-// system path. Mirrors cue/fas.cue's hook.#PreToolUse & tool.#Tool.Bash & #hasSystemTarget
+// system path. Mirrors cue/fas.cue's hook.#PreToolUse & tool.#Bash & #hasSystemTarget
 // composition inline because LoadRules compiles each file in isolation.
 const denySystemTargetRule = `package rules
 

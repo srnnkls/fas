@@ -5,7 +5,7 @@ import (
 
 	"github.com/srnnkls/fas/cue/hook"
 	"github.com/srnnkls/fas/cue/tool"
-	"github.com/srnnkls/fas/cue/command"
+	"github.com/srnnkls/fas/cue/bash"
 )
 
 // Staging `.env`, credential JSON, or SSH private keys into git is almost
@@ -13,7 +13,7 @@ import (
 // whose basename contains "credentials" with a recognized suffix, and the
 // canonical SSH private-key names (id_rsa, id_ed25519, id_dsa, id_ecdsa).
 secret_files: {
-	when: hook.#PreToolUse & tool.#Tool.Bash & (command.#subcommand & {#of: "git", #name: "add"}) & {
+	when: hook.#PreToolUse & tool.#Bash & (bash.#subcommand & {#of: "git", #name: "add"}) & {
 		tool_input: {
 			parsed: targets: list.MatchN(>0, =~"(^|/)(\\.env(\\..+)?|.*credentials\\.(json|ya?ml|toml|env)|id_(rsa|ed25519|dsa|ecdsa))$")
 		}
