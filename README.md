@@ -30,6 +30,9 @@ instead of restating each protocol from scratch.
 Via [mise](https://mise.jdx.dev/) (recommended) — pulls the prebuilt
 release binary from GitHub:
 
+While the repo is private, mise needs a GitHub token to reach the release
+API. Export one (`export GITHUB_TOKEN="$(gh auth token)"`) before installing.
+
 ```bash
 # pin in the current project's mise.toml
 mise use github:srnnkls/fas@0.1.0-alpha.3
