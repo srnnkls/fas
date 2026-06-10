@@ -27,13 +27,27 @@ instead of restating each protocol from scratch.
 
 ## Install
 
-Via [mise](https://mise.jdx.dev/):
+Via [mise](https://mise.jdx.dev/) (recommended) — pulls the prebuilt
+release binary from GitHub:
 
 ```bash
-mise use github:srnnkls/fas@0.1.0-alpha.1
+# pin in the current project's mise.toml
+mise use github:srnnkls/fas@0.1.0-alpha.3
+
+# or install globally on your PATH
+mise use -g github:srnnkls/fas@0.1.0-alpha.3
+
+# track the latest release instead of pinning
+mise use github:srnnkls/fas@latest
 ```
 
-Via `go install` (tracks main):
+Verify the install:
+
+```bash
+fas --version
+```
+
+Via `go install` (builds from source, tracks main):
 
 ```bash
 go install github.com/srnnkls/fas/cmd/fas@latest
