@@ -10,10 +10,10 @@
 #   - go.mod at repo root
 #   - Package tree: cmd/fas, internal/{adapter,config,evaluator,parser,synthesis}
 #   - Each package directory contains >= 1 .go file
-#   - Makefile or justfile at repo root
-#   - Build tool exposes `build`, `test`, `lint` targets (reachable via dry-run)
+#   - mise.toml at repo root
+#   - mise exposes `build`, `test`, `lint` tasks
 #   - CI workflow file under .github/workflows/
-#   - CGO_ENABLED=0 enforced in Makefile/justfile, mise.toml, or .envrc
+#   - CGO_ENABLED=0 enforced in mise.toml or .envrc
 #   - `CGO_ENABLED=0 go build ./...` succeeds
 #   - `CGO_ENABLED=0 go vet ./...` succeeds
 #
@@ -77,53 +77,29 @@ for dir in "${required_dirs[@]}"; do
   fi
 done
 
-# --- Makefile or justfile ---------------------------------------------------
+# --- mise.toml --------------------------------------------------------------
 
-build_tool=""
 build_file=""
-if [[ -f "${REPO_ROOT}/Makefile" ]]; then
-  build_tool="make"
-  build_file="Makefile"
-  pass "Makefile present at repo root"
-elif [[ -f "${REPO_ROOT}/justfile" ]]; then
-  build_tool="just"
-  build_file="justfile"
-  pass "justfile present at repo root"
+if [[ -f "${REPO_ROOT}/mise.toml" ]]; then
+  build_file="mise.toml"
+  pass "mise.toml present at repo root"
 else
-  fail "neither Makefile nor justfile present at repo root"
+  fail "mise.toml missing at repo root"
 fi
 
-# --- build/test/lint targets reachable --------------------------------------
+# --- build/test/lint tasks reachable ----------------------------------------
 
 check_target() {
   local target=$1
-  case "${build_tool}" in
-    make)
-      if command -v make >/dev/null 2>&1; then
-        if make -n "${target}" >/dev/null 2>&1; then
-          pass "Makefile target reachable: ${target}"
-        else
-          fail "Makefile target missing or errors: ${target}"
-        fi
-      else
-        fail "make not installed; cannot verify target: ${target}"
-      fi
-      ;;
-    just)
-      if command -v just >/dev/null 2>&1; then
-        if just --show "${target}" >/dev/null 2>&1; then
-          pass "justfile target reachable: ${target}"
-        else
-          fail "justfile target missing or errors: ${target}"
-        fi
-      else
-        fail "just not installed; cannot verify target: ${target}"
-      fi
-      ;;
-    *)
-      fail "no build tool detected; cannot verify target: ${target}"
-      ;;
-  esac
+  if command -v mise >/dev/null 2>&1; then
+    if mise tasks info "${target}" >/dev/null 2>&1; then
+      pass "mise task reachable: ${target}"
+    else
+      fail "mise task missing or errors: ${target}"
+    fi
+  else
+    fail "mise not installed; cannot verify task: ${target}"
+  fi
 }
 
 for target in build test lint; do
@@ -146,13 +122,6 @@ fi
 cgo_enforced=0
 cgo_sources=()
 
-if [[ -n "${build_file}" && -f "${REPO_ROOT}/${build_file}" ]]; then
-  if grep -Eq 'CGO_ENABLED[[:space:]]*[:?]?=[[:space:]]*0|CGO_ENABLED=0' "${REPO_ROOT}/${build_file}"; then
-    cgo_enforced=1
-    cgo_sources+=("${build_file}")
-  fi
-fi
-
 if [[ -f "${REPO_ROOT}/mise.toml" ]]; then
   if grep -Eq 'CGO_ENABLED[[:space:]]*=[[:space:]]*"?0"?|CGO_ENABLED=0' "${REPO_ROOT}/mise.toml"; then
     cgo_enforced=1
@@ -170,7 +139,7 @@ fi
 if (( cgo_enforced == 1 )); then
   pass "CGO_ENABLED=0 enforced in: ${cgo_sources[*]}"
 else
-  fail "CGO_ENABLED=0 not enforced in Makefile/justfile, mise.toml, or .envrc"
+  fail "CGO_ENABLED=0 not enforced in mise.toml or .envrc"
 fi
 
 # --- CGO_ENABLED=0 go build ./... -------------------------------------------
