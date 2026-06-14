@@ -11,8 +11,8 @@
 *fas* is a policy DSL and runtime built on top of the incredible
 [CUE](https://cuelang.org/). It evaluates structured input against rules
 expressed as pure CUE — regex, bounds, list patterns, disjunctions,
-structural negation — and emits a decision: allow, deny, ask, inject, or
-modify. Matching is plain CUE subsumption, so there is no predicate
+structural negation — and emits a decision: allow, deny, ask, inject,
+modify, or continue. Matching is plain CUE subsumption, so there is no predicate
 dialect and no embedded scripting; the rule language is CUE itself.
 
 The runtime reads JSON on stdin and writes its decision on stdout. An
@@ -95,6 +95,50 @@ on stdin and writes the response on stdout:
 ```bash
 fas eval --harness claude < event.json
 ```
+
+## Continuation
+
+Most actions answer a *permission* question — allow, deny, ask. A `Stop` (or
+`SubagentStop`) rule answers a different one: *should the turn end?* The
+`continue` action means "do not end the turn — hand this reason back to the
+agent", which the `claude` harness renders as its block-and-continue contract.
+The reason is delivered to whichever turn is ending: the main agent on `Stop`,
+the subagent on `SubagentStop`.
+
+Scope the `when` to a condition you can actually detect, so the `reason` fits
+every turn it fires on. This rule reminds an `Explore` subagent to surface its
+findings before it finishes — and stays silent for other subagents and for the
+main turn:
+
+```cue
+// .fas/rules/explore_must_summarize.cue
+package rules
+
+import (
+	"github.com/srnnkls/fas/cue/hook"
+	"github.com/srnnkls/fas/cue/agent"
+)
+
+explore_must_summarize: {
+	when: hook.#SubagentStop & agent.#Explore
+	then: continue: {
+		rule_id: "explore-must-summarize"
+		reason:  "Before finishing, list the concrete file:line references you found."
+	}
+}
+```
+
+```console
+$ echo '{"hook_event_name":"SubagentStop","agent_type":"Explore"}' | fas eval --harness claude
+{"decision":"block","reason":"Before finishing, list the concrete file:line references you found."}
+$ echo '{"hook_event_name":"SubagentStop","agent_type":"Plan"}'    | fas eval --harness claude
+{}
+```
+
+Loop safety is stateless: the harness flags a turn it is already re-prompting
+(`stop_hook_active`), and *fas* suppresses the continuation on that turn so a
+continuation rule can never wedge a session into a non-terminating loop. Within
+a single turn exactly one continuation wins (lowest `rule_id`).
 
 ## Pipeline
 
