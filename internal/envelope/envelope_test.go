@@ -2,6 +2,7 @@ package envelope_test
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/srnnkls/fas/internal/envelope"
@@ -101,5 +102,122 @@ func TestSignalResultOmitEmpty(t *testing.T) {
 	want := `{"ok":true}`
 	if string(blob) != want {
 		t.Errorf("got %s, want %s", blob, want)
+	}
+}
+
+func TestContinuationIsOrthogonalToCategory(t *testing.T) {
+	env := envelope.OutputEnvelope{
+		Category: envelope.Allowing,
+		Continuation: &envelope.Continuation{
+			RuleID: "r3-loop",
+			Reason: "finish the migration",
+		},
+	}
+
+	if env.Category != envelope.Allowing {
+		t.Errorf("Category: got %d, want %d (Allowing)", env.Category, envelope.Allowing)
+	}
+	if env.Continuation == nil {
+		t.Fatal("Continuation: got nil, want non-nil alongside Allowing")
+	}
+	if env.Continuation.RuleID != "r3-loop" {
+		t.Errorf("Continuation.RuleID: got %q, want %q", env.Continuation.RuleID, "r3-loop")
+	}
+	if env.Continuation.Reason != "finish the migration" {
+		t.Errorf("Continuation.Reason: got %q, want %q", env.Continuation.Reason, "finish the migration")
+	}
+}
+
+func TestWithContinuationGuardClearsWhenAlreadyContinuing(t *testing.T) {
+	env := envelope.OutputEnvelope{
+		Continuation: &envelope.Continuation{RuleID: "r3-loop", Reason: "keep going"},
+	}
+
+	guarded := env.WithContinuationGuard(true)
+
+	if guarded.Continuation != nil {
+		t.Errorf("Continuation: got %+v, want nil (loop broken)", guarded.Continuation)
+	}
+}
+
+func TestWithContinuationGuardPreservesWhenNotContinuing(t *testing.T) {
+	env := envelope.OutputEnvelope{
+		Continuation: &envelope.Continuation{RuleID: "r3-loop", Reason: "keep going"},
+	}
+
+	guarded := env.WithContinuationGuard(false)
+
+	if guarded.Continuation == nil {
+		t.Fatal("Continuation: got nil, want preserved when not already continuing")
+	}
+	if guarded.Continuation.RuleID != "r3-loop" {
+		t.Errorf("Continuation.RuleID: got %q, want %q", guarded.Continuation.RuleID, "r3-loop")
+	}
+	if guarded.Continuation.Reason != "keep going" {
+		t.Errorf("Continuation.Reason: got %q, want %q", guarded.Continuation.Reason, "keep going")
+	}
+}
+
+func TestWithContinuationGuardKeepsUnrelatedFields(t *testing.T) {
+	env := envelope.OutputEnvelope{
+		Category:          envelope.Asking,
+		UserReason:        "needs your nod",
+		AgentReason:       "policy R3 fired",
+		AdditionalContext: "branch=main",
+		UpdatedInput:      json.RawMessage(`{"command":"ls"}`),
+		Continuation:      &envelope.Continuation{RuleID: "r3-loop", Reason: "keep going"},
+	}
+
+	guarded := env.WithContinuationGuard(true)
+
+	if guarded.Continuation != nil {
+		t.Errorf("Continuation: got %+v, want nil after guard", guarded.Continuation)
+	}
+	if guarded.Category != envelope.Asking {
+		t.Errorf("Category: got %d, want %d (Asking)", guarded.Category, envelope.Asking)
+	}
+	if guarded.UserReason != "needs your nod" {
+		t.Errorf("UserReason: got %q, want %q", guarded.UserReason, "needs your nod")
+	}
+	if guarded.AgentReason != "policy R3 fired" {
+		t.Errorf("AgentReason: got %q, want %q", guarded.AgentReason, "policy R3 fired")
+	}
+	if guarded.AdditionalContext != "branch=main" {
+		t.Errorf("AdditionalContext: got %q, want %q", guarded.AdditionalContext, "branch=main")
+	}
+	if string(guarded.UpdatedInput) != `{"command":"ls"}` {
+		t.Errorf("UpdatedInput: got %s, want %s", guarded.UpdatedInput, `{"command":"ls"}`)
+	}
+}
+
+func TestInputStopHookActiveRoundTrip(t *testing.T) {
+	in := envelope.Input{HookEventName: "Stop", StopHookActive: true}
+
+	blob, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(blob), `"stop_hook_active":true`) {
+		t.Errorf("marshal: %s does not contain %q", blob, `"stop_hook_active":true`)
+	}
+
+	var out envelope.Input
+	if err := json.Unmarshal(blob, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !out.StopHookActive {
+		t.Errorf("StopHookActive: got false, want true")
+	}
+}
+
+func TestInputStopHookActiveOmitEmpty(t *testing.T) {
+	in := envelope.Input{HookEventName: "Stop", StopHookActive: false}
+
+	blob, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(blob), "stop_hook_active") {
+		t.Errorf("marshal: %s should omit stop_hook_active when false", blob)
 	}
 }
