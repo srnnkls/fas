@@ -45,6 +45,7 @@ type ccInput struct {
 	AgentType      string          `json:"agent_type"`
 	SessionID      string          `json:"session_id"`
 	CWD            string          `json:"cwd"`
+	StopHookActive bool            `json:"stop_hook_active"`
 	TranscriptPath string          `json:"transcript_path"`
 }
 
@@ -72,14 +73,15 @@ func (ClaudeCode) ParseInput(raw json.RawMessage) (*envelope.Input, error) {
 	}
 
 	return &envelope.Input{
-		HookEventName: parsed.HookEventName,
-		ToolName:      parsed.ToolName,
-		ToolInput:     parsed.ToolInput,
-		ToolResponse:  parsed.ToolResponse,
-		Prompt:        parsed.Prompt,
-		AgentType:     parsed.AgentType,
-		SessionID:     parsed.SessionID,
-		CWD:           parsed.CWD,
+		HookEventName:  parsed.HookEventName,
+		ToolName:       parsed.ToolName,
+		ToolInput:      parsed.ToolInput,
+		ToolResponse:   parsed.ToolResponse,
+		Prompt:         parsed.Prompt,
+		AgentType:      parsed.AgentType,
+		SessionID:      parsed.SessionID,
+		CWD:            parsed.CWD,
+		StopHookActive: parsed.StopHookActive,
 	}, nil
 }
 
@@ -114,14 +116,47 @@ type ccContextResponse struct {
 // additionalContext — they never carry a permissionDecision.
 var contextOnlyEvents = map[string]bool{
 	"SubagentStart": true,
-	"SubagentStop":  true,
+}
+
+// turnEndEvents are hook events fired when a turn (or subagent turn) is about
+// to end. They never carry a permissionDecision; a fired continuation renders
+// as the harness block-and-continue contract, otherwise the stop is allowed.
+var turnEndEvents = map[string]bool{
+	"Stop":         true,
+	"SubagentStop": true,
+}
+
+// ccTurnEndResponse is the Stop/SubagentStop wire shape. A continuation sets
+// the top-level decision/reason block contract; additionalContext rides along
+// under hookSpecificOutput. All fields omitempty so a clean allow-stop with no
+// context marshals to "{}".
+type ccTurnEndResponse struct {
+	Decision           string           `json:"decision,omitempty"`
+	Reason             string           `json:"reason,omitempty"`
+	HookSpecificOutput *ccContextOutput `json:"hookSpecificOutput,omitempty"`
 }
 
 // RenderOutput renders an OutputEnvelope as a Claude Code hook response. For
 // PreToolUse the response carries a permission decision; context-only events
-// (SubagentStart) carry just additionalContext. UpdatedInput is silently
+// (SubagentStart) carry just additionalContext; Stop/SubagentStop render the
+// continuation block contract (no permissionDecision). UpdatedInput is silently
 // dropped: CC has no consumer for it (see AllowsModify).
 func (ClaudeCode) RenderOutput(out envelope.OutputEnvelope, hookEventName string) (json.RawMessage, error) {
+	if turnEndEvents[hookEventName] {
+		resp := ccTurnEndResponse{}
+		if out.Continuation != nil {
+			resp.Decision = "block"
+			resp.Reason = out.Continuation.Reason
+		}
+		if out.AdditionalContext != "" {
+			resp.HookSpecificOutput = &ccContextOutput{
+				HookEventName:     hookEventName,
+				AdditionalContext: out.AdditionalContext,
+			}
+		}
+		return json.Marshal(resp)
+	}
+
 	if contextOnlyEvents[hookEventName] {
 		return json.Marshal(ccContextResponse{HookSpecificOutput: ccContextOutput{
 			HookEventName:     hookEventName,

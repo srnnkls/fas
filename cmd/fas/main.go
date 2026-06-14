@@ -808,6 +808,7 @@ func evaluate(
 	}
 
 	out := synthesis.Synthesize(matches, defaultSizeBudget)
+	out = out.WithContinuationGuard(input.StopHookActive)
 	resp, err := ad.RenderOutput(out, hookEventName)
 	return resp, matches, diags, err
 }
@@ -835,10 +836,11 @@ func prepareInput(ad adapter.Adapter, raw []byte) (*envelope.Input, string, erro
 // stages see a Claude-Code-shaped map at tool_input.parsed.
 func runPreprocessor(input *envelope.Input) (*envelope.Input, error) {
 	base := map[string]any{
-		"hook_event_name": input.HookEventName,
-		"tool_name":       input.ToolName,
-		"session_id":      input.SessionID,
-		"cwd":             input.CWD,
+		"hook_event_name":  input.HookEventName,
+		"tool_name":        input.ToolName,
+		"session_id":       input.SessionID,
+		"cwd":              input.CWD,
+		"stop_hook_active": input.StopHookActive,
 	}
 	if len(input.ToolInput) > 0 {
 		var decoded any
@@ -854,14 +856,15 @@ func runPreprocessor(input *envelope.Input) (*envelope.Input, error) {
 	}
 
 	out := &envelope.Input{
-		HookEventName: input.HookEventName,
-		ToolName:      input.ToolName,
-		ToolResponse:  input.ToolResponse,
-		Prompt:        input.Prompt,
-		AgentType:     input.AgentType,
-		SessionID:     input.SessionID,
-		CWD:           input.CWD,
-		Signals:       input.Signals,
+		HookEventName:  input.HookEventName,
+		ToolName:       input.ToolName,
+		ToolResponse:   input.ToolResponse,
+		Prompt:         input.Prompt,
+		AgentType:      input.AgentType,
+		SessionID:      input.SessionID,
+		CWD:            input.CWD,
+		StopHookActive: input.StopHookActive,
+		Signals:        input.Signals,
 	}
 	if ti, ok := enriched["tool_input"]; ok {
 		raw, err := json.Marshal(ti)

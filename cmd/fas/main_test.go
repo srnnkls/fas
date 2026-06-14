@@ -2829,3 +2829,75 @@ func TestRun_ExplainCode_PrecedenceOverRuleID(t *testing.T) {
 		t.Errorf("stdout must carry the E0201 help (contains %q); got %q", "path", stdout.String())
 	}
 }
+
+// -----------------------------------------------------------------------------
+// Continuation lane + R3 loop guard (Stop) end-to-end
+// -----------------------------------------------------------------------------
+
+// recoverStopRule fires a continue action on Stop, handing a reason back to the
+// agent. The R3 loop guard must suppress it when the payload already reports an
+// in-flight continuation (stop_hook_active: true).
+const recoverStopRule = `package rules
+
+recover_stop: {
+	when: {hook_event_name: "Stop"}
+	then: continue: {
+		rule_id: "recover-stop"
+		reason:  "Finish the task before stopping."
+	}
+}
+`
+
+// ccBlock decodes the top-level Stop block contract emitted on a fired
+// continuation: {"decision":"block","reason":...}.
+type ccBlock struct {
+	Decision string `json:"decision"`
+	Reason   string `json:"reason"`
+}
+
+func TestRun_StopContinuation_EmitsBlock(t *testing.T) {
+	projectDir := writeRuleFiles(t, map[string]string{
+		"recover.cue": recoverStopRule,
+	})
+
+	stdin := []byte(`{"hook_event_name":"Stop","session_id":"t","cwd":"/tmp"}`)
+	res := runCLI(t, stdin,
+		"eval", "--harness", "claude",
+		"--config", projectDir,
+		"--global-config", emptyRulesDir(t),
+	)
+
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
+	}
+	var block ccBlock
+	if err := json.Unmarshal(res.stdout, &block); err != nil {
+		t.Fatalf("stdout not parseable as block contract: %v\nstdout=%s", err, res.stdout)
+	}
+	if got, want := block.Decision, "block"; got != want {
+		t.Errorf("decision=%q, want %q\nstdout=%s", got, want, res.stdout)
+	}
+	if got, want := block.Reason, "Finish the task before stopping."; got != want {
+		t.Errorf("reason=%q, want %q", got, want)
+	}
+}
+
+func TestRun_StopContinuation_GuardSuppressesWhenAlreadyContinuing(t *testing.T) {
+	projectDir := writeRuleFiles(t, map[string]string{
+		"recover.cue": recoverStopRule,
+	})
+
+	stdin := []byte(`{"hook_event_name":"Stop","session_id":"t","cwd":"/tmp","stop_hook_active":true}`)
+	res := runCLI(t, stdin,
+		"eval", "--harness", "claude",
+		"--config", projectDir,
+		"--global-config", emptyRulesDir(t),
+	)
+
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
+	}
+	if bytes.Contains(res.stdout, []byte("\"decision\":\"block\"")) {
+		t.Errorf("loop guard must clear the continuation when already continuing; got block decision\nstdout=%s", res.stdout)
+	}
+}

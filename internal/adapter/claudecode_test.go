@@ -319,7 +319,8 @@ func TestClaudeCode_RenderOutput_Allowing_EmitsAllowDecision(t *testing.T) {
 }
 
 func TestClaudeCode_RenderOutput_HookEventName_EchoedFromArg(t *testing.T) {
-	cases := []string{"PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "Stop"}
+	// Stop omitted: turn-end event covered by TestClaudeCode_RenderOutput_Stop* (bare Allowing Stop renders `{}`, nothing to echo).
+	cases := []string{"PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart"}
 	for _, event := range cases {
 		t.Run(event, func(t *testing.T) {
 			out := envelope.OutputEnvelope{Category: envelope.Allowing}
@@ -453,6 +454,130 @@ func TestClaudeCode_RenderOutput_DeterministicOutput_ByteForByte(t *testing.T) {
 	}
 	if !bytes.Equal(first, second) {
 		t.Errorf("non-deterministic RenderOutput output:\n first:  %s\n second: %s", first, second)
+	}
+}
+
+// ccTurnEnd decodes both CC turn-end wire shapes: top-level block contract and context-only hookSpecificOutput.
+type ccTurnEnd struct {
+	Decision           string `json:"decision"`
+	Reason             string `json:"reason"`
+	HookSpecificOutput struct {
+		HookEventName     string `json:"hookEventName"`
+		AdditionalContext string `json:"additionalContext"`
+	} `json:"hookSpecificOutput"`
+}
+
+func decodeTurnEnd(t *testing.T, raw []byte) ccTurnEnd {
+	t.Helper()
+	var resp ccTurnEnd
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("turn-end JSON not parseable: %v (raw=%s)", err, raw)
+	}
+	return resp
+}
+
+func TestClaudeCode_ParseInput_Stop_CapturesStopHookActive(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{"active true", `{"hook_event_name":"Stop","stop_hook_active":true}`, true},
+		{"field absent", `{"hook_event_name":"Stop"}`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in, err := newClaude().ParseInput(json.RawMessage(tc.raw))
+			if err != nil {
+				t.Fatalf("ParseInput: %v", err)
+			}
+			if in.StopHookActive != tc.want {
+				t.Errorf("StopHookActive = %v, want %v", in.StopHookActive, tc.want)
+			}
+		})
+	}
+}
+
+func TestClaudeCode_RenderOutput_StopContinuation_EmitsBlockContract(t *testing.T) {
+	out := envelope.OutputEnvelope{
+		Category:     envelope.Allowing,
+		Continuation: &envelope.Continuation{RuleID: "recover-stop", Reason: "Finish the task."},
+	}
+	raw, err := newClaude().RenderOutput(out, "Stop")
+	if err != nil {
+		t.Fatalf("RenderOutput: %v", err)
+	}
+	if bytes.Contains(raw, []byte("permissionDecision")) {
+		t.Errorf("Stop continuation must not carry permissionDecision; got %s", raw)
+	}
+	resp := decodeTurnEnd(t, raw)
+	if got, want := resp.Decision, "block"; got != want {
+		t.Errorf("decision = %q, want %q\nraw=%s", got, want, raw)
+	}
+	if got, want := resp.Reason, "Finish the task."; got != want {
+		t.Errorf("reason = %q, want %q", got, want)
+	}
+}
+
+func TestClaudeCode_RenderOutput_SubagentStopContinuation_EmitsBlockContract(t *testing.T) {
+	out := envelope.OutputEnvelope{
+		Category:     envelope.Allowing,
+		Continuation: &envelope.Continuation{RuleID: "recover-stop", Reason: "Finish the task."},
+	}
+	raw, err := newClaude().RenderOutput(out, "SubagentStop")
+	if err != nil {
+		t.Fatalf("RenderOutput: %v", err)
+	}
+	if bytes.Contains(raw, []byte("permissionDecision")) {
+		t.Errorf("SubagentStop continuation must not carry permissionDecision; got %s", raw)
+	}
+	resp := decodeTurnEnd(t, raw)
+	if got, want := resp.Decision, "block"; got != want {
+		t.Errorf("decision = %q, want %q\nraw=%s", got, want, raw)
+	}
+	if got, want := resp.Reason, "Finish the task."; got != want {
+		t.Errorf("reason = %q, want %q", got, want)
+	}
+}
+
+func TestClaudeCode_RenderOutput_StopNoContinuation_AllowsStop(t *testing.T) {
+	out := envelope.OutputEnvelope{Category: envelope.Allowing}
+	raw, err := newClaude().RenderOutput(out, "Stop")
+	if err != nil {
+		t.Fatalf("RenderOutput: %v", err)
+	}
+	if got := string(raw); got != "{}" {
+		t.Errorf("clean allow-stop must render %q exactly; got %q", "{}", got)
+	}
+	if bytes.Contains(raw, []byte("decision")) {
+		t.Errorf("clean allow-stop must not carry a decision key; got %s", raw)
+	}
+	if bytes.Contains(raw, []byte("permissionDecision")) {
+		t.Errorf("clean allow-stop must not carry permissionDecision; got %s", raw)
+	}
+}
+
+func TestClaudeCode_RenderOutput_StopNoContinuation_WithContext(t *testing.T) {
+	out := envelope.OutputEnvelope{
+		Category:          envelope.Allowing,
+		AdditionalContext: "note",
+	}
+	raw, err := newClaude().RenderOutput(out, "Stop")
+	if err != nil {
+		t.Fatalf("RenderOutput: %v", err)
+	}
+	if bytes.Contains(raw, []byte("\"decision\"")) {
+		t.Errorf("Stop-with-context must not carry a decision key; got %s", raw)
+	}
+	if bytes.Contains(raw, []byte("permissionDecision")) {
+		t.Errorf("Stop-with-context must not carry permissionDecision; got %s", raw)
+	}
+	resp := decodeTurnEnd(t, raw)
+	if got, want := resp.HookSpecificOutput.HookEventName, "Stop"; got != want {
+		t.Errorf("hookEventName = %q, want %q", got, want)
+	}
+	if got, want := resp.HookSpecificOutput.AdditionalContext, "note"; got != want {
+		t.Errorf("additionalContext = %q, want %q", got, want)
 	}
 }
 
