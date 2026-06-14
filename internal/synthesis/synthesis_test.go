@@ -67,6 +67,17 @@ func inject(ruleID, text, channel string, priority int) evaluator.Match {
 	}
 }
 
+func continueAction(ruleID, reason string) evaluator.Match {
+	return evaluator.Match{
+		Rule: config.Rule{Source: ruleID + ".cue"},
+		Action: &config.Action{
+			Kind:   config.ActionContinue,
+			RuleID: ruleID,
+			Reason: reason,
+		},
+	}
+}
+
 func modify(ruleID, reason, mode string, priority int, updated map[string]any) evaluator.Match {
 	return evaluator.Match{
 		Rule: config.Rule{Source: ruleID + ".cue"},
@@ -436,6 +447,76 @@ func TestSynthesize_Modify_SamePriority_RuleIDTiebreak(t *testing.T) {
 	}
 	if diff := cmp.Diff(winner, decoded); diff != "" {
 		t.Errorf("same-priority modify tiebreak by rule_id ASC (-want +got):\n%s", diff)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Continuation lane — orthogonal to gate category.
+// -----------------------------------------------------------------------------
+
+func TestSynthesize_ContinueOnly_SetsContinuation(t *testing.T) {
+	got := synthesis.Synthesize([]evaluator.Match{
+		continueAction("c1", "finish the migration"),
+	}, 0)
+
+	if got.Continuation == nil {
+		t.Fatal("Continuation must be set for a continue match; got nil")
+	}
+	if got.Continuation.RuleID != "c1" {
+		t.Errorf("Continuation.RuleID=%q, want %q", got.Continuation.RuleID, "c1")
+	}
+	if got.Continuation.Reason != "finish the migration" {
+		t.Errorf("Continuation.Reason=%q, want %q", got.Continuation.Reason, "finish the migration")
+	}
+	if got.Category != envelope.Allowing {
+		t.Errorf("Category=%v, want Allowing (a continuation-only match must not set a gate)", got.Category)
+	}
+}
+
+func TestSynthesize_NoContinue_ContinuationNil(t *testing.T) {
+	got := synthesis.Synthesize([]evaluator.Match{
+		deny("d1", "blocked", "HIGH"),
+	}, 0)
+
+	if got.Continuation != nil {
+		t.Errorf("Continuation must be nil when no continue match fired; got %+v", got.Continuation)
+	}
+}
+
+func TestSynthesize_MultipleContinue_RuleIDTiebreak(t *testing.T) {
+	got := synthesis.Synthesize([]evaluator.Match{
+		continueAction("b-rule", "b reason"),
+		continueAction("a-rule", "a reason"),
+	}, 0)
+
+	if got.Continuation == nil {
+		t.Fatal("Continuation must be set; got nil")
+	}
+	if got.Continuation.RuleID != "a-rule" {
+		t.Errorf("Continuation.RuleID=%q, want %q (lowest rule_id ASC wins)", got.Continuation.RuleID, "a-rule")
+	}
+	if got.Continuation.Reason != "a reason" {
+		t.Errorf("Continuation.Reason=%q, want %q (reason from winning continue)", got.Continuation.Reason, "a reason")
+	}
+}
+
+func TestSynthesize_ContinueCoexistsWithGate(t *testing.T) {
+	got := synthesis.Synthesize([]evaluator.Match{
+		deny("d1", "blocked", "HIGH"),
+		continueAction("c1", "keep going"),
+	}, 0)
+
+	if got.Category != envelope.Blocking {
+		t.Fatalf("Category=%v, want Blocking (deny gate still wins)", got.Category)
+	}
+	if got.Continuation == nil {
+		t.Fatal("Continuation must survive alongside a gate; got nil (continuation must not be routed through gate selection)")
+	}
+	if got.Continuation.RuleID != "c1" {
+		t.Errorf("Continuation.RuleID=%q, want %q", got.Continuation.RuleID, "c1")
+	}
+	if got.Continuation.Reason != "keep going" {
+		t.Errorf("Continuation.Reason=%q, want %q", got.Continuation.Reason, "keep going")
 	}
 }
 

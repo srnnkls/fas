@@ -21,6 +21,10 @@
 // winner's UpdatedInput is JSON-marshalled into the envelope's UpdatedInput.
 // When the final Category is Blocking, UpdatedInput is dropped (left nil)
 // since a blocked call has no input to rewrite.
+//
+// # Continuation lane
+//
+// Continuation is selected independently of the gate (single winner, rule_id ASC).
 package synthesis
 
 import (
@@ -37,11 +41,12 @@ import (
 // doc for priority, tie-breaking, and channel-routing semantics.
 func Synthesize(matches []evaluator.Match, sizeBudget int) envelope.OutputEnvelope {
 	var (
-		denies   []*config.Action
-		asks     []*config.Action
-		allows   []*config.Action
-		injects  []*config.Action
-		modifies []*config.Action
+		denies    []*config.Action
+		asks      []*config.Action
+		allows    []*config.Action
+		injects   []*config.Action
+		modifies  []*config.Action
+		continues []*config.Action
 	)
 
 	for _, m := range matches {
@@ -59,6 +64,8 @@ func Synthesize(matches []evaluator.Match, sizeBudget int) envelope.OutputEnvelo
 			injects = append(injects, m.Action)
 		case config.ActionModify:
 			modifies = append(modifies, m.Action)
+		case config.ActionContinue:
+			continues = append(continues, m.Action)
 		}
 	}
 
@@ -80,7 +87,23 @@ func Synthesize(matches []evaluator.Match, sizeBudget int) envelope.OutputEnvelo
 		}
 	}
 
+	if c := pickContinuation(continues); c != nil {
+		out.Continuation = &envelope.Continuation{RuleID: c.RuleID, Reason: c.Reason}
+	}
+
 	return out
+}
+
+// pickContinuation returns the single winning continuation, tie-broken by
+// rule_id ASC, or nil if none matched.
+func pickContinuation(continues []*config.Action) *config.Action {
+	if len(continues) == 0 {
+		return nil
+	}
+	slices.SortFunc(continues, func(a, b *config.Action) int {
+		return strings.Compare(a.RuleID, b.RuleID)
+	})
+	return continues[0]
 }
 
 // severityRank orders deny severities. Unknown or empty severities sort last

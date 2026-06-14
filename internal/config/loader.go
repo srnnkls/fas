@@ -24,11 +24,12 @@ import (
 type ActionKind string
 
 const (
-	ActionDeny   ActionKind = "deny"
-	ActionAsk    ActionKind = "ask"
-	ActionAllow  ActionKind = "allow"
-	ActionModify ActionKind = "modify"
-	ActionInject ActionKind = "inject"
+	ActionDeny     ActionKind = "deny"
+	ActionAsk      ActionKind = "ask"
+	ActionAllow    ActionKind = "allow"
+	ActionModify   ActionKind = "modify"
+	ActionInject   ActionKind = "inject"
+	ActionContinue ActionKind = "continue"
 )
 
 // Action carries the decoded "then" clause of a rule. Fields are populated
@@ -495,7 +496,7 @@ func decodeMeta(v cue.Value) (*Meta, error) {
 // decodeAction reads the concrete action sub-field (deny / ask / ...) from a
 // #Action value and flattens it into the tagged-union Action struct.
 func decodeAction(v cue.Value) (*Action, error) {
-	for _, kind := range []ActionKind{ActionDeny, ActionAsk, ActionModify, ActionInject, ActionAllow} {
+	for _, kind := range []ActionKind{ActionDeny, ActionAsk, ActionModify, ActionInject, ActionContinue, ActionAllow} {
 		sub := v.LookupPath(cue.ParsePath(string(kind)))
 		if !sub.Exists() {
 			continue
@@ -537,6 +538,15 @@ func decodeActionBody(kind ActionKind, body cue.Value) (*Action, error) {
 			return nil, err
 		}
 		if err := readString(body, "question", &a.Question); err != nil {
+			return nil, err
+		}
+		return a, nil
+
+	case ActionContinue:
+		if err := readString(body, "rule_id", &a.RuleID); err != nil {
+			return nil, err
+		}
+		if err := readString(body, "reason", &a.Reason); err != nil {
 			return nil, err
 		}
 		return a, nil

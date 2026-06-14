@@ -363,6 +363,42 @@ note_prompt: {
 	}
 }
 
+func TestLoadRules_ContinueAction(t *testing.T) {
+	const src = `package rules
+
+keep_going: {
+	when: {hook_event_name: "Stop"}
+	then: continue: {
+		rule_id: "r1"
+		reason:  "finish the migration"
+	}
+}
+`
+	dir := t.TempDir()
+	writeRuleFile(t, dir, "continue.cue", src)
+
+	rules, err := config.LoadRules(dir)
+	if err != nil {
+		t.Fatalf("LoadRules: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(rules))
+	}
+	a := rules[0].Then
+	if a == nil {
+		t.Fatal("expected Then action")
+	}
+	if a.Kind != config.ActionContinue {
+		t.Fatalf("expected Continue, got %q", a.Kind)
+	}
+	if a.RuleID != "r1" {
+		t.Fatalf("expected rule_id=r1, got %q", a.RuleID)
+	}
+	if a.Reason != "finish the migration" {
+		t.Fatalf("expected reason=%q, got %q", "finish the migration", a.Reason)
+	}
+}
+
 func TestLoadRules_MetaRequires(t *testing.T) {
 	const src = `package rules
 

@@ -28,10 +28,11 @@ package fas
 		parsed?:  #Parsed
 		...
 	}
-	tool_response?: _
-	agent_type?:    string
-	session_id?:    string
-	cwd?:           string
+	tool_response?:    _
+	agent_type?:       string
+	session_id?:       string
+	cwd?:              string
+	stop_hook_active?: bool
 	signals?: {[string]: #SignalResult}
 	...
 }
@@ -51,7 +52,7 @@ package fas
 	subcommands?: _
 	targets?:     _
 	flags?:       _
-	attributes?:  {...}
+	attributes?: {...}
 	...
 }
 
@@ -95,10 +96,15 @@ package fas
 	mode:          *"confirm" | "silent"
 }
 
-#Action: #Deny | #Ask | #Modify | #Inject | #Allow
+#Continue: continue: {
+	rule_id: string
+	reason:  string
+}
+
+#Action: #Deny | #Ask | #Modify | #Inject | #Allow | #Continue
 
 #Rule: {
-	when:  {...}
+	when: {...}
 	then?: #Action
 	meta?: #Meta
 }
