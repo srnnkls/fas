@@ -161,13 +161,6 @@ func LoadRules(dir string) ([]Rule, error) {
 			return nil, fmt.Errorf("read %s: %w", rulePath, err)
 		}
 
-		// Structural lint runs before compilation so its taxonomy
-		// (cross-rule / self-ref / unbound) shadows CUE's generic "reference
-		// not found" diagnostic on the same offense.
-		if err := lintRuleFile(rulePath, src); err != nil {
-			return nil, err
-		}
-
 		origin, err := parseFileOrigin(rulePath, src)
 		if err != nil {
 			return nil, err
@@ -185,6 +178,13 @@ func LoadRules(dir string) ([]Rule, error) {
 	}
 
 	if err := checkDuplicateRuleNames(origins); err != nil {
+		return nil, err
+	}
+
+	// Structural lint runs before compilation so its taxonomy
+	// (cross-rule / self-ref / unbound) shadows CUE's generic "reference
+	// not found" diagnostic on the same offense.
+	if err := lintRulePackage(origins); err != nil {
 		return nil, err
 	}
 
@@ -222,6 +222,7 @@ type fileOrigin struct {
 	virtualName string
 	packageName string
 	src         []byte
+	file        *ast.File
 	ruleFields  []string
 }
 
@@ -240,37 +241,49 @@ func parseFileOrigin(rulePath string, src []byte) (fileOrigin, error) {
 		if !ok {
 			continue
 		}
-		label, _, err := ast.LabelName(field.Label)
-		if err != nil {
-			continue
-		}
-		// A field-alias label (`X="git_x"`) is an *ast.Alias; classify the
-		// underlying label it binds so aliased rules aren't silently dropped.
-		labelExpr := field.Label
-		if alias, ok := labelExpr.(*ast.Alias); ok {
-			inner, ok := alias.Expr.(ast.Label)
-			if !ok {
-				continue
-			}
-			labelExpr = inner
-		}
-		switch lbl := labelExpr.(type) {
-		case *ast.Ident:
-			if isExportedOrRegular(label) {
-				fields = append(fields, label)
-			}
-		case *ast.BasicLit:
-			if lbl.Kind == token.STRING {
-				fields = append(fields, label)
-			}
+		if name, ok := ruleLabelName(field); ok {
+			fields = append(fields, name)
 		}
 	}
 	return fileOrigin{
 		path:        rulePath,
 		packageName: file.PackageName(),
 		src:         src,
+		file:        file,
 		ruleFields:  fields,
 	}, nil
+}
+
+// ruleLabelName classifies a top-level field as a rule and returns its label
+// name. A rule is a regular ident label (not a hidden `_x` helper nor a `#X`
+// definition) or a quoted string label; a field-alias label (`X="git_x"`) is
+// unwrapped to the label it binds. The bool is false for non-rule fields
+// (helpers, definitions, comprehensions). This is the single definition of
+// "rule-shaped field" shared by parseFileOrigin and the package lint.
+func ruleLabelName(field *ast.Field) (string, bool) {
+	name, _, err := ast.LabelName(field.Label)
+	if err != nil {
+		return "", false
+	}
+	labelExpr := field.Label
+	if alias, ok := labelExpr.(*ast.Alias); ok {
+		inner, ok := alias.Expr.(ast.Label)
+		if !ok {
+			return "", false
+		}
+		labelExpr = inner
+	}
+	switch lbl := labelExpr.(type) {
+	case *ast.Ident:
+		if isExportedOrRegular(name) {
+			return name, true
+		}
+	case *ast.BasicLit:
+		if lbl.Kind == token.STRING {
+			return name, true
+		}
+	}
+	return "", false
 }
 
 // checkPackageClauses enforces AD-7: every file in a rules directory must

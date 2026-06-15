@@ -4,64 +4,61 @@ import (
 	"errors"
 
 	"cuelang.org/go/cue/ast"
-	"cuelang.org/go/cue/parser"
 
 	"github.com/srnnkls/fas/internal/diag"
 )
 
-// lintRuleFile walks each top-level non-hidden rule's `when` subtree and
-// rejects three reference patterns that survive CUE compilation but cannot
-// express legitimate author intent:
+// lintRulePackage walks every top-level rule's `when` subtree across all files
+// of the merged package and rejects three reference patterns that survive CUE
+// compilation but cannot express legitimate author intent:
 //
 //  1. Cross-rule refs — a rule's `when` reaches into another top-level rule's
-//     `when`, `then`, or `meta` subtree via a selector expression. Emits E0502.
+//     `when`, `then`, or `meta` subtree via a selector expression. Now detected
+//     across files because the rule-name set is the union over the package.
+//     Emits E0502.
 //  2. Self-refs into `then`/`meta` — a rule's `when` reaches into its own
 //     `then` or `meta` subtree. Those fields are not available at match time;
 //     `when` must be a pure pattern over the input. Emits E0503.
-//  3. Unbound identifiers — an identifier that is neither a stdlib import
-//     binding nor a locally-visible hidden sibling. Emits E0501.
+//  3. Unbound identifiers — an identifier that resolves to none of: a local
+//     binding, a stdlib import, a predeclared builtin, a package-wide hidden
+//     helper/definition, or a package-wide rule. Emits E0501.
 //
 // Each violation is reported as a *diag.DiagError so downstream callers can
 // recover the structured Diagnostic via errors.As while the rendered error
-// string keeps the taxonomy terms existing regression tests grep for.
-func lintRuleFile(rulePath string, src []byte) error {
-	// Parse failures surface elsewhere (compileRuleFile raises its own
-	// diagnostic); the lint silently defers on parse errors and lets the
-	// compiler emit the authoritative message.
-	file, parseErr := parser.ParseFile(rulePath, src)
-	if parseErr != nil {
-		return nil //nolint:nilerr // intentional: compileRuleFile owns the parse diagnostic
+// string keeps the taxonomy terms existing regression tests grep for. Each
+// diagnostic anchors at a node from its originating file's AST, so per-file
+// positions attribute the error to the file the offending `when` lives in.
+func lintRulePackage(origins []fileOrigin) error {
+	ruleNames := make(map[string]struct{})
+	helperDefNames := make(map[string]struct{})
+	for _, o := range origins {
+		if o.file == nil {
+			continue
+		}
+		collectTopLevelNames(o.file, ruleNames, helperDefNames)
 	}
 
-	ruleNames := collectTopLevelRuleNames(file)
-
 	var errs []error
-	for _, decl := range file.Decls {
-		field, ok := decl.(*ast.Field)
-		if !ok {
+	for _, o := range origins {
+		if o.file == nil {
 			continue
 		}
-		name, isIdent, err := ast.LabelName(field.Label)
-		if err != nil || !isIdent {
-			continue
-		}
-		if !isExportedOrRegular(name) {
-			continue
-		}
-		whenExpr := findWhenExpr(field.Value)
-		if whenExpr == nil {
-			continue
-		}
-		// Each rule is linted independently so multiple independent
-		// violations in one file surface as a joined error. The caller sees
-		// every failure in one pass rather than iterating recompile-fix cycles.
-		//
-		// lintWhen returns fully-formed *diag.DiagError values; they are not
-		// routed through wrapFieldLoadError because that wrapper is designed
-		// for CUE errors (it reclassifies them via diag.FromCueError). Lint
-		// errors already carry their own code, primary position, and help.
-		if err := lintWhen(name, ruleNames, whenExpr); err != nil {
-			errs = append(errs, err)
+		for _, decl := range o.file.Decls {
+			field, ok := decl.(*ast.Field)
+			if !ok {
+				continue
+			}
+			name, isRule := ruleLabelName(field)
+			if !isRule {
+				continue
+			}
+			whenExpr := findWhenExpr(field.Value)
+			if whenExpr == nil {
+				continue
+			}
+			if err := lintWhen(name, ruleNames, helperDefNames, whenExpr); err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
 	if len(errs) == 0 {
@@ -70,26 +67,28 @@ func lintRuleFile(rulePath string, src []byte) error {
 	return errors.Join(errs...)
 }
 
-// collectTopLevelRuleNames returns the set of non-hidden, non-definition
-// top-level field names in the file — the rules the lint considers candidate
-// cross-rule referents.
-func collectTopLevelRuleNames(file *ast.File) map[string]struct{} {
-	names := make(map[string]struct{})
+// collectTopLevelNames adds each file's top-level labels to the package-wide
+// sets: rule-shaped fields (ident or quoted, per ruleLabelName) to ruleNames,
+// and hidden `_x` helpers / `#X` definitions to helperDefNames.
+func collectTopLevelNames(file *ast.File, ruleNames, helperDefNames map[string]struct{}) {
 	for _, decl := range file.Decls {
 		field, ok := decl.(*ast.Field)
 		if !ok {
 			continue
 		}
+		if name, isRule := ruleLabelName(field); isRule {
+			ruleNames[name] = struct{}{}
+			continue
+		}
 		name, isIdent, err := ast.LabelName(field.Label)
-		if err != nil || !isIdent {
+		if err != nil || !isIdent || name == "" {
 			continue
 		}
-		if !isExportedOrRegular(name) {
-			continue
+		switch name[0] {
+		case '_', '#':
+			helperDefNames[name] = struct{}{}
 		}
-		names[name] = struct{}{}
 	}
-	return names
 }
 
 // isExportedOrRegular reports whether a top-level label names a regular field
@@ -138,7 +137,7 @@ func findWhenExpr(value ast.Expr) ast.Expr {
 // values but never into their labels; similarly, LetClause idents, ForClause
 // key/value idents, Alias target idents, and ImportSpec names are binding
 // positions rather than references.
-func lintWhen(ruleName string, ruleNames map[string]struct{}, whenExpr ast.Expr) error {
+func lintWhen(ruleName string, ruleNames, helperDefNames map[string]struct{}, whenExpr ast.Expr) error {
 	var firstErr error
 	var walk func(ast.Node)
 	walk = func(n ast.Node) {
@@ -147,7 +146,7 @@ func lintWhen(ruleName string, ruleNames map[string]struct{}, whenExpr ast.Expr)
 		}
 		switch node := n.(type) {
 		case *ast.SelectorExpr:
-			if err := checkSelector(ruleName, ruleNames, node); err != nil {
+			if err := checkSelector(ruleName, ruleNames, helperDefNames, node); err != nil {
 				firstErr = err
 				return
 			}
@@ -156,7 +155,7 @@ func lintWhen(ruleName string, ruleNames map[string]struct{}, whenExpr ast.Expr)
 			// `rule_one` as a bare ident and miss the selector-path context.
 			return
 		case *ast.Ident:
-			if err := checkIdent(ruleName, ruleNames, node); err != nil {
+			if err := checkIdent(ruleName, ruleNames, helperDefNames, node); err != nil {
 				firstErr = err
 				return
 			}
@@ -240,7 +239,7 @@ func lintWhen(ruleName string, ruleNames map[string]struct{}, whenExpr ast.Expr)
 // Cross-rule and self-ref-into-then/meta are the two rejection paths; anything
 // else (import paths, local helpers, siblings) falls through to checkIdent on
 // the root.
-func checkSelector(ruleName string, ruleNames map[string]struct{}, sel *ast.SelectorExpr) error {
+func checkSelector(ruleName string, ruleNames, helperDefNames map[string]struct{}, sel *ast.SelectorExpr) error {
 	path := selectorPath(sel)
 	if path == nil {
 		return nil
@@ -285,22 +284,25 @@ func checkSelector(ruleName string, ruleNames map[string]struct{}, sel *ast.Sele
 	}
 
 	// Root is not a rule, not an import — classify it as a bare ident would be.
-	return checkIdent(ruleName, ruleNames, rootIdent)
+	return checkIdent(ruleName, ruleNames, helperDefNames, rootIdent)
 }
 
 // checkIdent classifies a bare identifier reference. Returns a *diag.DiagError
-// for an unbound ident that is neither a stdlib import, a hidden local helper,
-// nor a resolvable sibling.
-func checkIdent(ruleName string, ruleNames map[string]struct{}, id *ast.Ident) error {
+// for an unbound ident that is none of: a local binding, a stdlib import, a
+// predeclared builtin, a package-wide hidden helper/definition, or a
+// package-wide rule.
+func checkIdent(ruleName string, ruleNames, helperDefNames map[string]struct{}, id *ast.Ident) error {
 	// The parser resolves idents against file and struct scopes; a nil Node
-	// means the reference escapes all visible scopes.
+	// means the reference escapes all scopes visible within its own file. A
+	// sibling-file helper/#def or bare rule is unresolved here yet legal once
+	// the package merges, so the package-wide sets below admit it.
 	if id.Node != nil {
 		return nil
 	}
-	// Hidden fields are the documented escape hatch; the parser's resolver
-	// records them on Scope/Node once seen. When a hidden ident reaches here
-	// with Node==nil it is a genuine typo (`_foo` with no declaration).
 	name := id.Name
+	if _, isHelperDef := helperDefNames[name]; isHelperDef {
+		return nil
+	}
 	if _, isRule := ruleNames[name]; isRule {
 		// Bare top-level rule name used as a value — not a selector ref, so
 		// it cannot reach into `then`/`meta`. Treat as allowed; the evaluator
