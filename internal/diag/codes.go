@@ -185,13 +185,13 @@ to be shared across files.`,
 
 var E0505 = CodeInfo{
 	Code: "E0505",
-	Help: `The rule files in a directory declare inconsistent ` + "`package`" + ` clauses.
+	Help: `Two or more distinct explicit ` + "`package`" + ` names appear in one directory.
 
-A rules directory is loaded as one merged CUE package, so every ` + "`.cue`" + `
-file in it must declare the same single explicit ` + "`package`" + ` clause. A file
-that omits the clause, or one that names a different package than its
-siblings, breaks the merge. Add the shared ` + "`package`" + ` clause to the named
-files, or split divergent files into their own directory.`,
+A rules directory is loaded as one merged CUE package, so its files may
+declare at most one explicit ` + "`package`" + ` name. Files that omit the clause (or
+use ` + "`package _`" + `) adopt that name automatically. When two files name
+different packages the merge is ambiguous; rename them to one shared package,
+or split the divergent files into their own directory.`,
 }
 
 // CodesInScopeV1 freezes the code count for this scope; bumping it requires

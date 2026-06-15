@@ -8,11 +8,6 @@ import (
 	"github.com/srnnkls/fas/internal/config"
 )
 
-// CRP-001 — merged-package load + per-file origin map + E0505 package-clause
-// diagnostic. Policy AD-7: every .cue file in a rules dir must declare the
-// same single explicit `package` clause, and the directory is loaded as ONE
-// merged CUE package (not per-file isolation).
-
 // findRuleBySource returns the loaded rule whose Source ends with the given
 // "<file>:<field>" suffix, or fails. The suffix match keeps the assertion
 // independent of the absolute temp-dir prefix while still pinning file+field.
@@ -149,15 +144,9 @@ beta: {
 	}
 }
 
-// TestLoadRules_PackageClause_EmitsE0505_AllOmitted pins E0505 for the case
-// where EVERY .cue file in the dir omits the `package` clause. Without an
-// explicit, consistent clause AD-7 is violated and the load must error with a
-// *diag.DiagError carrying code "E0505" that names the offending file(s).
-//
-// FAILS today: absent clauses load as an anonymous package, no error.
-func TestLoadRules_PackageClause_EmitsE0505_AllOmitted(t *testing.T) {
+func TestLoadRules_PackageClause_AllOmitted_LoadsAsImplicitPackage(t *testing.T) {
 	dir := t.TempDir()
-	writeRuleFileNamed(t, dir, "a.cue", `alpha: {
+	aPath := writeRuleFileNamed(t, dir, "a.cue", `alpha: {
 	when: {hook_event_name: "PreToolUse"}
 	then: deny: {
 		rule_id: "r-alpha"
@@ -165,7 +154,7 @@ func TestLoadRules_PackageClause_EmitsE0505_AllOmitted(t *testing.T) {
 	}
 }
 `)
-	writeRuleFileNamed(t, dir, "b.cue", `beta: {
+	bPath := writeRuleFileNamed(t, dir, "b.cue", `beta: {
 	when: {hook_event_name: "PreToolUse"}
 	then: deny: {
 		rule_id: "r-beta"
@@ -174,29 +163,27 @@ func TestLoadRules_PackageClause_EmitsE0505_AllOmitted(t *testing.T) {
 }
 `)
 
-	_, err := config.LoadRules(dir)
-	if err == nil {
-		t.Fatal("expected E0505 when every file omits the package clause, got nil error")
+	rules, err := config.LoadRules(dir)
+	if err != nil {
+		t.Fatalf("all-omitted clause must load as one implicit package, got: %v", err)
 	}
-	de, ok := recoverDiag(t, err)
-	if !ok {
-		t.Fatalf("expected err to carry *diag.DiagError via errors.As; got: %v", err)
+	if len(rules) != 2 {
+		t.Fatalf("expected 2 rules (alpha from a.cue, beta from b.cue), got %d", len(rules))
 	}
-	if de.D.Code != "E0505" {
-		t.Errorf("diagnostic Code = %q, want %q", de.D.Code, "E0505")
+
+	alpha := findRuleBySource(t, rules, filepath.Base(aPath)+":alpha")
+	if alpha.Then == nil || alpha.Then.RuleID != "r-alpha" {
+		t.Errorf("alpha rule from a.cue missing or wrong: %+v", alpha.Then)
 	}
-	msg := err.Error()
-	if !strings.Contains(msg, "a.cue") || !strings.Contains(msg, "b.cue") {
-		t.Errorf("E0505 should name BOTH offending files (a.cue AND b.cue); got: %s", msg)
+	beta := findRuleBySource(t, rules, filepath.Base(bPath)+":beta")
+	if beta.Then == nil || beta.Then.RuleID != "r-beta" {
+		t.Errorf("beta rule from b.cue missing or wrong: %+v", beta.Then)
 	}
 }
 
-// TestLoadRules_PackageClause_EmitsE0505_MixedClauses pins E0505 for a dir
-// where one file declares `package rules` and the other omits the clause. The
-// offending (absent) file must be named.
-func TestLoadRules_PackageClause_EmitsE0505_MixedClauses(t *testing.T) {
+func TestLoadRules_PackageClause_MixedAbsentAndNamed_Loads(t *testing.T) {
 	dir := t.TempDir()
-	writeRuleFileNamed(t, dir, "good.cue", `package rules
+	namedPath := writeRuleFileNamed(t, dir, "named.cue", `package rules
 
 alpha: {
 	when: {hook_event_name: "PreToolUse"}
@@ -206,7 +193,7 @@ alpha: {
 	}
 }
 `)
-	writeRuleFileNamed(t, dir, "bad.cue", `beta: {
+	absentPath := writeRuleFileNamed(t, dir, "absent.cue", `beta: {
 	when: {hook_event_name: "PreToolUse"}
 	then: deny: {
 		rule_id: "r-beta"
@@ -215,23 +202,21 @@ alpha: {
 }
 `)
 
-	_, err := config.LoadRules(dir)
-	if err == nil {
-		t.Fatal("expected E0505 for a file missing the package clause, got nil error")
+	rules, err := config.LoadRules(dir)
+	if err != nil {
+		t.Fatalf("absent file must merge with the single `package rules` clause, got: %v", err)
 	}
-	de, ok := recoverDiag(t, err)
-	if !ok {
-		t.Fatalf("expected err to carry *diag.DiagError via errors.As; got: %v", err)
+	if len(rules) != 2 {
+		t.Fatalf("expected 2 rules (alpha + beta), got %d", len(rules))
 	}
-	if de.D.Code != "E0505" {
-		t.Errorf("diagnostic Code = %q, want %q", de.D.Code, "E0505")
+
+	alpha := findRuleBySource(t, rules, filepath.Base(namedPath)+":alpha")
+	if alpha.Then == nil || alpha.Then.RuleID != "r-alpha" {
+		t.Errorf("alpha rule from named.cue missing or wrong: %+v", alpha.Then)
 	}
-	msg := err.Error()
-	if !strings.Contains(msg, "bad.cue") {
-		t.Errorf("E0505 should name the offending file `bad.cue`; got: %s", msg)
-	}
-	if strings.Contains(msg, "good.cue") {
-		t.Errorf("E0505 must NOT name the canonical file `good.cue`; got: %s", msg)
+	beta := findRuleBySource(t, rules, filepath.Base(absentPath)+":beta")
+	if beta.Then == nil || beta.Then.RuleID != "r-beta" {
+		t.Errorf("beta rule from absent.cue missing or wrong: %+v", beta.Then)
 	}
 }
 
@@ -310,5 +295,66 @@ beta: {
 	}
 	if len(rules) != 2 {
 		t.Fatalf("expected 2 rules, got %d", len(rules))
+	}
+}
+
+func TestLoadRules_PackageClause_MixedAbsentAndSingleExplicit_MergesUnderCanonical(t *testing.T) {
+	dir := t.TempDir()
+	writeRuleFileNamed(t, dir, "helper.cue", `_helper: "from absent file"
+
+unused: {
+	when: {hook_event_name: "PreToolUse"}
+	then: allow: true
+}
+`)
+	writeRuleFileNamed(t, dir, "consumer.cue", `package foo
+
+consumer: {
+	when: {hook_event_name: "PreToolUse"}
+	then: deny: {
+		rule_id: "consumer"
+		reason:  _helper
+	}
+}
+`)
+
+	rules, err := config.LoadRules(dir)
+	if err != nil {
+		t.Fatalf("absent file must adopt the single explicit `package foo` and merge, got: %v", err)
+	}
+
+	consumer := findRuleBySource(t, rules, "consumer.cue:consumer")
+	if consumer.Then == nil {
+		t.Fatalf("consumer rule has no Then action")
+	}
+	if consumer.Then.Reason != "from absent file" {
+		t.Fatalf("cross-file `_helper` did not resolve across the merge: reason = %q, want %q",
+			consumer.Then.Reason, "from absent file")
+	}
+}
+
+// CUE's `package _` is the blank clause (PackageName()==""), counted as absent.
+func TestLoadRules_PackageClause_BlankUnderscore_Loads(t *testing.T) {
+	dir := t.TempDir()
+	writeRuleFileNamed(t, dir, "blank.cue", `package _
+
+solo: {
+	when: {hook_event_name: "PreToolUse"}
+	then: deny: {
+		rule_id: "solo"
+		reason:  "lonely"
+	}
+}
+`)
+
+	rules, err := config.LoadRules(dir)
+	if err != nil {
+		t.Fatalf("`package _` (blank) must be treated as absent and load, got: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(rules))
+	}
+	if rules[0].Then == nil || rules[0].Then.RuleID != "solo" {
+		t.Fatalf("expected the `solo` rule, got %+v", rules[0].Then)
 	}
 }
