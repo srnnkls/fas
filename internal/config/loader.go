@@ -107,10 +107,12 @@ const rulesModulePath = "fas.local/rules@v0"
 
 // LoadRules walks the tree rooted at dir, loading every directory that directly
 // contains `*.cue` files as its own independent package (own clause/dup/lint
-// checks; no cross-directory merge — cross-package imports are a later task).
-// Dirs named `.x`, `_x`, or `cue.mod` are pruned with their subtrees; the
-// combined rules are returned in CompareModulePath(ModuleRelPath) order, which
-// is dir-lexical then basename, independent of traversal order.
+// checks). Each package's subdir maps to a CUE import path under the synthetic
+// module `fas.local/rules@v0` (e.g. `schema/` is `fas.local/rules/schema`), so a
+// rule in one package may import a sibling package. Dirs named `.x`, `_x`, or
+// `cue.mod` are pruned with their subtrees; the combined rules are returned in
+// CompareModulePath(ModuleRelPath) order, which is dir-lexical then basename,
+// independent of traversal order.
 //
 // Within a package: every top-level non-hidden field is unified against `#Rule`;
 // hidden fields (`_foo`) and definitions (`#Foo`) are skipped; a non-hidden
@@ -124,9 +126,29 @@ func LoadRules(dir string) ([]Rule, error) {
 		return nil, err
 	}
 
-	var out []Rule
+	pkgs := make([]packageOrigins, 0, len(pkgDirs))
 	for _, pkgDir := range pkgDirs {
-		rules, err := loadPackageDir(dir, pkgDir)
+		pkg, err := parsePackageDir(dir, pkgDir)
+		if err != nil {
+			return nil, err
+		}
+		if pkg != nil {
+			pkgs = append(pkgs, *pkg)
+		}
+	}
+
+	bundle, err := loadSchema()
+	if err != nil {
+		return nil, err
+	}
+	overlay, err := buildSharedOverlay(pkgs)
+	if err != nil {
+		return nil, err
+	}
+
+	var out []Rule
+	for _, pkg := range pkgs {
+		rules, err := loadPackage(dir, pkg, bundle, overlay, pkgs)
 		if err != nil {
 			return nil, err
 		}
@@ -174,11 +196,18 @@ func isPrunedDir(name string) bool {
 	return strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "cue.mod"
 }
 
-// loadPackageDir loads the `.cue` files directly in pkgDir as one merged package
-// (own overlay/compile/clause-check/dup-check/lint), stamping each rule's
-// ModuleRelPath relative to rootDir so a file at rootDir/security/git.cue gets
-// ModuleRelPath `security/git.cue` while Source keeps its on-disk path.
-func loadPackageDir(rootDir, pkgDir string) ([]Rule, error) {
+// packageOrigins is one discovered rule package: its parsed file origins and the
+// module-relative subpath its subdir maps to under the synthetic module (e.g. the
+// rootDir/security dir has subpath "security"; the root dir has "").
+type packageOrigins struct {
+	subpath string
+	origins []fileOrigin
+}
+
+// parsePackageDir reads and parses the `.cue` files directly in pkgDir into a
+// package, assigning per-dir virtual names and sorting by module-relative path.
+// It returns nil if the dir holds no rule files.
+func parsePackageDir(rootDir, pkgDir string) (*packageOrigins, error) {
 	entries, err := os.ReadDir(pkgDir)
 	if err != nil {
 		return nil, fmt.Errorf("read rules dir %s: %w", pkgDir, err)
@@ -198,16 +227,6 @@ func loadPackageDir(rootDir, pkgDir string) ([]Rule, error) {
 
 	if len(names) == 0 {
 		return nil, nil
-	}
-
-	bundle, err := loadSchema()
-	if err != nil {
-		return nil, err
-	}
-
-	stdlibOverlay, err := buildStdlibOverlay()
-	if err != nil {
-		return nil, err
 	}
 
 	origins := make([]fileOrigin, 0, len(names))
@@ -230,11 +249,30 @@ func loadPackageDir(rootDir, pkgDir string) ([]Rule, error) {
 		return CompareModulePath(moduleRelPath(rootDir, a.path), moduleRelPath(rootDir, b.path))
 	})
 
-	if err := checkPackageClauses(origins); err != nil {
+	return &packageOrigins{subpath: packageSubpath(rootDir, pkgDir), origins: origins}, nil
+}
+
+// packageSubpath maps a package dir to its slash-separated module-relative
+// subpath: "" for the root dir, "<subdir>" otherwise.
+func packageSubpath(rootDir, pkgDir string) string {
+	rel := moduleRelPath(rootDir, pkgDir)
+	if rel == "." {
+		return ""
+	}
+	return filepath.ToSlash(rel)
+}
+
+// loadPackage runs the per-package checks (clause/dup/lint) then extracts this
+// package's rules from a compile against the shared overlay, so sibling packages
+// stay importable while only this package's fields become rules.
+func loadPackage(rootDir string, pkg packageOrigins, bundle schemaBundle, overlay map[string]load.Source, all []packageOrigins) ([]Rule, error) {
+	origins := pkg.origins
+
+	if err := checkPackageClauses(rootDir, origins); err != nil {
 		return nil, err
 	}
 
-	if err := checkDuplicateRuleNames(origins); err != nil {
+	if err := checkDuplicateRuleNames(rootDir, origins); err != nil {
 		return nil, err
 	}
 
@@ -245,7 +283,7 @@ func loadPackageDir(rootDir, pkgDir string) ([]Rule, error) {
 		return nil, err
 	}
 
-	merged, err := compileRulePackage(bundle.ctx, origins, stdlibOverlay)
+	merged, err := compileRulePackage(bundle.ctx, origins, overlayPackageAtRoot(overlay, all, pkg))
 	if err != nil {
 		return nil, err
 	}
@@ -347,7 +385,7 @@ func ruleLabelName(field *ast.Field) (string, bool) {
 // declare the same single explicit `package` clause. The offending files (those
 // not matching the canonical clause, or all files when no single clause exists)
 // are named in an E0505 diagnostic.
-func checkPackageClauses(origins []fileOrigin) error {
+func checkPackageClauses(rootDir string, origins []fileOrigin) error {
 	explicit := map[string]struct{}{}
 	for _, o := range origins {
 		if o.packageName != "" {
@@ -360,12 +398,12 @@ func checkPackageClauses(origins []fileOrigin) error {
 		canonical := slices.Collect(maps.Keys(explicit))[0]
 		for _, o := range origins {
 			if o.packageName != canonical {
-				offending = append(offending, filepath.Base(o.path))
+				offending = append(offending, moduleRelPath(rootDir, o.path))
 			}
 		}
 	} else {
 		for _, o := range origins {
-			offending = append(offending, filepath.Base(o.path))
+			offending = append(offending, moduleRelPath(rootDir, o.path))
 		}
 	}
 
@@ -392,12 +430,12 @@ func packageClauseError(offending []string) error {
 // in two files of the merged package (E0504). Hidden helpers, definitions and
 // label-less comprehensions are already excluded from o.ruleFields, so only
 // rule-shaped fields are candidates.
-func checkDuplicateRuleNames(origins []fileOrigin) error {
+func checkDuplicateRuleNames(rootDir string, origins []fileOrigin) error {
 	owner := map[string]string{}
 	for _, o := range origins {
 		for _, name := range o.ruleFields {
 			if prev, seen := owner[name]; seen && prev != o.path {
-				return duplicateRuleNameError(name, prev, o.path)
+				return duplicateRuleNameError(name, moduleRelPath(rootDir, prev), moduleRelPath(rootDir, o.path))
 			}
 			owner[name] = o.path
 		}
@@ -406,33 +444,85 @@ func checkDuplicateRuleNames(origins []fileOrigin) error {
 }
 
 // duplicateRuleNameError builds the E0504 *diag.DiagError naming both files that
-// declare name. The Title preserves the "declared in both A and B" phrasing so
-// the rendered error still names both basenames.
+// declare name. prev and cur are module-relative paths, so two same-basename
+// files in different subdirs stay unambiguous (`security/dup.cue`).
 func duplicateRuleNameError(name, prev, cur string) error {
 	d := diag.Diagnostic{
 		Code:     diag.E0504.Code,
 		Severity: diag.SeverityError,
 		Title: fmt.Sprintf("rule %q is declared in both %s and %s",
-			name, filepath.Base(prev), filepath.Base(cur)),
+			name, prev, cur),
 		Help: diag.E0504.Help,
 	}
 	return diag.NewDiagError(d, nil, nil)
 }
 
-// compileRulePackage loads every rule file in the directory as one merged CUE
-// package so cross-file hidden helpers resolve. The overlay hosts all rule
-// files (under their build-tag-safe virtual names) plus the embedded stdlib and
-// the synthetic module file; the package is loaded once via the module root.
-func compileRulePackage(ctx *cue.Context, origins []fileOrigin, stdlib map[string]load.Source) (cue.Value, error) {
-	overlay := make(map[string]load.Source, len(stdlib)+len(origins)+1)
-	maps.Copy(overlay, stdlib)
+// buildSharedOverlay hosts EVERY discovered package at its module-relative path
+// inside one base overlay (stdlib + module.cue + each origin keyed
+// RulesModuleRoot/<subpath>/<virtualName>). Because the module is
+// fas.local/rules@v0, a dir `schema/` is importable as `fas.local/rules/schema`,
+// so a package can import its siblings; CUE's package semantics then keep hidden
+// (`_x`) fields private across that import while `#defs` export. The package
+// being compiled is overlaid at the module root by overlayPackageAtRoot, which
+// is what isolates it from same-clause folding of any ancestor package.
+func buildSharedOverlay(pkgs []packageOrigins) (map[string]load.Source, error) {
+	overlay, err := buildStdlibOverlay()
+	if err != nil {
+		return nil, err
+	}
 	overlay[filepath.Join(RulesModuleRoot, "cue.mod", "module.cue")] = load.FromString(
 		fmt.Sprintf("module: %q\nlanguage: version: \"v0.11.0\"\n", rulesModulePath),
 	)
-	for _, o := range origins {
-		overlay[filepath.Join(RulesModuleRoot, o.virtualName)] = load.FromBytes(o.src)
+	for _, pkg := range pkgs {
+		dir := filepath.Join(RulesModuleRoot, filepath.FromSlash(pkg.subpath))
+		for _, o := range pkg.origins {
+			overlay[filepath.Join(dir, o.virtualName)] = overlaySource(o)
+		}
 	}
+	return overlay, nil
+}
 
+// overlayPackageAtRoot returns a copy of base with pkg's own files relocated to
+// the module root, loaded via ".". CUE folds an ancestor-directory package's
+// same-clause fields into a descendant (E0102, CRP-008); placing pkg at the
+// root gives it no ancestor dirs in the overlay, so nothing can fold into it,
+// while every other package stays at its real subpath to resolve imports.
+func overlayPackageAtRoot(base map[string]load.Source, all []packageOrigins, pkg packageOrigins) map[string]load.Source {
+	overlay := maps.Clone(base)
+	// Vacate the module root: a root-dir package's files live there in base and
+	// would otherwise be loaded by "." alongside pkg, re-introducing folding.
+	for _, p := range all {
+		if p.subpath != "" {
+			continue
+		}
+		for _, o := range p.origins {
+			delete(overlay, filepath.Join(RulesModuleRoot, o.virtualName))
+		}
+	}
+	if pkg.subpath != "" {
+		dir := filepath.Join(RulesModuleRoot, filepath.FromSlash(pkg.subpath))
+		for _, o := range pkg.origins {
+			delete(overlay, filepath.Join(dir, o.virtualName))
+		}
+	}
+	for _, o := range pkg.origins {
+		overlay[filepath.Join(RulesModuleRoot, o.virtualName)] = overlaySource(o)
+	}
+	return overlay
+}
+
+// overlaySource keys an origin's overlay entry by its AST. FromFile (not
+// FromBytes) keeps CUE token positions on the on-disk path the AST was parsed
+// under, not the overlay key — otherwise the virtual subpath leaks into
+// Pos().Filename() and breaks the CLI's FileCache priming for diagnostics.
+func overlaySource(o fileOrigin) load.Source {
+	return load.FromFile(o.file)
+}
+
+// compileRulePackage builds the package addressed by ".", which is pkg
+// relocated to the module root; sibling packages at their real subpaths resolve
+// imports, but only the root files become this package's value.
+func compileRulePackage(ctx *cue.Context, origins []fileOrigin, overlay map[string]load.Source) (cue.Value, error) {
 	cfg := &load.Config{
 		Dir:        RulesModuleRoot,
 		ModuleRoot: RulesModuleRoot,
