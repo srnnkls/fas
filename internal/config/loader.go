@@ -65,7 +65,9 @@ type Meta struct {
 // constraints.
 type Rule struct {
 	Source string
-	When   cue.Value
+	// ModuleRelPath is the rule file's path relative to the module root, distinct from Source's on-disk path.
+	ModuleRelPath string
+	When          cue.Value
 	// WhenSyntax is the parsed CUE AST node for the when block, retained for
 	// diagnostic localization. Nil if the rule was not loaded from source.
 	WhenSyntax ast.Expr       `json:"-"`
@@ -187,7 +189,7 @@ func LoadRules(dir string) ([]Rule, error) {
 		return nil, err
 	}
 
-	return extractPackageRules(bundle.ruleDef, merged, origins)
+	return extractPackageRules(dir, bundle.ruleDef, merged, origins)
 }
 
 // fileOrigin records, for one rule file, the data needed to load the directory
@@ -354,7 +356,7 @@ func rulePackageErrPath(origins []fileOrigin, err error) string {
 // merged value, validates and decodes it, and stamps Source with the rule's own
 // originating file. Per-rule failures are accumulated so authors see every
 // broken rule in a single pass.
-func extractPackageRules(ruleDef, merged cue.Value, origins []fileOrigin) ([]Rule, error) {
+func extractPackageRules(dir string, ruleDef, merged cue.Value, origins []fileOrigin) ([]Rule, error) {
 	var out []Rule
 	var loadErrs []error
 	for _, o := range origins {
@@ -395,7 +397,12 @@ func extractPackageRules(ruleDef, merged cue.Value, origins []fileOrigin) ([]Rul
 				loadErrs = append(loadErrs, fmt.Errorf("%s: field %q: %w", o.path, fieldName, err))
 				continue
 			}
+			relPath, err := filepath.Rel(dir, o.path)
+			if err != nil {
+				return nil, fmt.Errorf("resolve module-relative path for %s under %s: %w", o.path, dir, err)
+			}
 			rule.Source = o.path + ":" + fieldName
+			rule.ModuleRelPath = relPath
 			out = append(out, rule)
 		}
 	}
