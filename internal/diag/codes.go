@@ -170,6 +170,19 @@ pattern so it depends only on the input and, if a constant is
 needed, lift it to a hidden sibling (leading underscore).`,
 }
 
+var E0504 = CodeInfo{
+	Code: "E0504",
+	Help: `Two rule files in a directory declare the same top-level rule name.
+
+A rules directory is loaded as one merged CUE package, so a plain
+top-level rule label must be unique across every ` + "`.cue`" + ` file in it.
+Two files defining the same name would silently collapse into one
+rule (or collide), losing one author's intent. Rename one of the
+rules, or move the divergent file into its own directory. Hidden
+helpers (` + "`_x`" + `) and definitions (` + "`#X`" + `) are exempt: those are meant
+to be shared across files.`,
+}
+
 var E0505 = CodeInfo{
 	Code: "E0505",
 	Help: `The rule files in a directory declare inconsistent ` + "`package`" + ` clauses.
@@ -183,7 +196,7 @@ files, or split divergent files into their own directory.`,
 
 // CodesInScopeV1 freezes the code count for this scope; bumping it requires
 // a deliberate design review to justify adding a new code.
-const CodesInScopeV1 = 16
+const CodesInScopeV1 = 17
 
 // codeRegistry maps each stable code string to its CodeInfo.
 // Built at package init so that duplicate codes fail loudly rather
@@ -193,7 +206,7 @@ var codeRegistry = buildCodeRegistry(
 	E0201, E0202, E0203,
 	E0301, E0302, E0303, E0304,
 	E0401, E0402,
-	E0501, E0502, E0503, E0505,
+	E0501, E0502, E0503, E0504, E0505,
 )
 
 func buildCodeRegistry(entries ...CodeInfo) map[string]CodeInfo {
