@@ -108,6 +108,40 @@ Express these via:
 Imports, predeclared names (`string`, `int`, `or`, `len`, ...), hidden local
 helpers, and bare references to sibling top-level rule structs all pass.
 
+### Organizing rules into packages
+
+The loader walks a rules tree and loads each directory of `.cue` files as one
+CUE **package**; subdirectories are separate, independent packages. The module
+is `fas.local/rules`.
+
+- **One package per directory.** Every `.cue` file in a directory must declare
+  the same single explicit `package` clause (e.g. `package rules`). Absent,
+  mixed, or divergent clauses are a load error (`E0505`, naming the files).
+  Sibling files in a package share scope: a `_helper` or `#Def` in one file is
+  visible to the others.
+- **Subdirs are independent packages**, loaded recursively. The same rule name
+  in *different* packages is fine; a duplicate top-level rule name *within* one
+  package (across its files) is a load error (`E0504`, naming both files).
+- **Pruned.** Dotfile dirs (`.x`), underscore dirs (`_x`), and `cue.mod` are
+  skipped with their subtrees; non-`.cue` files are ignored.
+- **Total order.** Rules return in `CompareModulePath(ModuleRelPath)` order:
+  dir-lexical, then basename, then declaration order within a file —
+  independent of traversal order.
+
+**Sharing schema.** Put reusable `#defs` in a `schema/` subdir (`package
+schema`); other packages import it by module-relative path
+(`import "fas.local/rules/schema"`) and reference `schema.#SomeDef`.
+
+**Visibility caveat.** Only `#defs` cross a package boundary. A `_hidden` field
+is package-private and is *not* visible to an importing package; every regular
+top-level field is extracted as a **rule**. So a shared-defs package must expose
+`#defs`, not regular fields. Same-package files still share `_hidden` helpers —
+only cross-package sharing requires `#defs`.
+
+Cross-*layer* concerns (global vs project, `replace`/`extend`/`disable`,
+precedence) belong to the separate rule-precedence model; this section is only
+about in-layer package organization.
+
 ## Testing the stdlib
 
 ### Oracle independence
