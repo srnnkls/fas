@@ -17,10 +17,31 @@ import (
 )
 
 // mustWriteRule drops a single .cue rule file into dir, with the given body
-// wrapped in the `rule: { ... }` top-level the loader expects.
+// wrapped in a top-level rule field whose label is derived from the file name.
 func mustWriteRule(t *testing.T, dir, name, body string) {
 	t.Helper()
 	mustWriteRuleWithImports(t, dir, name, nil, body)
+}
+
+// ruleLabelFromName derives a valid, distinct CUE identifier from a rule file
+// name. A rules dir loads as one merged package, so distinct file stems must
+// map to distinct top-level labels or same-named fields would collide.
+func ruleLabelFromName(name string) string {
+	stem := strings.TrimSuffix(name, ".cue")
+	var b strings.Builder
+	for _, r := range stem {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	label := b.String()
+	if label == "" || label[0] == '_' || (label[0] >= '0' && label[0] <= '9') {
+		label = "rule_" + label
+	}
+	return label
 }
 
 // mustWriteRuleWithImports writes a .cue rule with top-level imports. CUE
@@ -38,7 +59,8 @@ func mustWriteRuleWithImports(t *testing.T, dir, name string, imports []string, 
 		}
 		b.WriteString(")\n\n")
 	}
-	b.WriteString("rule: ")
+	b.WriteString(ruleLabelFromName(name))
+	b.WriteString(": ")
 	b.WriteString(body)
 	b.WriteString("\n")
 	path := filepath.Join(dir, name)

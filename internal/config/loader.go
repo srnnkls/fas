@@ -15,6 +15,8 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/ast"
 	"cuelang.org/go/cue/load"
+	"cuelang.org/go/cue/parser"
+	"cuelang.org/go/cue/token"
 
 	fascue "github.com/srnnkls/fas/cue"
 	"github.com/srnnkls/fas/internal/diag"
@@ -149,7 +151,7 @@ func LoadRules(dir string) ([]Rule, error) {
 		return nil, err
 	}
 
-	rules := make([]Rule, 0, len(names))
+	origins := make([]fileOrigin, 0, len(names))
 	for _, name := range names {
 		rulePath := filepath.Join(dir, name)
 		src, err := os.ReadFile(rulePath)
@@ -157,86 +159,253 @@ func LoadRules(dir string) ([]Rule, error) {
 			return nil, fmt.Errorf("read %s: %w", rulePath, err)
 		}
 
-		// Structural lint runs before compileRuleFile so its taxonomy
+		// Structural lint runs before compilation so its taxonomy
 		// (cross-rule / self-ref / unbound) shadows CUE's generic "reference
 		// not found" diagnostic on the same offense.
 		if err := lintRuleFile(rulePath, src); err != nil {
 			return nil, err
 		}
 
-		fileVal, err := compileRuleFile(bundle.ctx, rulePath, src, stdlibOverlay)
+		origin, err := parseFileOrigin(rulePath, name, src)
 		if err != nil {
 			return nil, err
 		}
-
-		fileRules, err := extractFileRules(bundle.ruleDef, fileVal, rulePath)
-		if err != nil {
-			return nil, err
-		}
-		rules = append(rules, fileRules...)
+		origins = append(origins, origin)
 	}
-	return rules, nil
+
+	if err := checkPackageClauses(origins); err != nil {
+		return nil, err
+	}
+
+	if err := checkDuplicateRuleNames(origins); err != nil {
+		return nil, err
+	}
+
+	merged, err := compileRulePackage(bundle.ctx, origins, stdlibOverlay)
+	if err != nil {
+		return nil, err
+	}
+
+	return extractPackageRules(bundle.ruleDef, merged, origins)
 }
 
-// extractFileRules walks every top-level regular field of fileVal (skipping
-// hidden fields and definitions), unifies each with #Rule, and returns the
-// decoded rules in declaration order.
-//
-// Per-rule failures are accumulated rather than short-circuited: authors fixing
-// a file with several broken rules should see all of them in a single pass.
-// errors.Join keeps each failure individually recoverable via errors.As so
-// callers can iterate through every structured diagnostic the loader produced.
-func extractFileRules(ruleDef cue.Value, fileVal cue.Value, rulePath string) ([]Rule, error) {
-	iter, err := fileVal.Fields(cue.Optional(false), cue.Definitions(false), cue.Hidden(false))
+// fileOrigin records, for one rule file, the data needed to load the directory
+// as a single merged package while still attributing each rule to its source
+// file: the on-disk path, the declared package name ("" if absent), the
+// build-tag-safe virtual overlay name, and the top-level rule field names in
+// declaration order.
+type fileOrigin struct {
+	path        string
+	virtualName string
+	packageName string
+	src         []byte
+	ruleFields  []string
+}
+
+// parseFileOrigin parses a rule file's AST to capture its package clause and
+// its declaration-ordered top-level rule field names. Ident labels are filtered
+// to regular fields (hidden `_x` helpers and `#X` definitions are skipped);
+// quoted string labels are always regular fields and are included as-is.
+func parseFileOrigin(rulePath, name string, src []byte) (fileOrigin, error) {
+	file, err := parser.ParseFile(rulePath, src)
 	if err != nil {
-		return nil, wrapRuleLoadError(rulePath, err)
+		return fileOrigin{}, wrapRuleLoadError(rulePath, err)
+	}
+	var fields []string
+	for _, decl := range file.Decls {
+		field, ok := decl.(*ast.Field)
+		if !ok {
+			continue
+		}
+		label, _, err := ast.LabelName(field.Label)
+		if err != nil {
+			continue
+		}
+		switch lbl := field.Label.(type) {
+		case *ast.Ident:
+			if isExportedOrRegular(label) {
+				fields = append(fields, label)
+			}
+		case *ast.BasicLit:
+			if lbl.Kind == token.STRING {
+				fields = append(fields, label)
+			}
+		}
+	}
+	return fileOrigin{
+		path:        rulePath,
+		virtualName: sanitizeVirtualRuleName(name),
+		packageName: file.PackageName(),
+		src:         src,
+		ruleFields:  fields,
+	}, nil
+}
+
+// checkPackageClauses enforces AD-7: every file in a rules directory must
+// declare the same single explicit `package` clause. The offending files (those
+// not matching the canonical clause, or all files when no single clause exists)
+// are named in an E0505 diagnostic.
+func checkPackageClauses(origins []fileOrigin) error {
+	explicit := map[string]struct{}{}
+	for _, o := range origins {
+		if o.packageName != "" {
+			explicit[o.packageName] = struct{}{}
+		}
 	}
 
+	var offending []string
+	if len(explicit) == 1 {
+		canonical := slices.Collect(maps.Keys(explicit))[0]
+		for _, o := range origins {
+			if o.packageName != canonical {
+				offending = append(offending, filepath.Base(o.path))
+			}
+		}
+	} else {
+		for _, o := range origins {
+			offending = append(offending, filepath.Base(o.path))
+		}
+	}
+
+	if len(offending) == 0 {
+		return nil
+	}
+	return packageClauseError(offending)
+}
+
+// packageClauseError builds the E0505 *diag.DiagError naming the files that
+// violate the single-shared-package-clause policy.
+func packageClauseError(offending []string) error {
+	d := diag.Diagnostic{
+		Code:     diag.E0505.Code,
+		Severity: diag.SeverityError,
+		Title: "rule files must share one explicit `package` clause; offending: " +
+			strings.Join(offending, ", "),
+		Help: diag.E0505.Help,
+	}
+	return diag.NewDiagError(d, nil, nil)
+}
+
+// CRP-005 will give this guard the E0504 code and a proper diagnostic.
+func checkDuplicateRuleNames(origins []fileOrigin) error {
+	owner := map[string]string{}
+	for _, o := range origins {
+		for _, name := range o.ruleFields {
+			if prev, seen := owner[name]; seen && prev != o.path {
+				return fmt.Errorf("rule %q is declared in both %s and %s",
+					name, filepath.Base(prev), filepath.Base(o.path))
+			}
+			owner[name] = o.path
+		}
+	}
+	return nil
+}
+
+// compileRulePackage loads every rule file in the directory as one merged CUE
+// package so cross-file hidden helpers resolve. The overlay hosts all rule
+// files (under their build-tag-safe virtual names) plus the embedded stdlib and
+// the synthetic module file; the package is loaded once via the module root.
+func compileRulePackage(ctx *cue.Context, origins []fileOrigin, stdlib map[string]load.Source) (cue.Value, error) {
+	overlay := make(map[string]load.Source, len(stdlib)+len(origins)+1)
+	maps.Copy(overlay, stdlib)
+	overlay[filepath.Join(RulesModuleRoot, "cue.mod", "module.cue")] = load.FromString(
+		fmt.Sprintf("module: %q\nlanguage: version: \"v0.11.0\"\n", rulesModulePath),
+	)
+	// CRP-013 will replace this interim guard with collision-proof disambiguation.
+	keyOrigin := make(map[string]string, len(origins))
+	for _, o := range origins {
+		key := filepath.Join(RulesModuleRoot, o.virtualName)
+		if prev, seen := keyOrigin[key]; seen && prev != o.path {
+			return cue.Value{}, fmt.Errorf("rule files %s and %s map to the same overlay name %q",
+				filepath.Base(prev), filepath.Base(o.path), o.virtualName)
+		}
+		keyOrigin[key] = o.path
+		overlay[key] = load.FromBytes(o.src)
+	}
+
+	cfg := &load.Config{
+		Dir:        RulesModuleRoot,
+		ModuleRoot: RulesModuleRoot,
+		Overlay:    overlay,
+	}
+	insts := load.Instances([]string{"."}, cfg)
+	if len(insts) == 0 {
+		return cue.Value{}, errors.New("compile rules: load returned no instances")
+	}
+	inst := insts[0]
+	if err := inst.Err; err != nil {
+		return cue.Value{}, wrapRuleLoadError(rulePackageErrPath(origins, err), err)
+	}
+
+	val := ctx.BuildInstance(inst)
+	if err := val.Err(); err != nil {
+		return cue.Value{}, wrapRuleLoadError(rulePackageErrPath(origins, err), err)
+	}
+	return val, nil
+}
+
+// rulePackageErrPath maps a merged-package compile error back to the offending
+// rule file's on-disk path by matching the virtual filename in the error's
+// position, falling back to the first file when no match is found.
+func rulePackageErrPath(origins []fileOrigin, err error) string {
+	msg := err.Error()
+	for _, o := range origins {
+		if strings.Contains(msg, o.virtualName) {
+			return o.path
+		}
+	}
+	return origins[0].path
+}
+
+// extractPackageRules walks each file's rule fields in origin order (files
+// alphabetical, then declaration order within a file), looks each up in the
+// merged value, validates and decodes it, and stamps Source with the rule's own
+// originating file. Per-rule failures are accumulated so authors see every
+// broken rule in a single pass.
+func extractPackageRules(ruleDef, merged cue.Value, origins []fileOrigin) ([]Rule, error) {
 	var out []Rule
 	var loadErrs []error
-	for iter.Next() {
-		sel := iter.Selector()
-		fieldName := sel.String()
-		if sel.LabelType() == cue.StringLabel {
-			fieldName = sel.Unquoted()
-		}
-		fieldVal := iter.Value()
-
-		unified := ruleDef.Unify(fieldVal)
-		// Structural validation rejects unknown gates (closed-set #Action)
-		// and shape mismatches without forcing concreteness on `when` —
-		// regex/disjunction constraints there are legitimate and get
-		// resolved by the evaluator at runtime.
-		if err := unified.Validate(); err != nil {
-			loadErrs = append(loadErrs, wrapFieldLoadError(rulePath, fieldName, err))
-			continue
-		}
-		// Unresolved references inside `when` surface as a value error on
-		// the offending leaf field, NOT on `when` itself — CUE keeps such
-		// errors localized, so a top-level when.Err() (and even
-		// when.Validate) misses a typo'd stdlib reference like
-		// `agent.#Explor`. Walk the subtree so it fails the load
-		// instead of being smuggled in as silent bottom that never matches.
-		if when := unified.LookupPath(cue.ParsePath("when")); when.Exists() {
-			if err := whenFieldErr(when, 0); err != nil {
-				loadErrs = append(loadErrs, wrapFieldLoadError(rulePath, fieldName, err))
+	for _, o := range origins {
+		for _, fieldName := range o.ruleFields {
+			fieldVal := merged.LookupPath(cue.MakePath(cue.Str(fieldName)))
+			if !fieldVal.Exists() {
+				loadErrs = append(loadErrs, wrapFieldLoadError(o.path, fieldName, fieldVal.Err()))
 				continue
 			}
-		}
-		if then := unified.LookupPath(cue.ParsePath("then")); then.Exists() {
-			if err := then.Validate(cue.Concrete(true)); err != nil {
-				loadErrs = append(loadErrs, wrapFieldLoadError(rulePath, fieldName, err))
+
+			unified := ruleDef.Unify(fieldVal)
+			// Structural validation rejects unknown gates (closed-set #Action)
+			// and shape mismatches without forcing concreteness on `when` —
+			// regex/disjunction constraints there are legitimate and get
+			// resolved by the evaluator at runtime.
+			if err := unified.Validate(); err != nil {
+				loadErrs = append(loadErrs, wrapFieldLoadError(o.path, fieldName, err))
 				continue
 			}
-		}
+			// Unresolved references inside `when` surface on the offending leaf
+			// field, not on `when` itself, so a top-level when.Err() misses a
+			// typo'd stdlib reference; walk the subtree so it fails the load.
+			if when := unified.LookupPath(cue.ParsePath("when")); when.Exists() {
+				if err := whenFieldErr(when, 0); err != nil {
+					loadErrs = append(loadErrs, wrapFieldLoadError(o.path, fieldName, err))
+					continue
+				}
+			}
+			if then := unified.LookupPath(cue.ParsePath("then")); then.Exists() {
+				if err := then.Validate(cue.Concrete(true)); err != nil {
+					loadErrs = append(loadErrs, wrapFieldLoadError(o.path, fieldName, err))
+					continue
+				}
+			}
 
-		rule, err := decodeRule(unified, fieldVal)
-		if err != nil {
-			loadErrs = append(loadErrs, fmt.Errorf("%s: field %q: %w", rulePath, fieldName, err))
-			continue
+			rule, err := decodeRule(unified, fieldVal)
+			if err != nil {
+				loadErrs = append(loadErrs, fmt.Errorf("%s: field %q: %w", o.path, fieldName, err))
+				continue
+			}
+			rule.Source = o.path + ":" + fieldName
+			out = append(out, rule)
 		}
-		rule.Source = rulePath + ":" + fieldName
-		out = append(out, rule)
 	}
 	if len(loadErrs) > 0 {
 		return nil, errors.Join(loadErrs...)
@@ -270,49 +439,6 @@ func whenFieldErr(v cue.Value, depth int) error {
 		}
 	}
 	return nil
-}
-
-// compileRuleFile evaluates a rule file with stdlib imports resolved.
-//
-// Rule files are compiled inside a synthetic CUE module whose overlay maps
-// the user's rule file plus a `cue.mod/pkg/github.com/srnnkls/fas/cue/`
-// tree populated from the embedded stdlib. When the rule file has no stdlib
-// import, CUE still resolves fine — the overlay's pkg tree is simply unused.
-func compileRuleFile(ctx *cue.Context, rulePath string, src []byte, stdlib map[string]load.Source) (cue.Value, error) {
-	overlay := make(map[string]load.Source, len(stdlib)+2)
-	maps.Copy(overlay, stdlib)
-	// Synthetic module root. Every overlay path must share this prefix so
-	// CUE treats the virtual directory as the module being loaded.
-	overlay[filepath.Join(RulesModuleRoot, "cue.mod", "module.cue")] = load.FromString(
-		fmt.Sprintf("module: %q\nlanguage: version: \"v0.11.0\"\n", rulesModulePath),
-	)
-	// Virtual filename stripped of any suffix CUE treats as a build-tag.
-	// Files ending in `_tool.cue` or `_test.cue` are filtered out in
-	// non-cmd / non-test mode, so we always load under a neutral name.
-	// Diagnostic context for the author comes from wrapRuleLoadError, which
-	// prepends the real rule file path.
-	virtualName := sanitizeVirtualRuleName(filepath.Base(rulePath))
-	overlay[filepath.Join(RulesModuleRoot, virtualName)] = load.FromBytes(src)
-
-	cfg := &load.Config{
-		Dir:        RulesModuleRoot,
-		ModuleRoot: RulesModuleRoot,
-		Overlay:    overlay,
-	}
-	insts := load.Instances([]string{virtualName}, cfg)
-	if len(insts) == 0 {
-		return cue.Value{}, fmt.Errorf("compile %s: load returned no instances", rulePath)
-	}
-	inst := insts[0]
-	if err := inst.Err; err != nil {
-		return cue.Value{}, wrapRuleLoadError(rulePath, err)
-	}
-
-	val := ctx.BuildInstance(inst)
-	if err := val.Err(); err != nil {
-		return cue.Value{}, wrapRuleLoadError(rulePath, err)
-	}
-	return val, nil
 }
 
 // wrapRuleLoadError converts a CUE diagnostic at file scope into a structured

@@ -803,12 +803,13 @@ func TestRulesModuleRoot_AbsoluteOnHost(t *testing.T) {
 	}
 }
 
-// ruleWithID constructs a minimal well-formed deny rule with a given rule_id,
-// used by the ordering test.
+// ruleWithID constructs a minimal well-formed deny rule with a given rule_id.
+// The top-level label is derived from the id: a rules dir loads as one merged
+// package, so same-named top-level fields across files would collide.
 func ruleWithID(id string) string {
 	return `package rules
 
-test_rule: {
+rule_` + id + `: {
 	when: {hook_event_name: "PreToolUse"}
 	then: deny: {
 		rule_id: "` + id + `"
