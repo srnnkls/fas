@@ -100,48 +100,6 @@ plain: {
 	}
 }
 
-// Defect B — the loader sanitizes filenames into virtual overlay keys via a
-// non-injective map: `foo_tool.cue` and `foo_rule.cue` both collapse to the
-// same virtual name, so one file silently overwrites the other. The interim
-// guard must FAIL LOUDLY, naming BOTH real files. We assert only (a) non-nil
-// error and (b) both filenames present — no specific E05xx code (disambiguation
-// is a later task).
-func TestLoadRules_VirtualNameCollision_FailsLoudly(t *testing.T) {
-	dir := t.TempDir()
-	writeRuleFileNamed(t, dir, "foo_rule.cue", `package rules
-
-alpha: {
-	when: {hook_event_name: "PreToolUse"}
-	then: deny: {
-		rule_id: "r-alpha"
-		reason:  "a"
-	}
-}
-`)
-	writeRuleFileNamed(t, dir, "foo_tool.cue", `package rules
-
-beta: {
-	when: {hook_event_name: "PreToolUse"}
-	then: deny: {
-		rule_id: "r-beta"
-		reason:  "b"
-	}
-}
-`)
-
-	_, err := config.LoadRules(dir)
-	if err == nil {
-		t.Fatal("expected a loud error when two files collide to one virtual name, got nil")
-	}
-	msg := err.Error()
-	if !strings.Contains(msg, "foo_rule.cue") {
-		t.Errorf("collision error must name `foo_rule.cue`; got: %s", msg)
-	}
-	if !strings.Contains(msg, "foo_tool.cue") {
-		t.Errorf("collision error must name `foo_tool.cue`; got: %s", msg)
-	}
-}
-
 // Defect C1 — two files declaring the SAME top-level rule name with COMPATIBLE
 // (identical) bodies must FAIL LOUDLY rather than silently merge into one rule.
 // The bodies are identical so CUE unifies them cleanly and does NOT raise its

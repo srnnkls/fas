@@ -166,12 +166,13 @@ func LoadRules(dir string) ([]Rule, error) {
 			return nil, err
 		}
 
-		origin, err := parseFileOrigin(rulePath, name, src)
+		origin, err := parseFileOrigin(rulePath, src)
 		if err != nil {
 			return nil, err
 		}
 		origins = append(origins, origin)
 	}
+	assignVirtualNames(origins)
 
 	if err := checkPackageClauses(origins); err != nil {
 		return nil, err
@@ -206,7 +207,7 @@ type fileOrigin struct {
 // its declaration-ordered top-level rule field names. Ident labels are filtered
 // to regular fields (hidden `_x` helpers and `#X` definitions are skipped);
 // quoted string labels are always regular fields and are included as-is.
-func parseFileOrigin(rulePath, name string, src []byte) (fileOrigin, error) {
+func parseFileOrigin(rulePath string, src []byte) (fileOrigin, error) {
 	file, err := parser.ParseFile(rulePath, src)
 	if err != nil {
 		return fileOrigin{}, wrapRuleLoadError(rulePath, err)
@@ -234,7 +235,6 @@ func parseFileOrigin(rulePath, name string, src []byte) (fileOrigin, error) {
 	}
 	return fileOrigin{
 		path:        rulePath,
-		virtualName: sanitizeVirtualRuleName(name),
 		packageName: file.PackageName(),
 		src:         src,
 		ruleFields:  fields,
@@ -311,16 +311,8 @@ func compileRulePackage(ctx *cue.Context, origins []fileOrigin, stdlib map[strin
 	overlay[filepath.Join(RulesModuleRoot, "cue.mod", "module.cue")] = load.FromString(
 		fmt.Sprintf("module: %q\nlanguage: version: \"v0.11.0\"\n", rulesModulePath),
 	)
-	// CRP-013 will replace this interim guard with collision-proof disambiguation.
-	keyOrigin := make(map[string]string, len(origins))
 	for _, o := range origins {
-		key := filepath.Join(RulesModuleRoot, o.virtualName)
-		if prev, seen := keyOrigin[key]; seen && prev != o.path {
-			return cue.Value{}, fmt.Errorf("rule files %s and %s map to the same overlay name %q",
-				filepath.Base(prev), filepath.Base(o.path), o.virtualName)
-		}
-		keyOrigin[key] = o.path
-		overlay[key] = load.FromBytes(o.src)
+		overlay[filepath.Join(RulesModuleRoot, o.virtualName)] = load.FromBytes(o.src)
 	}
 
 	cfg := &load.Config{
@@ -528,8 +520,6 @@ const stdlibOverlayImportPath = "github.com/srnnkls/fas/cue"
 func sanitizeVirtualRuleName(name string) string {
 	ext := filepath.Ext(name)
 	if ext != ".cue" {
-		// Defensive: LoadRules already filters to .cue, but keep the
-		// function robust if callers change.
 		return name
 	}
 	stem := strings.TrimSuffix(name, ext)
@@ -540,6 +530,31 @@ func sanitizeVirtualRuleName(name string) string {
 		}
 	}
 	return stem + ext
+}
+
+// assignVirtualNames gives each origin its build-tag-safe overlay name. The
+// sanitizer is not injective (`git_test.cue` and `git_rule.cue` both want
+// `git_rule.cue`), so the second-and-later claimant of a name gets a
+// sorted-index disambiguator while still ending in `_rule.cue`. Origins are in
+// real-name-sorted order, so the assignment is deterministic across loads; the
+// real path drives Source, so the disambiguator never leaks.
+func assignVirtualNames(origins []fileOrigin) {
+	taken := make(map[string]bool, len(origins))
+	for i := range origins {
+		name := sanitizeVirtualRuleName(filepath.Base(origins[i].path))
+		if taken[name] {
+			stem := strings.TrimSuffix(name, ".cue")
+			// Probe until free: a minted candidate can itself name a real file.
+			for n := i; ; n++ {
+				name = fmt.Sprintf("%s_%d_rule.cue", stem, n)
+				if !taken[name] {
+					break
+				}
+			}
+		}
+		taken[name] = true
+		origins[i].virtualName = name
+	}
 }
 
 // whenSyntax returns the parsed AST expression for a `when` value with source
