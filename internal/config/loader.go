@@ -176,6 +176,10 @@ func LoadRules(dir string) ([]Rule, error) {
 	}
 	assignVirtualNames(origins)
 
+	slices.SortStableFunc(origins, func(a, b fileOrigin) int {
+		return CompareModulePath(moduleRelPath(dir, a.path), moduleRelPath(dir, b.path))
+	})
+
 	if err := checkPackageClauses(origins); err != nil {
 		return nil, err
 	}
@@ -190,6 +194,22 @@ func LoadRules(dir string) ([]Rule, error) {
 	}
 
 	return extractPackageRules(dir, bundle.ruleDef, merged, origins)
+}
+
+func moduleRelPath(dir, rulePath string) string {
+	rel, err := filepath.Rel(dir, rulePath)
+	if err != nil {
+		return rulePath
+	}
+	return rel
+}
+
+// CompareModulePath orders module-relative rule paths by directory lexically, then basename.
+func CompareModulePath(a, b string) int {
+	if d := strings.Compare(filepath.Dir(a), filepath.Dir(b)); d != 0 {
+		return d
+	}
+	return strings.Compare(filepath.Base(a), filepath.Base(b))
 }
 
 // fileOrigin records, for one rule file, the data needed to load the directory
