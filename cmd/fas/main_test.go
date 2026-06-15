@@ -148,7 +148,7 @@ rule: {
 // exercising the ask path without stdlib scaffolding.
 const askOnBashRule = `package rules
 
-rule: {
+ask_rule: {
 	when: {
 		hook_event_name: "PreToolUse"
 		tool_name:       "Bash"
@@ -306,13 +306,13 @@ rule: {
 // plain Bash payload — `claudeBashInput` emits only `tool_input.command` —
 // does not expose. The rule therefore cannot match, and localize must yield
 // an E0201 keyed on the absent `flags` label. The `flags` label sits on
-// line 8 of the written file (1: `package rules`, 2: blank, 3: `rule: {`,
+// line 8 of the written file (1: `package rules`, 2: blank, 3: `flags_rule: {`,
 // 4: `\twhen: {`, 5: `\t\thook_event_name: "PreToolUse"`, 6: `\t\ttool_name:
 // "Bash"`, 7: `\t\ttool_input: {`, 8: `\t\t\tflags: force: true`) so stderr
 // is expected to carry `flags-miss.cue:8:\d+` when rendered.
 const missingKeyRule = `package rules
 
-rule: {
+flags_rule: {
 	when: {
 		hook_event_name: "PreToolUse"
 		tool_name:       "Bash"
@@ -334,7 +334,7 @@ rule: {
 // can distinguish the two miss diagnostics.
 const missingEnvRule = `package rules
 
-rule: {
+env_rule: {
 	when: {
 		hook_event_name: "PreToolUse"
 		tool_name:       "Bash"

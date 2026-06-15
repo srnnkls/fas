@@ -15,15 +15,36 @@ import (
 	"github.com/srnnkls/fas/internal/pipeline"
 )
 
-// writeRule drops a single .cue rule file into dir, wrapping body in the
-// `rule: { ... }` top-level the loader expects.
+// writeRule drops a single .cue rule file into dir, wrapping body in a
+// top-level rule field whose label is derived from the file name.
 func writeRule(t *testing.T, dir, name, body string) {
 	t.Helper()
-	src := "package rules\n\nrule: " + body + "\n"
+	src := "package rules\n\n" + ruleLabelFromName(name) + ": " + body + "\n"
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
 		t.Fatalf("write rule %s: %v", path, err)
 	}
+}
+
+// ruleLabelFromName derives a valid, distinct CUE identifier from a rule file
+// name. A rules dir loads as one merged package, so distinct file stems must
+// map to distinct top-level labels or same-named fields would collide.
+func ruleLabelFromName(name string) string {
+	stem := strings.TrimSuffix(name, ".cue")
+	var b strings.Builder
+	for _, r := range stem {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	label := b.String()
+	if label == "" || label[0] == '_' || (label[0] >= '0' && label[0] <= '9') {
+		label = "rule_" + label
+	}
+	return label
 }
 
 // loadRules is a thin wrapper so tests read naturally.
