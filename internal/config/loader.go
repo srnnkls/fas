@@ -244,6 +244,7 @@ func parsePackageDir(rootDir, pkgDir string) (*packageOrigins, error) {
 		origins = append(origins, origin)
 	}
 	assignVirtualNames(origins)
+	injectCanonicalClause(origins)
 
 	slices.SortStableFunc(origins, func(a, b fileOrigin) int {
 		return CompareModulePath(moduleRelPath(rootDir, a.path), moduleRelPath(rootDir, b.path))
@@ -381,40 +382,77 @@ func ruleLabelName(field *ast.Field) (string, bool) {
 	return "", false
 }
 
-// checkPackageClauses enforces AD-7: every file in a rules directory must
-// declare the same single explicit `package` clause. The offending files (those
-// not matching the canonical clause, or all files when no single clause exists)
-// are named in an E0505 diagnostic.
-func checkPackageClauses(rootDir string, origins []fileOrigin) error {
-	explicit := map[string]struct{}{}
+// explicitPackageNames returns the distinct non-empty explicit package names in
+// a directory; `package _` reports PackageName()=="" and so counts as absent.
+func explicitPackageNames(origins []fileOrigin) []string {
+	seen := map[string]struct{}{}
 	for _, o := range origins {
 		if o.packageName != "" {
-			explicit[o.packageName] = struct{}{}
+			seen[o.packageName] = struct{}{}
 		}
 	}
+	names := slices.Collect(maps.Keys(seen))
+	slices.Sort(names)
+	return names
+}
 
+// canonicalPackageName is the single explicit name when one is present, else "rules".
+func canonicalPackageName(origins []fileOrigin) string {
+	if names := explicitPackageNames(origins); len(names) == 1 {
+		return names[0]
+	}
+	return "rules"
+}
+
+// checkPackageClauses errors (E0505) only when a directory carries two or more
+// distinct explicit `package` names, naming each file with a divergent name.
+func checkPackageClauses(rootDir string, origins []fileOrigin) error {
+	if len(explicitPackageNames(origins)) < 2 {
+		return nil
+	}
 	var offending []string
-	if len(explicit) == 1 {
-		canonical := slices.Collect(maps.Keys(explicit))[0]
-		for _, o := range origins {
-			if o.packageName != canonical {
-				offending = append(offending, moduleRelPath(rootDir, o.path))
-			}
-		}
-	} else {
-		for _, o := range origins {
+	for _, o := range origins {
+		if o.packageName != "" {
 			offending = append(offending, moduleRelPath(rootDir, o.path))
 		}
-	}
-
-	if len(offending) == 0 {
-		return nil
 	}
 	return packageClauseError(offending)
 }
 
+// injectCanonicalClause stamps absent and `package _` files with the canonical
+// name, added at zero position so existing nodes keep their on-disk positions.
+// CUE silently drops a package-less file from a directory merge, so without this
+// the clause-less file would never merge with its siblings.
+func injectCanonicalClause(origins []fileOrigin) {
+	if len(explicitPackageNames(origins)) >= 2 {
+		return
+	}
+	canonical := canonicalPackageName(origins)
+	for i := range origins {
+		o := &origins[i]
+		if o.packageName != "" {
+			continue
+		}
+		if pkg := packageDecl(o.file); pkg != nil {
+			pkg.Name = ast.NewIdent(canonical)
+		} else {
+			o.file.Decls = append([]ast.Decl{&ast.Package{Name: ast.NewIdent(canonical)}}, o.file.Decls...)
+		}
+		o.packageName = canonical
+	}
+}
+
+func packageDecl(file *ast.File) *ast.Package {
+	for _, decl := range file.Decls {
+		if pkg, ok := decl.(*ast.Package); ok {
+			return pkg
+		}
+	}
+	return nil
+}
+
 // packageClauseError builds the E0505 *diag.DiagError naming the files that
-// violate the single-shared-package-clause policy.
+// declare divergent explicit `package` clauses.
 func packageClauseError(offending []string) error {
 	d := diag.Diagnostic{
 		Code:     diag.E0505.Code,

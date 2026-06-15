@@ -114,11 +114,15 @@ The loader walks a rules tree and loads each directory of `.cue` files as one
 CUE **package**; subdirectories are separate, independent packages. The module
 is `fas.local/rules`.
 
-- **One package per directory.** Every `.cue` file in a directory must declare
-  the same single explicit `package` clause (e.g. `package rules`). Absent,
-  mixed, or divergent clauses are a load error (`E0505`, naming the files).
-  Sibling files in a package share scope: a `_helper` or `#Def` in one file is
-  visible to the others.
+- **One package per directory.** The `package` clause is optional — files that
+  omit it (or use `package _`) adopt the directory's canonical package: the one
+  explicit name declared in that directory, or `rules` by default. Only **two or
+  more different explicit** package names in one directory are a load error
+  (`E0505`, naming the offending files); this matches CUE, which itself rejects
+  only multiple named packages per directory. Sibling files in a package share
+  scope: a `_helper` or `#Def` in one file is visible to the others. Declare an
+  explicit `package <name>` matching the directory for a package meant to be
+  *imported* (e.g. `schema/`).
 - **Subdirs are independent packages**, loaded recursively. The same rule name
   in *different* packages is fine; a duplicate top-level rule name *within* one
   package (across its files) is a load error (`E0504`, naming both files).

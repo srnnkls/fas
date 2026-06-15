@@ -116,11 +116,15 @@ them:
 
 Loading rules:
 
-- **Every `.cue` file in a directory shares one package.** All files in a
-  directory must declare the same single explicit `package` clause (e.g.
-  `package rules`); an absent, mixed, or divergent clause is a load error
-  (`E0505`). Files in a package share scope — a hidden `_helper` or a `#Def`
-  declared in one file is visible to its siblings.
+- **Every `.cue` file in a directory shares one package.** The `package`
+  clause is optional: files that omit it (or use `package _`) adopt the
+  directory's canonical package — the single explicit name declared in the
+  directory, or `rules` by default. Only **two or more different explicit**
+  package names in one directory are a load error (`E0505`, naming the
+  offending files). Files in a package share scope — a hidden `_helper` or a
+  `#Def` declared in one file is visible to its siblings. (Declare an explicit
+  `package <name>` matching the directory for a package you intend to *import*,
+  such as `schema/`.)
 - **Subdirectories are independent packages**, loaded recursively. The same
   rule name may appear in different packages; a duplicate top-level rule name
   *within* one package (across its files) is a load error (`E0504`).
