@@ -244,7 +244,17 @@ func parseFileOrigin(rulePath string, src []byte) (fileOrigin, error) {
 		if err != nil {
 			continue
 		}
-		switch lbl := field.Label.(type) {
+		// A field-alias label (`X="git_x"`) is an *ast.Alias; classify the
+		// underlying label it binds so aliased rules aren't silently dropped.
+		labelExpr := field.Label
+		if alias, ok := labelExpr.(*ast.Alias); ok {
+			inner, ok := alias.Expr.(ast.Label)
+			if !ok {
+				continue
+			}
+			labelExpr = inner
+		}
+		switch lbl := labelExpr.(type) {
 		case *ast.Ident:
 			if isExportedOrRegular(label) {
 				fields = append(fields, label)
@@ -308,19 +318,35 @@ func packageClauseError(offending []string) error {
 	return diag.NewDiagError(d, nil, nil)
 }
 
-// CRP-005 will give this guard the E0504 code and a proper diagnostic.
+// checkDuplicateRuleNames rejects the same plain top-level rule label appearing
+// in two files of the merged package (E0504). Hidden helpers, definitions and
+// label-less comprehensions are already excluded from o.ruleFields, so only
+// rule-shaped fields are candidates.
 func checkDuplicateRuleNames(origins []fileOrigin) error {
 	owner := map[string]string{}
 	for _, o := range origins {
 		for _, name := range o.ruleFields {
 			if prev, seen := owner[name]; seen && prev != o.path {
-				return fmt.Errorf("rule %q is declared in both %s and %s",
-					name, filepath.Base(prev), filepath.Base(o.path))
+				return duplicateRuleNameError(name, prev, o.path)
 			}
 			owner[name] = o.path
 		}
 	}
 	return nil
+}
+
+// duplicateRuleNameError builds the E0504 *diag.DiagError naming both files that
+// declare name. The Title preserves the "declared in both A and B" phrasing so
+// the rendered error still names both basenames.
+func duplicateRuleNameError(name, prev, cur string) error {
+	d := diag.Diagnostic{
+		Code:     diag.E0504.Code,
+		Severity: diag.SeverityError,
+		Title: fmt.Sprintf("rule %q is declared in both %s and %s",
+			name, filepath.Base(prev), filepath.Base(cur)),
+		Help: diag.E0504.Help,
+	}
+	return diag.NewDiagError(d, nil, nil)
 }
 
 // compileRulePackage loads every rule file in the directory as one merged CUE
