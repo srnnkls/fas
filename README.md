@@ -96,6 +96,84 @@ on stdin and writes the response on stdout:
 fas eval --harness claude < event.json
 ```
 
+## Organizing rules
+
+A rules directory is loaded as CUE **packages**, recursively. Each directory
+of `.cue` files is one package; subdirectories are separate, independent
+packages. This lets a tree split rules by category and share schema between
+them:
+
+```
+.fas/rules/
+├── schema/
+│   └── targets.cue        # package schema — reusable #defs
+├── security/
+│   ├── git.cue            # package rules
+│   └── rm.cue             # package rules
+└── workflow/
+    └── commits.cue        # package rules
+```
+
+Loading rules:
+
+- **Every `.cue` file in a directory shares one package.** All files in a
+  directory must declare the same single explicit `package` clause (e.g.
+  `package rules`); an absent, mixed, or divergent clause is a load error
+  (`E0505`). Files in a package share scope — a hidden `_helper` or a `#Def`
+  declared in one file is visible to its siblings.
+- **Subdirectories are independent packages**, loaded recursively. The same
+  rule name may appear in different packages; a duplicate top-level rule name
+  *within* one package (across its files) is a load error (`E0504`).
+- **Pruned paths.** Dotfile dirs (`.x`), underscore dirs (`_x`), and `cue.mod`
+  are skipped with their subtrees; non-`.cue` files are ignored.
+- **Total order.** Rules load in a stable order: by module-relative directory
+  (lexical), then filename (lexical), then declaration order within a file.
+
+### Sharing schema
+
+The rules tree is the CUE module `fas.local/rules`. Put reusable definitions in
+a `schema/` package and import it by module-relative path:
+
+```cue
+// .fas/rules/schema/targets.cue
+package schema
+
+#SystemPath: =~"^(/etc|/sys|/proc)\\b"
+```
+
+```cue
+// .fas/rules/security/git.cue
+package rules
+
+import (
+	"github.com/srnnkls/fas/cue/hook"
+	"github.com/srnnkls/fas/cue/tool"
+
+	"fas.local/rules/schema"
+)
+
+protect_system_paths: {
+	when: hook.#PreToolUse & tool.#Bash & {
+		tool_input: parsed: targets: [...schema.#SystemPath]
+	}
+	then: deny: {
+		rule_id:  "protect-system-paths"
+		reason:   "Writes under system paths are blocked"
+		severity: "HIGH"
+	}
+}
+```
+
+**Visibility caveat.** Only `#defs` cross a package boundary. A `_hidden` field
+is package-private — it is *not* visible to an importing package, and every
+regular top-level field is extracted as a **rule**. A shared-defs package must
+therefore expose `#defs`, not regular fields. (Same-package files still share
+`_hidden` helpers; only *cross-package* sharing requires `#defs`.)
+
+Layering global and project rule sets — `replace`, `extend`, `disable`, and
+cross-layer precedence — is a separate concern; see the rule-precedence model.
+This section covers only how rules are organized *within* one layer.
+
 ## Pipeline
 
 ```
