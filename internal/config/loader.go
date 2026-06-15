@@ -105,26 +105,83 @@ func computeRulesModuleRoot() string {
 // rule file and the embedded stdlib via `cue.mod/pkg/...`.
 const rulesModulePath = "fas.local/rules@v0"
 
-// LoadRules reads `*.cue` files from dir, iterates every top-level non-hidden
-// field in each file, unifies each against the `#Rule` schema, and returns the
-// decoded rules. Files are visited in alphabetical order; inside a file, rules
-// are emitted in declaration order. An empty directory returns an empty slice
-// and a nil error. Non-.cue files are ignored.
+// LoadRules walks the tree rooted at dir, loading every directory that directly
+// contains `*.cue` files as its own independent package (own clause/dup/lint
+// checks; no cross-directory merge — cross-package imports are a later task).
+// Dirs named `.x`, `_x`, or `cue.mod` are pruned with their subtrees; the
+// combined rules are returned in CompareModulePath(ModuleRelPath) order, which
+// is dir-lexical then basename, independent of traversal order.
 //
-// Hidden fields (`_foo`) and definitions (`#Foo`) are skipped — hidden fields
-// remain addressable as local helpers from sibling rules. A non-hidden
-// top-level field that does not unify with `#Rule` is a load-time error
-// naming both the file and the offending field.
-//
-// Each rule file is compiled inside a synthetic CUE module whose
-// `cue.mod/pkg/` tree hosts the embedded fas stdlib, so rule authors may
-// write `import "github.com/srnnkls/fas/cue/hook"` (etc.) and reference
-// `hook.#PreToolUse`, `path.#hasSystemTarget`, and friends. Rule files that
-// do not import the stdlib are unaffected.
+// Within a package: every top-level non-hidden field is unified against `#Rule`;
+// hidden fields (`_foo`) and definitions (`#Foo`) are skipped; a non-hidden
+// field that does not unify is a load-time error naming both file and field.
+// Each rule file is compiled inside a synthetic CUE module whose `cue.mod/pkg/`
+// tree hosts the embedded fas stdlib, so rule authors may import
+// `github.com/srnnkls/fas/cue/hook` (etc.). An empty tree returns an empty slice.
 func LoadRules(dir string) ([]Rule, error) {
-	entries, err := os.ReadDir(dir)
+	pkgDirs, err := discoverPackageDirs(dir)
 	if err != nil {
-		return nil, fmt.Errorf("read rules dir %s: %w", dir, err)
+		return nil, err
+	}
+
+	var out []Rule
+	for _, pkgDir := range pkgDirs {
+		rules, err := loadPackageDir(dir, pkgDir)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rules...)
+	}
+
+	slices.SortStableFunc(out, func(a, b Rule) int {
+		return CompareModulePath(a.ModuleRelPath, b.ModuleRelPath)
+	})
+	if out == nil {
+		return []Rule{}, nil
+	}
+	return out, nil
+}
+
+// discoverPackageDirs returns every directory in the tree rooted at root that
+// directly holds at least one `.cue` file. Dotfile dirs (`.x`), underscore dirs
+// (`_x`), and `cue.mod` dirs are pruned along with their whole subtree.
+func discoverPackageDirs(root string) ([]string, error) {
+	seen := map[string]struct{}{}
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			if p != root && isPrunedDir(d.Name()) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(p) == ".cue" {
+			seen[filepath.Dir(p)] = struct{}{}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walk rules dir %s: %w", root, err)
+	}
+	dirs := slices.Collect(maps.Keys(seen))
+	slices.Sort(dirs)
+	return dirs, nil
+}
+
+func isPrunedDir(name string) bool {
+	return strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "cue.mod"
+}
+
+// loadPackageDir loads the `.cue` files directly in pkgDir as one merged package
+// (own overlay/compile/clause-check/dup-check/lint), stamping each rule's
+// ModuleRelPath relative to rootDir so a file at rootDir/security/git.cue gets
+// ModuleRelPath `security/git.cue` while Source keeps its on-disk path.
+func loadPackageDir(rootDir, pkgDir string) ([]Rule, error) {
+	entries, err := os.ReadDir(pkgDir)
+	if err != nil {
+		return nil, fmt.Errorf("read rules dir %s: %w", pkgDir, err)
 	}
 
 	names := make([]string, 0, len(entries))
@@ -140,7 +197,7 @@ func LoadRules(dir string) ([]Rule, error) {
 	slices.Sort(names)
 
 	if len(names) == 0 {
-		return []Rule{}, nil
+		return nil, nil
 	}
 
 	bundle, err := loadSchema()
@@ -155,7 +212,7 @@ func LoadRules(dir string) ([]Rule, error) {
 
 	origins := make([]fileOrigin, 0, len(names))
 	for _, name := range names {
-		rulePath := filepath.Join(dir, name)
+		rulePath := filepath.Join(pkgDir, name)
 		src, err := os.ReadFile(rulePath)
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", rulePath, err)
@@ -170,7 +227,7 @@ func LoadRules(dir string) ([]Rule, error) {
 	assignVirtualNames(origins)
 
 	slices.SortStableFunc(origins, func(a, b fileOrigin) int {
-		return CompareModulePath(moduleRelPath(dir, a.path), moduleRelPath(dir, b.path))
+		return CompareModulePath(moduleRelPath(rootDir, a.path), moduleRelPath(rootDir, b.path))
 	})
 
 	if err := checkPackageClauses(origins); err != nil {
@@ -193,7 +250,7 @@ func LoadRules(dir string) ([]Rule, error) {
 		return nil, err
 	}
 
-	return extractPackageRules(dir, bundle.ruleDef, merged, origins)
+	return extractPackageRules(rootDir, bundle.ruleDef, merged, origins)
 }
 
 func moduleRelPath(dir, rulePath string) string {
