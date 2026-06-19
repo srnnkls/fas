@@ -105,9 +105,9 @@ deploy_gate: {
 		"deploy-gate": filepath.Join("workflow", "deploy.cue"),
 	}
 	wantSource := map[string]string{
-		"root-guard":  filepath.Join(root, "root.cue") + ":root_guard",
-		"bash-guard":  filepath.Join(root, "security", "git.cue") + ":bash_guard",
-		"deploy-gate": filepath.Join(root, "workflow", "deploy.cue") + ":deploy_gate",
+		"root-guard":  filepath.ToSlash(filepath.Join(root, "root.cue")) + ":root_guard",
+		"bash-guard":  filepath.ToSlash(filepath.Join(root, "security", "git.cue")) + ":bash_guard",
+		"deploy-gate": filepath.ToSlash(filepath.Join(root, "workflow", "deploy.cue")) + ":deploy_gate",
 	}
 	for id, r := range byID {
 		if r.ModuleRelPath != wantRel[id] {

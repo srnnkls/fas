@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/srnnkls/fas/internal/config"
@@ -74,13 +75,13 @@ git_b: {
 	}
 
 	a := findRuleByID(t, rules, "git-a")
-	if a.Source != testPath+":git_a" {
-		t.Errorf("git_a.Source = %q, want %q", a.Source, testPath+":git_a")
+	if a.Source != filepath.ToSlash(testPath)+":git_a" {
+		t.Errorf("git_a.Source = %q, want %q", a.Source, filepath.ToSlash(testPath)+":git_a")
 	}
 
 	b := findRuleByID(t, rules, "git-b")
-	if b.Source != rulePath+":git_b" {
-		t.Errorf("git_b.Source = %q, want %q", b.Source, rulePath+":git_b")
+	if b.Source != filepath.ToSlash(rulePath)+":git_b" {
+		t.Errorf("git_b.Source = %q, want %q", b.Source, filepath.ToSlash(rulePath)+":git_b")
 	}
 }
 
@@ -121,13 +122,13 @@ foo_y: {
 	}
 
 	x := findRuleByID(t, rules, "foo-x")
-	if x.Source != toolPath+":foo_x" {
-		t.Errorf("foo_x.Source = %q, want %q", x.Source, toolPath+":foo_x")
+	if x.Source != filepath.ToSlash(toolPath)+":foo_x" {
+		t.Errorf("foo_x.Source = %q, want %q", x.Source, filepath.ToSlash(toolPath)+":foo_x")
 	}
 
 	y := findRuleByID(t, rules, "foo-y")
-	if y.Source != rulePath+":foo_y" {
-		t.Errorf("foo_y.Source = %q, want %q", y.Source, rulePath+":foo_y")
+	if y.Source != filepath.ToSlash(rulePath)+":foo_y" {
+		t.Errorf("foo_y.Source = %q, want %q", y.Source, filepath.ToSlash(rulePath)+":foo_y")
 	}
 }
 
@@ -260,18 +261,18 @@ b_three: {
 	}
 
 	one := findRuleByID(t, rules, "b-one")
-	if one.Source != rulePath+":b_one" {
-		t.Errorf("b_one.Source = %q, want %q", one.Source, rulePath+":b_one")
+	if one.Source != filepath.ToSlash(rulePath)+":b_one" {
+		t.Errorf("b_one.Source = %q, want %q", one.Source, filepath.ToSlash(rulePath)+":b_one")
 	}
 
 	two := findRuleByID(t, rules, "b-two")
-	if two.Source != collidePath+":b_two" {
-		t.Errorf("b_two.Source = %q, want %q", two.Source, collidePath+":b_two")
+	if two.Source != filepath.ToSlash(collidePath)+":b_two" {
+		t.Errorf("b_two.Source = %q, want %q", two.Source, filepath.ToSlash(collidePath)+":b_two")
 	}
 
 	three := findRuleByID(t, rules, "b-three")
-	if three.Source != testPath+":b_three" {
-		t.Errorf("b_three.Source = %q, want %q", three.Source, testPath+":b_three")
+	if three.Source != filepath.ToSlash(testPath)+":b_three" {
+		t.Errorf("b_three.Source = %q, want %q", three.Source, filepath.ToSlash(testPath)+":b_three")
 	}
 }
 
@@ -301,8 +302,8 @@ solo_rule: {
 	}
 
 	r := findRuleByID(t, rules, "solo-rule")
-	if r.Source != testPath+":solo_rule" {
+	if r.Source != filepath.ToSlash(testPath)+":solo_rule" {
 		t.Errorf("solo_rule.Source = %q, want %q (must name real _test.cue, not virtual _rule.cue)",
-			r.Source, testPath+":solo_rule")
+			r.Source, filepath.ToSlash(testPath)+":solo_rule")
 	}
 }

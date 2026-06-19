@@ -85,8 +85,8 @@ func TestLoadRules_ModuleRelPath_SourceUnchanged(t *testing.T) {
 	dir, rules := loadFlatModuleRelPathFixture(t)
 
 	wantSource := map[string]string{
-		"alpha": filepath.Join(dir, "a_bash.cue") + ":alpha",
-		"beta":  filepath.Join(dir, "sub_thing.cue") + ":beta",
+		"alpha": filepath.ToSlash(filepath.Join(dir, "a_bash.cue")) + ":alpha",
+		"beta":  filepath.ToSlash(filepath.Join(dir, "sub_thing.cue")) + ":beta",
 	}
 	for _, r := range rules {
 		id := r.Then.RuleID
@@ -106,7 +106,7 @@ func TestLoadRules_ModuleRelPath_DistinctFromSource(t *testing.T) {
 		if r.Source == r.ModuleRelPath {
 			t.Errorf("%s: Source and ModuleRelPath must differ, both = %q", id, r.Source)
 		}
-		if !strings.Contains(r.Source, dir) {
+		if !strings.Contains(r.Source, filepath.ToSlash(dir)) {
 			t.Errorf("%s.Source = %q, expected it to contain the on-disk dir %q", id, r.Source, dir)
 		}
 		// Source path component is "<dir>/<file>"; ModuleRelPath is "<file>".

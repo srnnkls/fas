@@ -645,7 +645,7 @@ func extractPackageRules(dir string, ruleDef, merged cue.Value, origins []fileOr
 			if err != nil {
 				return nil, fmt.Errorf("resolve module-relative path for %s under %s: %w", o.path, dir, err)
 			}
-			rule.Source = dir + "/" + filepath.ToSlash(relPath) + ":" + fieldName
+			rule.Source = filepath.ToSlash(o.path) + ":" + fieldName
 			rule.ModuleRelPath = relPath
 			out = append(out, rule)
 		}
