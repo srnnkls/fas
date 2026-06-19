@@ -295,9 +295,9 @@ func loadPackage(rootDir string, pkg packageOrigins, bundle schemaBundle, overla
 func moduleRelPath(dir, rulePath string) string {
 	rel, err := filepath.Rel(dir, rulePath)
 	if err != nil {
-		return rulePath
+		return filepath.ToSlash(rulePath)
 	}
-	return rel
+	return filepath.ToSlash(rel)
 }
 
 // CompareModulePath orders module-relative rule paths by directory lexically, then basename.
@@ -645,7 +645,7 @@ func extractPackageRules(dir string, ruleDef, merged cue.Value, origins []fileOr
 			if err != nil {
 				return nil, fmt.Errorf("resolve module-relative path for %s under %s: %w", o.path, dir, err)
 			}
-			rule.Source = o.path + ":" + fieldName
+			rule.Source = dir + "/" + filepath.ToSlash(relPath) + ":" + fieldName
 			rule.ModuleRelPath = relPath
 			out = append(out, rule)
 		}
