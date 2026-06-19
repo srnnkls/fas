@@ -1015,10 +1015,11 @@ func ruleIDForDiag(d diag.Diagnostic, ruleSets ...[]config.Rule) string {
 	}
 	var baseFallback *config.Rule
 	base := filepath.Base(filename)
+	slashFilename := filepath.ToSlash(filename)
 	for _, rules := range ruleSets {
 		for i, r := range rules {
 			path := ruleSourcePath(r.Source)
-			if path == filename {
+			if filepath.ToSlash(path) == slashFilename {
 				return ruleID(r)
 			}
 			if baseFallback == nil && filepath.Base(path) == base {
