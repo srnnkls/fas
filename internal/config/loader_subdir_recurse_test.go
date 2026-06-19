@@ -109,7 +109,7 @@ func TestLoadRules_Subdir_NestedModuleRelPathAndSource_CRP007(t *testing.T) {
 		t.Errorf("sec_rule.ModuleRelPath = %q, want %q", sec.ModuleRelPath, wantRel)
 	}
 
-	wantSource := filepath.Join(root, "security", "git.cue") + ":sec_rule"
+	wantSource := filepath.ToSlash(filepath.Join(root, "security", "git.cue")) + ":sec_rule"
 	if sec.Source != wantSource {
 		t.Errorf("sec_rule.Source = %q, want %q", sec.Source, wantSource)
 	}

@@ -34,8 +34,8 @@ func TestLoadRules_QuotedRuleLabel_Loads(t *testing.T) {
 	}
 
 	r := findRuleBySource(t, rules, filepath.Base(p)+":dash-rule")
-	if r.Source != p+":dash-rule" {
-		t.Errorf("Rule.Source = %q, want %q", r.Source, p+":dash-rule")
+	if r.Source != filepath.ToSlash(p)+":dash-rule" {
+		t.Errorf("Rule.Source = %q, want %q", r.Source, filepath.ToSlash(p)+":dash-rule")
 	}
 	if r.Then == nil {
 		t.Fatalf("quoted-label rule decoded with nil Then action")
@@ -84,16 +84,16 @@ plain: {
 	}
 
 	plain := findRuleBySource(t, rules, filepath.Base(p)+":plain")
-	if plain.Source != p+":plain" {
-		t.Errorf("plain.Source = %q, want %q", plain.Source, p+":plain")
+	if plain.Source != filepath.ToSlash(p)+":plain" {
+		t.Errorf("plain.Source = %q, want %q", plain.Source, filepath.ToSlash(p)+":plain")
 	}
 	if plain.Then == nil || plain.Then.RuleID != "r-plain" {
 		t.Errorf("expected ident rule `plain` with rule_id r-plain, got %+v", plain.Then)
 	}
 
 	dash := findRuleBySource(t, rules, filepath.Base(p)+":dash-rule")
-	if dash.Source != p+":dash-rule" {
-		t.Errorf("dash.Source = %q, want %q", dash.Source, p+":dash-rule")
+	if dash.Source != filepath.ToSlash(p)+":dash-rule" {
+		t.Errorf("dash.Source = %q, want %q", dash.Source, filepath.ToSlash(p)+":dash-rule")
 	}
 	if dash.Then == nil || dash.Then.RuleID != "r-dash" {
 		t.Errorf("expected quoted rule `dash-rule` with rule_id r-dash, got %+v", dash.Then)

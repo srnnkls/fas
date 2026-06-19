@@ -114,7 +114,7 @@ my_rule: {
 		t.Fatalf("expected 1 rule, got %d", len(rules))
 	}
 
-	want := p + ":my_rule"
+	want := filepath.ToSlash(p) + ":my_rule"
 	if rules[0].Source != want {
 		t.Fatalf("Rule.Source=%q, want %q", rules[0].Source, want)
 	}

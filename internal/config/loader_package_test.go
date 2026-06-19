@@ -134,13 +134,13 @@ beta: {
 	}
 
 	alpha := findRuleBySource(t, rules, filepath.Base(aPath)+":alpha")
-	if alpha.Source != aPath+":alpha" {
-		t.Errorf("alpha.Source = %q, want %q", alpha.Source, aPath+":alpha")
+	if alpha.Source != filepath.ToSlash(aPath)+":alpha" {
+		t.Errorf("alpha.Source = %q, want %q", alpha.Source, filepath.ToSlash(aPath)+":alpha")
 	}
 
 	beta := findRuleBySource(t, rules, filepath.Base(bPath)+":beta")
-	if beta.Source != bPath+":beta" {
-		t.Errorf("beta.Source = %q, want %q", beta.Source, bPath+":beta")
+	if beta.Source != filepath.ToSlash(bPath)+":beta" {
+		t.Errorf("beta.Source = %q, want %q", beta.Source, filepath.ToSlash(bPath)+":beta")
 	}
 }
 

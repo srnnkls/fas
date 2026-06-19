@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	"cuelang.org/go/cue/cuecontext"
@@ -47,9 +48,9 @@ mango: {
 
 	type tuple struct{ ruleID, source string }
 	want := []tuple{
-		{"a-zebra", dir + "/a_first.cue:zebra"},
-		{"a-apple", dir + "/a_first.cue:apple"},
-		{"b-mango", dir + "/b_second.cue:mango"},
+		{"a-zebra", filepath.ToSlash(dir) + "/a_first.cue:zebra"},
+		{"a-apple", filepath.ToSlash(dir) + "/a_first.cue:apple"},
+		{"b-mango", filepath.ToSlash(dir) + "/b_second.cue:mango"},
 	}
 	if len(rules) != len(want) {
 		got := make([]string, len(rules))
@@ -115,8 +116,8 @@ write_only: {
 
 	type fired struct{ ruleID, source string }
 	want := []fired{
-		{"a-zebra", dir + "/a_first.cue:zebra"},
-		{"a-apple", dir + "/a_first.cue:apple"},
+		{"a-zebra", filepath.ToSlash(dir) + "/a_first.cue:zebra"},
+		{"a-apple", filepath.ToSlash(dir) + "/a_first.cue:apple"},
 	}
 	if len(matches) != len(want) {
 		t.Fatalf("fired count = %d, want %d (matches=%+v)", len(matches), len(want), matches)
