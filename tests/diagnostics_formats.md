@@ -50,7 +50,7 @@ $ cat << 'EOF' |
 > }
 > EOF
 > fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global --format=json 2>&1
-{"code":"E0201","severity":"error","title":"key not found","location":{"file":"/__fas_rules__/absent_path.cue","line":11,"col":3},"primary":*"reasons":[{"type":"key_missing",*}]},"help":"*has keys: *"} (glob)
+{"code":"E0201","severity":"error","title":"key not found","location":{"file":"tests/diagnostics_rules/absent_path.cue","line":11,"col":3},"primary":{"pos":{"line":11,"col":3,"len":7},"msg":"key \"signals\" not found at \u003croot\u003e","reasons":[{"type":"key_missing","key":"signals","available_keys":["cwd","hook_event_name","session_id","tool_input","tool_name"],"suggestion":""}]},"help":"\u003croot\u003e has keys: cwd, hook_event_name, session_id, tool_input, tool_name"}
 [1]
 ```
 
@@ -93,7 +93,7 @@ $ cat << 'EOF' |
 > EOF
 > fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global --color=always 2>&1
 \x1b[31merror\x1b[0m[E0201]: key not found (escaped)
-  --> \x1b[2m/__fas_rules__/absent_path.cue:11:3\x1b[0m (escaped)
+  --> \x1b[2mtests/diagnostics_rules/absent_path.cue:11:3\x1b[0m (escaped)
    |
 11 |         signals: user_confirmed: true
    |         \x1b[31m^^^^^^^\x1b[0m key "signals" not found at <root> (escaped)
@@ -120,7 +120,7 @@ $ cat << 'EOF' |
 > EOF
 > fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global --color=never 2>&1
 error[E0201]: key not found
-  --> /__fas_rules__/absent_path.cue:11:3
+  --> tests/diagnostics_rules/absent_path.cue:11:3
    |
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found at <root>
@@ -146,7 +146,7 @@ $ cat << 'EOF' |
 > EOF
 > NO_COLOR=1 fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0201]: key not found
-  --> /__fas_rules__/absent_path.cue:11:3
+  --> tests/diagnostics_rules/absent_path.cue:11:3
    |
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found at <root>
@@ -171,7 +171,7 @@ $ cat << 'EOF' |
 > }
 > EOF
 > FAS_FORMAT=json fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
-{"code":"E0201","severity":"error","title":"key not found","location":{"file":"/__fas_rules__/absent_path.cue","line":11,"col":3},"primary":*"reasons":[{"type":"key_missing",*}]},"help":"*has keys: *"} (glob)
+{"code":"E0201","severity":"error","title":"key not found","location":{"file":"tests/diagnostics_rules/absent_path.cue","line":11,"col":3},"primary":{"pos":{"line":11,"col":3,"len":7},"msg":"key \"signals\" not found at \u003croot\u003e","reasons":[{"type":"key_missing","key":"signals","available_keys":["cwd","hook_event_name","session_id","tool_input","tool_name"],"suggestion":""}]},"help":"\u003croot\u003e has keys: cwd, hook_event_name, session_id, tool_input, tool_name"}
 [1]
 ```
 
@@ -192,7 +192,7 @@ $ cat << 'EOF' |
 > EOF
 > FAS_COLOR=always NO_COLOR=1 fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
 \x1b[31merror\x1b[0m[E0201]: key not found (escaped)
-  --> \x1b[2m/__fas_rules__/absent_path.cue:11:3\x1b[0m (escaped)
+  --> \x1b[2mtests/diagnostics_rules/absent_path.cue:11:3\x1b[0m (escaped)
    |
 11 |         signals: user_confirmed: true
    |         \x1b[31m^^^^^^^\x1b[0m key "signals" not found at <root> (escaped)

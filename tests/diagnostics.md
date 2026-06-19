@@ -70,7 +70,7 @@ $ cat << 'EOF' |
 > EOF
 > fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0201]: key not found
-  --> /__fas_rules__/absent_path.cue:11:3
+  --> tests/diagnostics_rules/absent_path.cue:11:3
    |
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found at <root>
@@ -100,7 +100,7 @@ $ cat << 'EOF' |
 > EOF
 > fas explain key-missing-hint --config tests/diagnostics_rules_key_missing_hint --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0201]: key not found
-  --> /__fas_rules__/key_missing_hint.cue:10:15
+  --> tests/diagnostics_rules_key_missing_hint/key_missing_hint.cue:10:15
    |
 10 |         tool_input: command: "ls"
    |                     ^^^^^^^ key "command" not found at tool_input
@@ -129,7 +129,7 @@ $ cat << 'EOF' |
 > EOF
 > fas explain leaf-regex --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0301]: leaf constraint failed
-  --> /__fas_rules__/leaf_regex.cue:12:24
+  --> tests/diagnostics_rules/leaf_regex.cue:12:24
    |
 12 |         tool_input: command: =~"^rm "
    |                              ^^^^^^^^^^^^^^^^^ got: "ls"
@@ -161,7 +161,7 @@ $ cat << 'EOF' |
 > EOF
 > fas explain bound-violation --config tests/diagnostics_rules_bound_violation --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0301]: leaf constraint failed
-  --> /__fas_rules__/bound_violation.cue:11:35
+  --> tests/diagnostics_rules_bound_violation/bound_violation.cue:11:35
    |
 11 |         tool_input: retry_count: _int & <=10
    |                                         ^^^^ 12 violates <= 10 (off by 2)
@@ -194,7 +194,7 @@ $ cat << 'EOF' |
 > EOF
 > fas explain provenance --config tests/diagnostics_rules_provenance --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0301]: leaf constraint failed
-  --> /__fas_rules__/provenance.cue:19:24
+  --> tests/diagnostics_rules_provenance/provenance.cue:19:24
    |
 19 |         tool_input: command: path.#systemInCommand
    |                              ^^^^^^^^^^^^^^^^^^^^^ got: "ls /home"
@@ -225,7 +225,7 @@ $ cat << 'EOF' |
 > EOF
 > fas explain kind-mismatch --config tests/diagnostics_rules_kind_mismatch --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0303]: type mismatch
-  --> /__fas_rules__/kind_mismatch.cue:13:24
+  --> tests/diagnostics_rules_kind_mismatch/kind_mismatch.cue:13:24
    |
 13 |         tool_input: command: _int
    |                              ^^^^ want: int, got: "ls"
@@ -252,7 +252,7 @@ $ cat << 'EOF' |
 > EOF
 > fas explain disjunction --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0401]: no disjunction arm matched
-  --> /__fas_rules__/disjunction.cue:10:20
+  --> tests/diagnostics_rules/disjunction.cue:10:20
    |
 10 |         tool_name:       "Read" | "Write" | "Edit"
    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^ got: "Bash" — no arm was close
@@ -284,7 +284,7 @@ $ cat << 'EOF' |
 > EOF
 > fas explain disjunction-close --config tests/diagnostics_rules_disjunction_close --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0401]: no disjunction arm matched
-  --> /__fas_rules__/disjunction_close.cue:11:20
+  --> tests/diagnostics_rules_disjunction_close/disjunction_close.cue:11:20
    |
 11 |         tool_name:       "Read" | "Write" | "Edit"
    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^ got: "Rea" — closest arm was "Read"
@@ -320,7 +320,7 @@ $ cat << 'EOF' |
 > EOF
 > fas explain disjunction-ref --config tests/diagnostics_rules_disjunction_ref --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0401]: no disjunction arm matched
-  --> /__fas_rules__/disjunction_ref.cue:15:20
+  --> tests/diagnostics_rules_disjunction_ref/disjunction_ref.cue:15:20
    |
 15 |         tool_name:       _#ToolKind
    |                          ^^^^^^^^^^ got: "Rea" — closest arm was "Read"
@@ -430,13 +430,13 @@ $ cat << 'EOF' |
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"wrong tool"}}fired: disjunction (tests/diagnostics_rules/disjunction.cue:disjunction)
 rule_id: absent-path
 error[E0301]: leaf constraint failed
-  --> /__fas_rules__/absent_path.cue:10:20
+  --> tests/diagnostics_rules/absent_path.cue:10:20
    |
 10 |         tool_name:       "Bash"
    |                          ^^^^^^ got: "Read"
 rule_id: absent-path
 error[E0201]: key not found
-  --> /__fas_rules__/absent_path.cue:11:3
+  --> tests/diagnostics_rules/absent_path.cue:11:3
    |
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found at <root>
@@ -444,13 +444,13 @@ error[E0201]: key not found
    = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
 rule_id: leaf-regex
 error[E0301]: leaf constraint failed
-  --> /__fas_rules__/leaf_regex.cue:11:20
+  --> tests/diagnostics_rules/leaf_regex.cue:11:20
    |
 11 |         tool_name:       "Bash"
    |                          ^^^^^^ got: "Read"
 rule_id: leaf-regex
 error[E0201]: key not found
-  --> /__fas_rules__/leaf_regex.cue:12:15
+  --> tests/diagnostics_rules/leaf_regex.cue:12:15
    |
 12 |         tool_input: command: =~"^rm "
    |                     ^^^^^^^ key "command" not found at tool_input
@@ -479,13 +479,13 @@ $ cat << 'EOF' |
 > fas eval --harness claude --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global --explain 2>&1
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"wrong tool"}}rule_id: absent-path
 error[E0301]: leaf constraint failed
-  --> /__fas_rules__/absent_path.cue:10:20
+  --> tests/diagnostics_rules/absent_path.cue:10:20
    |
 10 |         tool_name:       "Bash"
    |                          ^^^^^^ got: "Read"
 rule_id: absent-path
 error[E0201]: key not found
-  --> /__fas_rules__/absent_path.cue:11:3
+  --> tests/diagnostics_rules/absent_path.cue:11:3
    |
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found at <root>
@@ -493,13 +493,13 @@ error[E0201]: key not found
    = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
 rule_id: leaf-regex
 error[E0301]: leaf constraint failed
-  --> /__fas_rules__/leaf_regex.cue:11:20
+  --> tests/diagnostics_rules/leaf_regex.cue:11:20
    |
 11 |         tool_name:       "Bash"
    |                          ^^^^^^ got: "Read"
 rule_id: leaf-regex
 error[E0201]: key not found
-  --> /__fas_rules__/leaf_regex.cue:12:15
+  --> tests/diagnostics_rules/leaf_regex.cue:12:15
    |
 12 |         tool_input: command: =~"^rm "
    |                     ^^^^^^^ key "command" not found at tool_input
@@ -520,13 +520,13 @@ $ cat << 'EOF' |
 > FAS_EXPLAIN=1 fas eval --harness claude --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"wrong tool"}}rule_id: absent-path
 error[E0301]: leaf constraint failed
-  --> /__fas_rules__/absent_path.cue:10:20
+  --> tests/diagnostics_rules/absent_path.cue:10:20
    |
 10 |         tool_name:       "Bash"
    |                          ^^^^^^ got: "Read"
 rule_id: absent-path
 error[E0201]: key not found
-  --> /__fas_rules__/absent_path.cue:11:3
+  --> tests/diagnostics_rules/absent_path.cue:11:3
    |
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found at <root>
@@ -534,13 +534,13 @@ error[E0201]: key not found
    = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
 rule_id: leaf-regex
 error[E0301]: leaf constraint failed
-  --> /__fas_rules__/leaf_regex.cue:11:20
+  --> tests/diagnostics_rules/leaf_regex.cue:11:20
    |
 11 |         tool_name:       "Bash"
    |                          ^^^^^^ got: "Read"
 rule_id: leaf-regex
 error[E0201]: key not found
-  --> /__fas_rules__/leaf_regex.cue:12:15
+  --> tests/diagnostics_rules/leaf_regex.cue:12:15
    |
 12 |         tool_input: command: =~"^rm "
    |                     ^^^^^^^ key "command" not found at tool_input
@@ -564,7 +564,6 @@ $ cat << 'EOF' |
 > }
 > EOF
 > fas explain disjunction --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
-[0]
 ```
 
 ```scrut
@@ -579,7 +578,7 @@ $ cat << 'EOF' |
 > EOF
 > fas explain absent-path --config tests/diagnostics_rules --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0201]: key not found
-  --> /__fas_rules__/absent_path.cue:11:3
+  --> tests/diagnostics_rules/absent_path.cue:11:3
    |
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found at <root>
@@ -618,7 +617,6 @@ Under closed-world pattern-match semantics, every path referenced in
 `when` must exist in the input for the rule to match. Absent paths
 cause the rule to silently not fire; the diagnostic shows which
 segment broke the chain.
-[0]
 ```
 
 ```scrut
