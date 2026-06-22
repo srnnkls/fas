@@ -38,12 +38,10 @@ local runners = new Mapping<String, Step> {
   }
 }
 
-// Integration tests driven by scrut. Installs fas first so the binary is on
-// PATH for the scrut subprocesses.
 local scrut: Step = new {
   glob = List("**/*.go", "**/go.mod", "**/go.sum", "tests/**")
   workspace_indicator = "go.mod"
-  check = "cd {{workspace}} && go install ./cmd/fas && scrut test -w . tests/policies.md tests/diagnostics.md tests/diagnostics_formats.md"
+  check = "cd {{workspace}} && mise run test-integration"
   stomp = true
 }
 
