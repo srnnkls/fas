@@ -83,7 +83,14 @@ and unify at schema time, but at match time they do not reflect input content:
   conditionally based on the input.
 - **Computed hidden count fields.** `_n: len(flags)` with `_n: >=2` —
   `flags: [...string]` materialises as `[]` at pattern level, so `_n` is `0`
-  regardless of input.
+  regardless of input. Bare `len` lint-passes, but `len` over an input-derived
+  field stays inert this way: the gate is fixed at `len([]) == 0` and cannot
+  react to the input length, so a count constraint either matches every input
+  (`_n & 0`) or fails to load as a static conflict (`_n & >=1`).
+- **`close` over a `when` struct.** `when: close({tool_name: "Bash"})` closes an
+  open struct pattern, so on extensible hook payloads the closed pattern never
+  subsumes the input and the rule silently never matches. `close` is excluded
+  from the curated universe builtins for exactly this reason.
 
 Express these via:
 
@@ -102,11 +109,15 @@ Express these via:
   Share values through hidden siblings (`_foo`) or stdlib imports.
 - **Self-refs into `then`/`meta`.** `when` must be a pure pattern over the
   input; `then` and `meta` are not visible at match time.
-- **Unbound identifiers.** Any ident that is neither a stdlib import binding
-  nor a locally-visible hidden sibling (`_foo`).
+- **Unbound identifiers.** Any ident that resolves to none of a stdlib import
+  binding, a locally-visible hidden sibling (`_foo`), a curated universe builtin,
+  or a bare sibling top-level rule struct.
 
-Imports, predeclared names (`string`, `int`, `or`, `len`, ...), hidden local
-helpers, and bare references to sibling top-level rule structs all pass.
+Imports, predeclared names (`string`, `int`, `number`, …), hidden local
+helpers, and bare references to sibling top-level rule structs all pass. The
+curated universe builtins `and`, `or`, `matchN`, `matchIf`, and `len` also pass
+bare in `when`. `close` and the arithmetic helpers (`div`, `mod`, `quo`, `rem`)
+stay rejected.
 
 ### Organizing rules into packages
 

@@ -59,6 +59,10 @@ var policyCoverage = map[string]coverage{
 		deny:  []string{"Blocks tee /etc/sudoers.d/override", "Blocks tee -a /etc/cron.d/task"},
 		allow: "Allows tee ./build.log",
 	},
+	"universe-or-doc-tools": {
+		deny:  []string{"Blocks WebFetch via or() builtin"},
+		allow: "Allows Read (tool_name outside the or() list)",
+	},
 }
 
 var ruleIDRe = regexp.MustCompile(`rule_id:\s*"([^"]+)"`)

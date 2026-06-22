@@ -532,6 +532,45 @@ $ cat << 'EOF' |
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```
 
+## Curated Universe Builtins in `when`
+
+A bare universe builtin (`and`, `or`, `matchN`, `matchIf`, `len`) is permitted in
+`when`. The `universe_or_doc_tools` rule gates a documentation tool group with
+`or(["WebFetch", "WebSearch"])`, so a builtin-bearing rule loads and drives a
+real decision under the CLI.
+
+### Blocks WebFetch via or() builtin
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "WebFetch",
+>   "tool_input": {},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Documentation lookup tools are gated by an or() builtin"}} (no-eol)
+```
+
+### Allows Read (tool_name outside the or() list)
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Read",
+>   "tool_input": {},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
+```
+
 ## Safe Commands
 
 Plain, non-destructive invocations that every policy set must allow.
