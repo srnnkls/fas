@@ -332,8 +332,9 @@ error[E0401]: no disjunction arm matched
 ## E0501 — unbound identifier (load-time)
 
 `tests/diagnostics_rules_broken_scope/unbound.cue` references `myUnknownVar`,
-which resolves to neither a local binding nor a stdlib import. The loader
-rejects the directory with an E0501 diagnostic and the CLI exits 1.
+which resolves to none of a local binding, a stdlib import, or a curated
+universe builtin. The loader rejects the directory with an E0501 diagnostic and
+the CLI exits 1.
 
 ```scrut
 $ cat << 'EOF' |
@@ -352,7 +353,7 @@ error[E0501]: rule "uid_rule": unbound identifier "myUnknownVar" in `when`
 6 |     when: {tool_name: myUnknownVar}
   |                       ^^^^^^^^^^^^ unbound identifier "myUnknownVar" in rule "uid_rule"
   |
-  = help: Declare a hidden sibling (leading underscore, e.g. `_myUnknownVar: ...`) on the same rule, or import the value from a stdlib package (e.g. `import "list"`). Bare identifiers in `when` must resolve to one of those two scopes.
+  = help: Declare a hidden sibling (leading underscore, e.g. `_myUnknownVar: ...`) on the same rule, import the value from a stdlib package (e.g. `import "list"`), or use a curated universe builtin (`and`, `or`, `matchN`, `matchIf`, `len`). Bare identifiers in `when` must resolve to one of those scopes.
 
 [1]
 ```

@@ -291,6 +291,154 @@ clean_rule: {
 	}
 }
 
+// TestLoadRules_LintDiag_PermittedUniverseBuiltins_NoE05xx pins that the
+// curated universe builtins (and, or, matchN, matchIf, len) may be used bare in
+// `when` without tripping E0501. Each fixture exercises the builtin's real
+// validator arity in the srnnkls/cue fork.
+func TestLoadRules_LintDiag_PermittedUniverseBuiltins_NoE05xx(t *testing.T) {
+	cases := []struct {
+		name string
+		when string
+	}{
+		{
+			name: "or_over_list",
+			when: `when: {tool_name: or(["Bash", "Edit"])}`,
+		},
+		{
+			name: "and_over_list",
+			when: `when: {tool_name: and([=~"^B", =~"sh$"])}`,
+		},
+		{
+			name: "matchN_constraint_count",
+			when: `when: {tool_name: matchN(1, [=~"^B", =~"^E"])}`,
+		},
+		{
+			name: "matchIf_conditional",
+			when: `when: {tool_name: matchIf({}, {}, {})}`,
+		},
+		{
+			name: "len_over_concrete_list",
+			when: `when: {tool_name: "Bash", _n: len(["a", "b"]) & 2}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "package rules\n\nbuiltin_rule: {\n\t" + tc.when + `
+	then: deny: {
+		rule_id: "b"
+		reason:  "nope"
+	}
+}
+`
+			path := lintFixture(t, "builtin_"+tc.name, src)
+			dir := filepath.Dir(path)
+
+			_, err := config.LoadRules(dir)
+			if err != nil {
+				for _, de := range collectDiags(err) {
+					if strings.HasPrefix(de.D.Code, "E05") {
+						t.Fatalf("permitted builtin %q produced lint diagnostic %s: %v",
+							tc.name, de.D.Code, err)
+					}
+				}
+				t.Fatalf("permitted builtin %q should load without error; got: %v", tc.name, err)
+			}
+		})
+	}
+}
+
+// TestLoadRules_LintDiag_CloseInWhen_EmitsE0501 pins that `close` is excluded
+// from the permitted set: using it bare in `when` still surfaces as E0501. It
+// flips a struct pattern from open to closed, silently breaking matches on
+// extensible hook payloads, so it must remain rejected.
+func TestLoadRules_LintDiag_CloseInWhen_EmitsE0501(t *testing.T) {
+	const src = `package rules
+
+close_rule: {
+	when: close({tool_name: "Bash"})
+	then: deny: {
+		rule_id: "c"
+		reason:  "nope"
+	}
+}
+`
+	path := lintFixture(t, "closewhen", src)
+	dir := filepath.Dir(path)
+
+	_, err := config.LoadRules(dir)
+	if err == nil {
+		t.Fatal("expected close in when to be rejected, got nil error")
+	}
+
+	de, ok := recoverDiag(t, err)
+	if !ok {
+		t.Fatalf("expected err to carry *diag.DiagError via errors.As; got: %v", err)
+	}
+	if de.D.Code != "E0501" {
+		t.Errorf("diagnostic Code = %q, want %q", de.D.Code, "E0501")
+	}
+}
+
+func TestLoadRules_LintDiag_ExcludedUniverseBuiltins_EmitsE0501(t *testing.T) {
+	cases := []struct {
+		name string
+		when string
+	}{
+		{
+			name: "div_arithmetic",
+			when: `when: {tool_name: "Bash", _n: div(6, 2)}`,
+		},
+		{
+			name: "mod_arithmetic",
+			when: `when: {tool_name: "Bash", _n: mod(6, 4)}`,
+		},
+		{
+			name: "quo_arithmetic",
+			when: `when: {tool_name: "Bash", _n: quo(6, 2)}`,
+		},
+		{
+			name: "rem_arithmetic",
+			when: `when: {tool_name: "Bash", _n: rem(6, 4)}`,
+		},
+		{
+			name: "error_bare_ident",
+			when: `when: {tool_name: "Bash", _e: error("boom")}`,
+		},
+		{
+			name: "self_bare_ident",
+			when: `when: {tool_name: "Bash", _s: self}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "package rules\n\nexcluded_rule: {\n\t" + tc.when + `
+	then: deny: {
+		rule_id: "x"
+		reason:  "nope"
+	}
+}
+`
+			path := lintFixture(t, "excluded_"+tc.name, src)
+			dir := filepath.Dir(path)
+
+			_, err := config.LoadRules(dir)
+			if err == nil {
+				t.Fatalf("excluded builtin %q should be rejected in when, got nil error", tc.name)
+			}
+
+			de, ok := recoverDiag(t, err)
+			if !ok {
+				t.Fatalf("excluded builtin %q: expected err to carry *diag.DiagError; got: %v", tc.name, err)
+			}
+			if de.D.Code != "E0501" {
+				t.Errorf("excluded builtin %q: diagnostic Code = %q, want %q", tc.name, de.D.Code, "E0501")
+			}
+		})
+	}
+}
+
 // TestLoadRules_LintDiag_MultipleViolations_JoinedAndRecoverable pins that a
 // file with several independent lint failures surfaces all of them through
 // errors.Join; errors.As recovers each as its own *diag.DiagError.

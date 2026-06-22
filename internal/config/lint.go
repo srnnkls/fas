@@ -20,8 +20,9 @@ import (
 //     `then` or `meta` subtree. Those fields are not available at match time;
 //     `when` must be a pure pattern over the input. Emits E0503.
 //  3. Unbound identifiers — an identifier that resolves to none of: a local
-//     binding, a stdlib import, a predeclared builtin, a package-wide hidden
-//     helper/definition, or a package-wide rule. Emits E0501.
+//     binding, a stdlib import, a predeclared builtin, a curated universe
+//     builtin, a package-wide hidden helper/definition, or a package-wide rule.
+//     Emits E0501.
 //
 // Each violation is reported as a *diag.DiagError so downstream callers can
 // recover the structured Diagnostic via errors.As while the rendered error
@@ -287,10 +288,24 @@ func checkSelector(ruleName string, ruleNames, helperDefNames map[string]struct{
 	return checkIdent(ruleName, ruleNames, helperDefNames, rootIdent)
 }
 
+// permittedUniverseBuiltins are CUE universe functions allowed bare in `when`.
+// The parser never binds universe builtins to an ast.Node and IsPredeclared()
+// recognises only type/range names, so absent this set they false-positive as
+// E0501. close is excluded because it closes an open struct pattern, silently
+// breaking matches on extensible hook payloads; div/mod/quo/rem/error/self are
+// excluded as arithmetic/inert helpers with no pattern meaning in `when`.
+var permittedUniverseBuiltins = map[string]struct{}{
+	"and":     {},
+	"or":      {},
+	"matchN":  {},
+	"matchIf": {},
+	"len":     {},
+}
+
 // checkIdent classifies a bare identifier reference. Returns a *diag.DiagError
 // for an unbound ident that is none of: a local binding, a stdlib import, a
-// predeclared builtin, a package-wide hidden helper/definition, or a
-// package-wide rule.
+// predeclared builtin, a curated universe builtin, a package-wide hidden
+// helper/definition, or a package-wide rule.
 func checkIdent(ruleName string, ruleNames, helperDefNames map[string]struct{}, id *ast.Ident) error {
 	// The parser resolves idents against file and struct scopes; a nil Node
 	// means the reference escapes all scopes visible within its own file. A
@@ -312,6 +327,9 @@ func checkIdent(ruleName string, ruleNames, helperDefNames map[string]struct{}, 
 	// Predeclared identifiers (string, int, bool, etc.) and top-level builtins
 	// have IsPredeclared() true. Let them through.
 	if id.IsPredeclared() {
+		return nil
+	}
+	if _, ok := permittedUniverseBuiltins[name]; ok {
 		return nil
 	}
 	return unboundDiag(ruleName, id)
@@ -364,10 +382,11 @@ func selfRefDiag(ruleName, subtree string, root *ast.Ident) error {
 }
 
 // unboundDiag builds an E0501 DiagError whose primary span anchors at the
-// offending identifier. Help mentions the two documented escape hatches —
-// hidden siblings and stdlib imports — so the lint_diag test substring checks
-// (`hidden` + `stdlib` / `import`) find them. The rule name sits in the caret
-// label so it survives errDetailAfter's file-path anchor.
+// offending identifier. Help mentions the documented escape hatches — hidden
+// siblings, stdlib imports, and the curated universe builtins — so the
+// lint_diag test substring checks (`hidden` + `stdlib` / `import`) find them.
+// The rule name sits in the caret label so it survives errDetailAfter's
+// file-path anchor.
 func unboundDiag(ruleName string, id *ast.Ident) error {
 	d := diag.Diagnostic{
 		Code:     diag.E0501.Code,
@@ -380,9 +399,10 @@ func unboundDiag(ruleName string, id *ast.Ident) error {
 			Msg: "unbound identifier " + quote(id.Name) + " in rule " + quote(ruleName),
 		},
 		Help: "Declare a hidden sibling (leading underscore, e.g. `_" + id.Name +
-			": ...`) on the same rule, or import the value from a stdlib package " +
-			"(e.g. `import \"list\"`). Bare identifiers in `when` must resolve to " +
-			"one of those two scopes.",
+			": ...`) on the same rule, import the value from a stdlib package " +
+			"(e.g. `import \"list\"`), or use a curated universe builtin (`and`, " +
+			"`or`, `matchN`, `matchIf`, `len`). Bare identifiers in `when` must " +
+			"resolve to one of those scopes.",
 	}
 	return diag.NewDiagError(d, nil, nil)
 }

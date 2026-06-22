@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -988,6 +989,214 @@ func TestEvaluate_CueNative_ListPattern(t *testing.T) {
 			t.Fatalf("expected 0 matches when list mixed, got %d: %+v", len(got), got)
 		}
 	})
+}
+
+// -----------------------------------------------------------------------------
+// Permitted universe builtins in `when` (T2). A curated set of bare universe
+// builtins is allowed directly in `when`. The compiler evaluates them and they
+// subsume payloads as ordinary validators.
+// -----------------------------------------------------------------------------
+
+// TestEvaluate_OrBuiltinInWhen_Matches verifies that a bare `or` over a list of
+// literals compiles, subsumes a payload whose tool_name is one of the listed
+// values, and rejects a payload outside the list.
+func TestEvaluate_OrBuiltinInWhen_Matches(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteRule(t, dir, "or_tool.cue", `{
+		when: {tool_name: or(["Bash", "Edit"])}
+		then: deny: {rule_id: "or-tool", reason: "bash or edit"}
+	}`)
+	rules := loadRules(t, dir)
+
+	ctx := cuecontext.New()
+
+	t.Run("Bash matches a listed value", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
+		got, _, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("expected 1 match for tool_name=Bash, got %d: %+v", len(got), got)
+		}
+		if got[0].Action == nil || got[0].Action.RuleID != "or-tool" {
+			t.Fatalf("expected rule_id=or-tool, got %+v", got[0].Action)
+		}
+	})
+
+	t.Run("Read is not in the list", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Read"}`)
+		got, _, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("expected 0 matches for tool_name=Read, got %d: %+v", len(got), got)
+		}
+	})
+}
+
+func TestEvaluate_AndBuiltinInWhen_Matches(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteRule(t, dir, "and_tool.cue", `{
+		when: {tool_name: and([=~"^B", =~"sh$"])}
+		then: deny: {rule_id: "and-tool", reason: "starts B and ends sh"}
+	}`)
+	rules := loadRules(t, dir)
+
+	ctx := cuecontext.New()
+
+	t.Run("Bash satisfies both constraints", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
+		got, _, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("expected 1 match for tool_name=Bash, got %d: %+v", len(got), got)
+		}
+		if got[0].Action == nil || got[0].Action.RuleID != "and-tool" {
+			t.Fatalf("expected rule_id=and-tool, got %+v", got[0].Action)
+		}
+	})
+
+	t.Run("Bat satisfies only the prefix constraint", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bat"}`)
+		got, _, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("expected 0 matches for tool_name=Bat, got %d: %+v", len(got), got)
+		}
+	})
+
+	t.Run("fish satisfies only the suffix constraint", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "fish"}`)
+		got, _, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("expected 0 matches for tool_name=fish, got %d: %+v", len(got), got)
+		}
+	})
+}
+
+func TestEvaluate_MatchNBuiltinInWhen_Matches(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteRule(t, dir, "matchn_tool.cue", `{
+		when: {tool_name: matchN(1, [=~"^B", =~"^E"])}
+		then: deny: {rule_id: "matchn-tool", reason: "matches exactly one prefix"}
+	}`)
+	rules := loadRules(t, dir)
+
+	ctx := cuecontext.New()
+
+	t.Run("Bash satisfies exactly one schema", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
+		got, _, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("expected 1 match for tool_name=Bash, got %d: %+v", len(got), got)
+		}
+		if got[0].Action == nil || got[0].Action.RuleID != "matchn-tool" {
+			t.Fatalf("expected rule_id=matchn-tool, got %+v", got[0].Action)
+		}
+	})
+
+	t.Run("Read satisfies neither schema", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Read"}`)
+		got, _, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("expected 0 matches for tool_name=Read, got %d: %+v", len(got), got)
+		}
+	})
+}
+
+func TestEvaluate_MatchIfBuiltinInWhen_Matches(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteRule(t, dir, "matchif_tool.cue", `{
+		when: {tool_name: matchIf(=~"^B", "Bash", "Read")}
+		then: deny: {rule_id: "matchif-tool", reason: "B-prefixed must be Bash"}
+	}`)
+	rules := loadRules(t, dir)
+
+	ctx := cuecontext.New()
+
+	t.Run("Bash takes then-branch and satisfies it", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bash"}`)
+		got, _, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("expected 1 match for tool_name=Bash, got %d: %+v", len(got), got)
+		}
+		if got[0].Action == nil || got[0].Action.RuleID != "matchif-tool" {
+			t.Fatalf("expected rule_id=matchif-tool, got %+v", got[0].Action)
+		}
+	})
+
+	t.Run("Bat takes then-branch but fails it", func(t *testing.T) {
+		input := mustCompile(t, ctx, `{hook_event_name: "PreToolUse", tool_name: "Bat"}`)
+		got, _, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("expected 0 matches for tool_name=Bat, got %d: %+v", len(got), got)
+		}
+	})
+}
+
+// `when` is checked by static subsumption, never evaluated against the input,
+// so `len` over an input-derived field materialises as `len([]) == 0` before
+// any payload is seen. The gate value is fixed at compile time and cannot react
+// to the input list length — this is the intended trap, not a bug to "fix".
+func TestEvaluate_LenOverInputDerivedField_InertUnderSubsumption(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteRule(t, dir, "gate_zero.cue", `{
+		when: {
+			tool_input: parsed: flags: [...]
+			_n:    len(tool_input.parsed.flags)
+			_gate: _n & 0
+		}
+		then: deny: {rule_id: "gate-zero", reason: "len gate & 0"}
+	}`)
+	rules := loadRules(t, dir)
+
+	ctx := cuecontext.New()
+
+	matchedIDs := func(t *testing.T, src string) []string {
+		t.Helper()
+		input := mustCompile(t, ctx, src)
+		got, _, err := evaluator.Evaluate(rules, input)
+		if err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+		ids := make([]string, 0, len(got))
+		for _, m := range got {
+			if m.Action != nil {
+				ids = append(ids, m.Action.RuleID)
+			}
+		}
+		return ids
+	}
+
+	empty := matchedIDs(t, `{tool_input: parsed: flags: []}`)
+	three := matchedIDs(t, `{tool_input: parsed: flags: ["-r", "-f", "-x"]}`)
+	if !slices.Contains(empty, "gate-zero") {
+		t.Fatalf("gate-zero should match empty flags, matched: %v", empty)
+	}
+	if !slices.Contains(three, "gate-zero") {
+		t.Fatalf("gate-zero should match 3-element flags identically (len stays len([])==0), matched: %v", three)
+	}
 }
 
 // -----------------------------------------------------------------------------
