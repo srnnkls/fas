@@ -9,6 +9,7 @@ import (
 	"cuelang.org/go/cue/cuecontext"
 
 	"github.com/srnnkls/fas/internal/diag"
+	"github.com/srnnkls/fas/internal/strdist"
 )
 
 // Score tier constants per AD-3. Strictly monotonic so a kind match always
@@ -170,7 +171,7 @@ func valueDistanceBonus(armVal, input cue.Value) int {
 		if aerr != nil || ierr != nil {
 			return 0
 		}
-		return ScoreValueDistance - levenshtein(armStr, inStr)
+		return ScoreValueDistance - strdist.Distance(armStr, inStr)
 	case armKind&(cue.IntKind|cue.FloatKind|cue.NumberKind) != 0:
 		armF, aerr := numericFloat(armVal)
 		inF, ierr := numericFloat(input)
