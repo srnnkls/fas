@@ -17,5 +17,15 @@ type Parsed struct {
 	Subcommands []string       `json:"subcommands"`
 	Targets     []string       `json:"targets"`
 	Flags       []string       `json:"flags"`
+	Calls       []Call         `json:"calls"`
 	Attributes  map[string]any `json:"attributes,omitempty"`
+}
+
+// Call groups one resolved command invocation with its own targets and flags.
+type Call struct {
+	Command    string   `json:"command"`
+	Subcommand string   `json:"subcommand,omitempty"`
+	Action     string   `json:"action,omitempty"`
+	Targets    []string `json:"targets"`
+	Flags      []string `json:"flags"`
 }
