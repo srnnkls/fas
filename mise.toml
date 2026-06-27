@@ -1,6 +1,7 @@
 [tools]
 cue = "latest"
 "github:facebookincubator/scrut" = "0.4.2"
+"github:srnnkls/git-worktreeinclude" = "0.9.3"
 go = "1.26.2"
 "golangci-lint" = "2.11.4"
 hk = "1.42.0"
