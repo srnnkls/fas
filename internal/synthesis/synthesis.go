@@ -8,10 +8,10 @@
 //
 // # Inject aggregation
 //
-// Inject effects sort by (priority DESC, rule_id ASC) and dedup by rule_id
-// (first occurrence wins). When sizeBudget is positive, the concatenated text
-// is truncated so len never exceeds sizeBudget; a value of zero or less means
-// unbounded. The channel field routes the text: "agent" concatenates into
+// Inject effects are additive: every matching inject contributes, sorted by
+// (priority DESC, rule_id ASC). When sizeBudget is positive, the concatenated
+// text is truncated so len never exceeds sizeBudget; a value of zero or less
+// means unbounded. The channel field routes the text: "agent" concatenates into
 // AdditionalContext, "user" concatenates into UserReason. Segments are joined
 // by newline.
 //
@@ -140,8 +140,8 @@ func pickModify(modifies []*config.Action) *config.Action {
 	return modifies[0]
 }
 
-// aggregateInjects sorts injects deterministically, drops duplicate rule_ids,
-// enforces sizeBudget, and splits the output by channel.
+// aggregateInjects sorts injects deterministically, enforces sizeBudget, and
+// splits the output by channel.
 func aggregateInjects(injects []*config.Action, sizeBudget int) (agent, user string) {
 	if len(injects) == 0 {
 		return "", ""
@@ -155,22 +155,12 @@ func aggregateInjects(injects []*config.Action, sizeBudget int) (agent, user str
 		return strings.Compare(a.RuleID, b.RuleID)
 	})
 
-	seen := make(map[string]struct{}, len(sorted))
-	deduped := sorted[:0]
-	for _, inj := range sorted {
-		if _, dup := seen[inj.RuleID]; dup {
-			continue
-		}
-		seen[inj.RuleID] = struct{}{}
-		deduped = append(deduped, inj)
-	}
-
 	var (
 		agentParts []string
 		userParts  []string
 		totalBytes int
 	)
-	for _, inj := range deduped {
+	for _, inj := range sorted {
 		cost := len(inj.Text)
 		if totalBytes > 0 {
 			cost++ // newline separator between segments

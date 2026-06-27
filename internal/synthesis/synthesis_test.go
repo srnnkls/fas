@@ -268,9 +268,7 @@ func TestSynthesize_Inject_SamePriority_RuleIDTiebreak(t *testing.T) {
 	}
 }
 
-func TestSynthesize_Inject_DedupByRuleID(t *testing.T) {
-	// Two injects with the same rule_id: the first occurrence wins; the
-	// second's text must not appear at all.
+func TestSynthesize_Inject_AdditiveSameRuleID(t *testing.T) {
 	got := synthesis.Synthesize([]evaluator.Match{
 		inject("dup", "FIRST_TEXT", "agent", 50),
 		inject("dup", "SECOND_TEXT", "agent", 50),
@@ -279,8 +277,8 @@ func TestSynthesize_Inject_DedupByRuleID(t *testing.T) {
 	if !strings.Contains(got.AdditionalContext, "FIRST_TEXT") {
 		t.Errorf("expected FIRST_TEXT in AdditionalContext, got %q", got.AdditionalContext)
 	}
-	if strings.Contains(got.AdditionalContext, "SECOND_TEXT") {
-		t.Errorf("duplicate rule_id should be dropped; SECOND_TEXT must NOT appear in %q",
+	if !strings.Contains(got.AdditionalContext, "SECOND_TEXT") {
+		t.Errorf("expected SECOND_TEXT in AdditionalContext (injects are additive), got %q",
 			got.AdditionalContext)
 	}
 }
