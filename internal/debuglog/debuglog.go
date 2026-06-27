@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -62,15 +63,22 @@ type Recorder struct {
 }
 
 // Open resolves the FAS_LOG and FAS_LOG_TTL environment variables and returns
-// a Recorder. If FAS_LOG is unset or empty, it returns nil (logging disabled).
-// The log directory is created if it does not exist. GC runs before returning.
-func Open(fasLog, fasLogTTL string, args []string) *Recorder {
+// a Recorder. An empty FAS_LOG returns nil silently. A non-empty FAS_LOG whose
+// directory cannot be resolved or created writes one line to warn and returns
+// nil. The log directory is created if absent. GC runs before returning.
+func Open(fasLog, fasLogTTL string, args []string, warn io.Writer) *Recorder {
+	if fasLog == "" {
+		return nil
+	}
+
 	dir := resolveDir(fasLog)
 	if dir == "" {
+		warnf(warn, "fas: FAS_LOG set but home directory lookup failed; logging disabled\n")
 		return nil
 	}
 
 	if err := os.MkdirAll(dir, 0o700); err != nil {
+		warnf(warn, "fas: FAS_LOG set but cannot create %s: %v; logging disabled\n", dir, err)
 		return nil
 	}
 
@@ -162,6 +170,13 @@ func (r *Recorder) Close(exitCode int) {
 		time.Now().UTC().Format("20060102T150405Z"),
 		shortID())
 	_ = os.WriteFile(filepath.Join(r.dir, name), data, 0o600)
+}
+
+func warnf(w io.Writer, format string, a ...any) {
+	if w == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, format, a...)
 }
 
 func resolveDir(fasLog string) string {
