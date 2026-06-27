@@ -224,6 +224,7 @@ before evaluation, the preprocessor parses every Bash command into a structured
 | `parsed.targets` | path-like arguments, walked from the AST |
 | `parsed.flags` | flag tokens (`-rf`, `--force`) |
 | `parsed.actions` | destructive semantic verbs, when present |
+| `parsed.calls` | per-command groups: each call's own `command`, `subcommand`, `action`, `targets`, `flags` |
 | `parsed.attributes` | side facts: `prefix_commands` (sudo/doas/su), `parse_error` |
 
 The AST walk reaches every simple command inside `&&`, `||`, `;`, pipelines, and
@@ -233,6 +234,29 @@ line still surfaces in `parsed`. This is why the stdlib matchers (`bash.#command
 meaning of the command, not its surface syntax. When the parser fails on
 malformed input, `bash.#commandOrRaw` falls back to an anchored raw-string scan
 so deny coverage survives.
+
+The flat `parsed.commands`/`parsed.targets` lists are deny-safe but lossy: they
+cannot say which target a given command acts on, so `cat README && rm .env`
+puts a read verb and a secret in the same lists even though nothing reads the
+secret. `parsed.calls` groups each invocation with its own arguments, so a rule
+can match a call that *both* runs a read verb and targets a secret:
+
+```cue
+tool_input: parsed: calls: list.MatchN(>0, {
+	command: _readVerb
+	targets: list.MatchN(>0, _secretFile)
+	...
+})
+```
+
+(Key on `command` against the verb set you care about — `action` only carries
+the destructive-verb table, so read-only verbs like `grep` or `base64` never
+populate it.)
+
+This is not a relational match against the input (see *Sibling references*
+below) — the parser pre-joins each command with its arguments at parse time, so
+the constraint is an ordinary existential over one struct's fields: "is there a
+call whose verb is read and whose own target is a secret."
 
 ### Structural negation
 
@@ -258,7 +282,10 @@ inert at match time. Each has a clear alternative; reach for that, not the trap.
   backreferences can't smuggle it in either). Instead, constrain each field on
   its own observable shape:
   `tool_input: {command: =~"^rm\\b", parsed: targets: [...=~"^/etc/"]}` matches an
-  `rm` whose targets are under `/etc` without tying the two together.
+  `rm` whose targets are under `/etc` without tying the two together. When you
+  genuinely need a command bound to *its own* argument (read verb acting on a
+  secret), use `parsed.calls`, where the parser has already grouped each call
+  with its arguments — the *parsed view* section shows the pattern.
 - `let` over input. `let cmd = tool_input.command` names a path in the
   pattern, not the input's command. Instead, drop the `let` and constrain the
   path in place: `tool_input: command: =~"^rm\\b"`.
