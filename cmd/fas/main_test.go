@@ -3135,7 +3135,11 @@ func TestRun_FasLog_RecordsMatchesOnDeny(t *testing.T) {
 }
 
 func TestRun_FasLog_NonFatalOnBadDir(t *testing.T) {
-	t.Setenv("FAS_LOG", "/nonexistent/path/that/cannot/be/created/hopefully")
+	notADir := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(notADir, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAS_LOG", filepath.Join(notADir, "logs"))
 	projectDir := emptyRulesDir(t)
 	globalDir := emptyRulesDir(t)
 
