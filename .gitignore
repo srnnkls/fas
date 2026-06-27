@@ -1,3 +1,5 @@
+/.worktreeinclude
+/.worktrees/
 /mise.local.toml
 /fas
 /resources/
