@@ -3149,4 +3149,7 @@ func TestRun_FasLog_NonFatalOnBadDir(t *testing.T) {
 	if res.exit != 0 {
 		t.Fatalf("exit=%d want 0 (log failure must be non-fatal); stderr=%s", res.exit, res.stderr)
 	}
+	if !strings.Contains(string(res.stderr), "FAS_LOG") {
+		t.Errorf("expected FAS_LOG warning on stderr, got %q", res.stderr)
+	}
 }

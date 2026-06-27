@@ -106,7 +106,7 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 		return 0
 	}
 
-	rec := debuglog.Open(os.Getenv("FAS_LOG"), os.Getenv("FAS_LOG_TTL"), args)
+	rec := debuglog.Open(os.Getenv("FAS_LOG"), os.Getenv("FAS_LOG_TTL"), args, stderr)
 
 	ad, ok := selectAdapter(opts.harness)
 	if !ok {
@@ -1177,8 +1177,7 @@ func runVet(stdout, stderr io.Writer, args []string) int {
 		errorln(stderr, ferr)
 		return 2
 	}
-	resolvedColor, cerr := resolveColor(color, os.Getenv("FAS_COLOR"), os.Getenv("NO_COLOR"))
-	if cerr != nil {
+	if _, cerr := resolveColor(color, os.Getenv("FAS_COLOR"), os.Getenv("NO_COLOR")); cerr != nil {
 		errorln(stderr, cerr)
 		return 2
 	}
@@ -1195,7 +1194,7 @@ func runVet(stdout, stderr io.Writer, args []string) int {
 
 	loadErr := errors.Join(globalErr, projectErr)
 	if loadErr != nil {
-		renderVetErrors(stderr, loadErr, resolvedFormat, resolvedColor)
+		renderVetErrors(stderr, loadErr, resolvedFormat)
 		return 1
 	}
 
@@ -1227,7 +1226,7 @@ func runVet(stdout, stderr io.Writer, args []string) int {
 // renderVetErrors writes validation errors through the format-aware renderer
 // when possible, falling back to plain text for non-diagnostic errors. It
 // handles errors.Join aggregates by collecting all embedded DiagErrors.
-func renderVetErrors(w io.Writer, err error, format outputFormat, color colorMode) {
+func renderVetErrors(w io.Writer, err error, format outputFormat) {
 	if format == formatText || format == formatUnset {
 		errorln(w, err)
 		return

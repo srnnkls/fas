@@ -4,14 +4,19 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestOpen_Disabled(t *testing.T) {
-	r := Open("", "", nil)
+	var warn strings.Builder
+	r := Open("", "", nil, &warn)
 	if r != nil {
 		t.Fatal("expected nil recorder when FAS_LOG is empty")
+	}
+	if warn.Len() != 0 {
+		t.Errorf("expected no warning when FAS_LOG unset, got %q", warn.String())
 	}
 	// Nil recorder methods must not panic.
 	r.SetRawInput([]byte(`{}`))
@@ -24,7 +29,7 @@ func TestOpen_Disabled(t *testing.T) {
 
 func TestOpen_TruthyValues(t *testing.T) {
 	for _, v := range []string{"1", "true", "TRUE", "yes", "YES"} {
-		r := Open(v, "", []string{"eval"})
+		r := Open(v, "", []string{"eval"}, nil)
 		if r == nil {
 			t.Errorf("FAS_LOG=%q: expected non-nil recorder", v)
 			continue
@@ -37,7 +42,7 @@ func TestOpen_TruthyValues(t *testing.T) {
 
 func TestOpen_CustomDir(t *testing.T) {
 	dir := t.TempDir()
-	r := Open(dir, "", []string{"eval"})
+	r := Open(dir, "", []string{"eval"}, nil)
 	if r == nil {
 		t.Fatal("expected non-nil recorder")
 	}
@@ -46,9 +51,26 @@ func TestOpen_CustomDir(t *testing.T) {
 	}
 }
 
+func TestOpen_WarnsOnUnusableDir(t *testing.T) {
+	notADir := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(notADir, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(notADir, "logs")
+
+	var warn strings.Builder
+	r := Open(dir, "", []string{"eval"}, &warn)
+	if r != nil {
+		t.Fatal("expected nil recorder when dir cannot be created")
+	}
+	if !strings.Contains(warn.String(), "FAS_LOG") {
+		t.Errorf("expected FAS_LOG warning, got %q", warn.String())
+	}
+}
+
 func TestRecorder_WritesFile(t *testing.T) {
 	dir := t.TempDir()
-	r := Open(dir, "", []string{"eval", "--harness", "claude"})
+	r := Open(dir, "", []string{"eval", "--harness", "claude"}, nil)
 	r.SetRawInput([]byte(`{"hook_event_name":"PreToolUse"}`))
 	r.SetInput(map[string]string{"hook_event_name": "PreToolUse"})
 	r.SetRules([]string{"r1"}, []string{"r2"})
