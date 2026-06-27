@@ -3,10 +3,13 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/srnnkls/fas/internal/diag"
 )
 
 // -----------------------------------------------------------------------------
@@ -3088,6 +3091,9 @@ func TestRun_FasLog_WritesLogFile(t *testing.T) {
 	if _, ok := entry["raw_input"]; !ok {
 		t.Error("log entry missing raw_input")
 	}
+	if _, ok := entry["input"]; !ok {
+		t.Error("log entry missing input (preprocessed envelope)")
+	}
 	if _, ok := entry["output"]; !ok {
 		t.Error("log entry missing output")
 	}
@@ -3155,5 +3161,68 @@ func TestRun_FasLog_NonFatalOnBadDir(t *testing.T) {
 	}
 	if !strings.Contains(string(res.stderr), "FAS_LOG") {
 		t.Errorf("expected FAS_LOG warning on stderr, got %q", res.stderr)
+	}
+}
+
+func TestCollectDiagErrors_JoinNoDuplicate(t *testing.T) {
+	g := &diag.DiagError{D: diag.Diagnostic{Code: "E001"}}
+	p := &diag.DiagError{D: diag.Diagnostic{Code: "E002"}}
+
+	var diags []diag.Diagnostic
+	collectDiagErrors(errors.Join(g, p), &diags)
+
+	if len(diags) != 2 {
+		t.Fatalf("got %d diagnostics, want 2 (first must not be double-counted)", len(diags))
+	}
+	if diags[0].Code != "E001" || diags[1].Code != "E002" {
+		t.Errorf("codes=%q,%q want E001,E002", diags[0].Code, diags[1].Code)
+	}
+}
+
+func TestRun_Vet_PositionalArg_ExitTwo(t *testing.T) {
+	projectDir := emptyRulesDir(t)
+	globalDir := emptyRulesDir(t)
+
+	var stdout, stderr bytes.Buffer
+	exit := run(nil, &stdout, &stderr,
+		[]string{"vet", "./rules",
+			"--config", projectDir,
+			"--global-config", globalDir,
+		})
+
+	if exit != 2 {
+		t.Fatalf("exit=%d want 2 (stray positional arg must be rejected); stderr=%s", exit, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "positional") {
+		t.Errorf("expected positional-argument error; stderr=%q", stderr.String())
+	}
+}
+
+func TestRun_Vet_FormatSARIF_EmitsSARIF(t *testing.T) {
+	projectDir := writeRuleFiles(t, map[string]string{
+		"system.cue": denySystemTargetRule,
+	})
+	globalDir := emptyRulesDir(t)
+
+	var stdout, stderr bytes.Buffer
+	exit := run(nil, &stdout, &stderr,
+		[]string{"vet",
+			"--format", "sarif",
+			"--config", projectDir,
+			"--global-config", globalDir,
+		})
+
+	if exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s", exit, stderr.String())
+	}
+	var sarif struct {
+		Schema string `json:"$schema"`
+		Runs   []any  `json:"runs"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &sarif); err != nil {
+		t.Fatalf("vet --format sarif must emit SARIF JSON, not text; got %q (err: %v)", stdout.String(), err)
+	}
+	if len(sarif.Runs) == 0 {
+		t.Errorf("expected a SARIF run; stdout=%q", stdout.String())
 	}
 }

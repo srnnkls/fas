@@ -23,11 +23,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
 
 const defaultTTL = time.Hour
+
+var logFileRE = regexp.MustCompile(`^\d{8}T\d{6}Z-[0-9a-f]{8}\.json$`)
 
 // Entry is the full debug record for one fas invocation.
 type Entry struct {
@@ -216,7 +219,7 @@ func gc(dir string, ttl time.Duration) {
 		if e.IsDir() {
 			continue
 		}
-		if !strings.HasSuffix(e.Name(), ".json") {
+		if !logFileRE.MatchString(e.Name()) {
 			continue
 		}
 		info, err := e.Info()
@@ -232,27 +235,12 @@ func gc(dir string, ttl time.Duration) {
 func shortID() string {
 	var b [4]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return "0000"
+		return "00000000"
 	}
 	return hex.EncodeToString(b[:])
 }
 
-// Dir returns the resolved log directory, or empty if disabled.
-// Useful for tests and diagnostics.
-func (r *Recorder) Dir() string {
-	if r == nil {
-		return ""
-	}
-	return r.dir
-}
-
-// GC removes files older than ttl from dir. Exported for testing.
-func GC(dir string, ttl time.Duration) {
-	gc(dir, ttl)
-}
-
-// LogFiles returns the .json files in dir sorted by name. Exported for testing.
-func LogFiles(dir string) ([]fs.DirEntry, error) {
+func logFiles(dir string) ([]fs.DirEntry, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
