@@ -16,6 +16,8 @@ Fixtures live in two dirs so the layering examples have a real global layer:
   `webfetch-reminder`, `confirm-force-push`.
 - `tests/guide_rules_global/` — the global layer: `audit-bash` (inject on every
   Bash) and `global-no-force-add` (deny `git add --force`).
+- `tests/guide_rules_alts/` — the loadable alternatives to the subsumption
+  footguns: `sibling-alt`, `conjunction-alt`, `count-alt`, `close-alt`.
 
 Blocks that exercise a single layer point `--global-config` at a non-existent
 path so host-level rules never leak in.
@@ -220,4 +222,86 @@ $ cat << 'EOF' |
 > EOF
 > fas explain no-rm-home --config tests/guide_rules --global-config /tmp/fas-nonexistent-global 2>/dev/null
 [1]
+```
+
+## What `when` cannot express: the alternatives
+
+Each footgun in the guide names a loadable alternative. These blocks prove the
+alternatives compile and fire. They all `vet` clean — bare `string`/`_` in a
+matcher would be rejected (E0501), so the count alternative uses a regex element.
+
+```scrut
+$ fas vet --config tests/guide_rules_alts --global-config /tmp/fas-nonexistent-global
+ok: 4 rules loaded (global: 0, project: 4)
+  project: sibling-alt
+  project: conjunction-alt
+  project: count-alt
+  project: close-alt
+```
+
+Sibling references → constrain each field on its own shape: an `rm` whose targets
+are under `/etc`.
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "rm -rf /etc/x"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/guide_rules_alts --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"sibling-alt"}} (no-eol)
+```
+
+Input-dependent `if` → conjoin the fields directly: a `git push` carrying
+`--force`.
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "git push --force"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/guide_rules_alts --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"conjunction-alt"}} (no-eol)
+```
+
+Computed counts → a list pattern: at least two flag tokens.
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "rm -r -f x"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/guide_rules_alts --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"count-alt"}} (no-eol)
+```
+
+`close` over a `when` struct → constrain the leaf and leave the struct open:
+exclude a tool by name.
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Write",
+>   "tool_input": {"file_path": "/tmp/f"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/guide_rules_alts --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"close-alt"}} (no-eol)
 ```

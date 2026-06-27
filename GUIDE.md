@@ -203,7 +203,7 @@ with no custom operators and no evaluator-level fallback:
 | bound | `retry_count: <=10`, `tool_name: !="Read"` |
 | regex | `command: =~"^rm\\s+-rf"`, `command: !~"^git\\s"` |
 | every list element matches | `targets: [...=~"^/etc/"]` |
-| at least N elements match | `flags: list.MatchN(>=2, string)` |
+| at least N elements match | `flags: list.MatchN(>=2, =~"^-")` |
 | optional field | `flags?: force?: !=true` |
 | struct disjunction | `{tool_name: "Bash"} \| {tool_name: "Write"}` |
 
@@ -250,24 +250,34 @@ hand:
 
 Subsumption checks the pattern statically — it does not substitute input
 values into the pattern's own references. A handful of shapes compile but stay
-inert at match time, and it is worth knowing them so you don't reach for one:
+inert at match time. Each has a clear alternative; reach for that, not the trap.
 
 - Sibling references. `{command: targets[0], targets: [...]}` constrains
-  `command` to equal `targets[0]` *within the pattern*, not within the input.
+  `command` to equal `targets[0]` *within the pattern*, not within the input —
+  relating two input fields by value is not expressible (CUE regex is RE2, so
+  backreferences can't smuggle it in either). Instead, constrain each field on
+  its own observable shape:
+  `tool_input: {command: =~"^rm\\b", parsed: targets: [...=~"^/etc/"]}` matches an
+  `rm` whose targets are under `/etc` without tying the two together.
 - `let` over input. `let cmd = tool_input.command` names a path in the
-  pattern; it does not bind the input's command.
+  pattern, not the input's command. Instead, drop the `let` and constrain the
+  path in place: `tool_input: command: =~"^rm\\b"`.
 - Input-dependent `if`. An `if` inside `when` tests the pattern's own fields
   (which are types, not values), so the gated fields don't appear conditionally
-  per input.
+  per input. Instead, since a pattern is already a conjunction, just conjoin the
+  fields you want both true
+  (`tool_input: {parsed: flags: list.MatchN(>0, "--force"), command: =~"^git push"}`);
+  for "either of these shapes," enumerate them with a struct-level disjunction
+  (`{...} | {...}`).
 - Computed counts. `_n: len(flags)` materialises `flags` as `[]` at pattern
-  level, so `_n` is `0` regardless of input — use `list.MatchN` for counts.
+  level, so `_n` is `0` regardless of input. Instead, count with a list pattern:
+  `tool_input: parsed: flags: list.MatchN(>=2, =~"^-")` (at least two flag tokens).
 - `close` over a `when` struct. Closing an open hook payload makes the
-  pattern never subsume an extensible input, so the rule silently never matches.
-  `close` is excluded from the universe builtins for this reason.
-
-For counts and shapes, reach for list patterns (`targets: [...=~"^/etc/"]`,
-`flags: list.MatchN(>=2, string)`) or a regex over the raw command — never a
-computed hidden field.
+  pattern never subsume an extensible input, so the rule silently never matches
+  (`close` is excluded from the universe builtins for this reason). Instead, to
+  forbid one field or value, constrain that leaf and leave the struct open — e.g.
+  `tool_name: !="Bash"` to exclude a tool, or a leaf bound to reject a value —
+  rather than closing the surrounding struct.
 
 ## Deciding: the `then` verbs
 
