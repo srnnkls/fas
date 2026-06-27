@@ -34,7 +34,7 @@ func TestOpen_TruthyValues(t *testing.T) {
 			t.Errorf("FAS_LOG=%q: expected non-nil recorder", v)
 			continue
 		}
-		if r.Dir() == "" {
+		if r.dir == "" {
 			t.Errorf("FAS_LOG=%q: expected non-empty dir", v)
 		}
 	}
@@ -46,8 +46,8 @@ func TestOpen_CustomDir(t *testing.T) {
 	if r == nil {
 		t.Fatal("expected non-nil recorder")
 	}
-	if r.Dir() != dir {
-		t.Errorf("dir=%q, want %q", r.Dir(), dir)
+	if r.dir != dir {
+		t.Errorf("dir=%q, want %q", r.dir, dir)
 	}
 }
 
@@ -78,7 +78,7 @@ func TestRecorder_WritesFile(t *testing.T) {
 	r.SetOutput([]byte(`{"result":"ok"}`))
 	r.Close(0)
 
-	files, err := LogFiles(dir)
+	files, err := logFiles(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestRecorder_WritesFile(t *testing.T) {
 func TestGC_RemovesOldFiles(t *testing.T) {
 	dir := t.TempDir()
 
-	old := filepath.Join(dir, "20200101T000000Z-aaaa.json")
+	old := filepath.Join(dir, "20200101T000000Z-aaaaaaaa.json")
 	if err := os.WriteFile(old, []byte(`{}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -120,21 +120,21 @@ func TestGC_RemovesOldFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fresh := filepath.Join(dir, "20250101T000000Z-bbbb.json")
+	fresh := filepath.Join(dir, "20250101T000000Z-bbbbbbbb.json")
 	if err := os.WriteFile(fresh, []byte(`{}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	GC(dir, time.Hour)
+	gc(dir, time.Hour)
 
-	files, err := LogFiles(dir)
+	files, err := logFiles(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(files) != 1 {
 		t.Fatalf("got %d files, want 1 (old should be removed)", len(files))
 	}
-	if files[0].Name() != "20250101T000000Z-bbbb.json" {
+	if files[0].Name() != "20250101T000000Z-bbbbbbbb.json" {
 		t.Errorf("remaining file=%q, want the fresh one", files[0].Name())
 	}
 }
@@ -151,10 +151,29 @@ func TestGC_SkipsNonJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	GC(dir, time.Hour)
+	gc(dir, time.Hour)
 
 	if _, err := os.Stat(other); err != nil {
 		t.Error("non-JSON file should not be removed by GC")
+	}
+}
+
+func TestGC_PreservesForeignJSON(t *testing.T) {
+	dir := t.TempDir()
+
+	foreign := filepath.Join(dir, "package.json")
+	if err := os.WriteFile(foreign, []byte(`{"name":"x"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(foreign, past, past); err != nil {
+		t.Fatal(err)
+	}
+
+	gc(dir, time.Hour)
+
+	if _, err := os.Stat(foreign); err != nil {
+		t.Error("foreign .json not matching the log-file pattern must survive GC")
 	}
 }
 

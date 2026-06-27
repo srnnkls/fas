@@ -152,7 +152,10 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 	// state into the next invocation.
 	evaluator.SetExplainEnabled(opts.explain.set)
 
-	response, matches, diags, err := evaluate(ad, raw, globalRules, projectRules, opts.failClosed)
+	response, matches, diags, input, err := evaluate(ad, raw, globalRules, projectRules, opts.failClosed)
+	if input != nil {
+		rec.SetInput(input)
+	}
 	if err != nil {
 		errorf(stderr, "render response: %v\n", err)
 		return exitWithLog(rec, 1)
@@ -207,30 +210,15 @@ func runExplain(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 	fs.SetOutput(stderr)
 	fs.Usage = func() { writeUsage(stderr) }
 
-	defaultGlobal, err := defaultGlobalConfigDir()
-	if err != nil {
-		defaultGlobal = defaultGlobalRulesSubpath
-	}
-	harness := "claude"
-	projectConfig := defaultProjectRulesDir
-	globalConfig := defaultGlobal
-	fs.StringVar(&harness, "harness", harness,
-		"vendor harness whose hook protocol to speak (e.g. claude)")
-	fs.StringVar(&projectConfig, "config", projectConfig,
-		"path to the project rules directory")
-	fs.StringVar(&globalConfig, "global-config", globalConfig,
-		"path to the user-global rules directory")
-	var format formatFlag
+	common := registerCommonFlags(fs)
 	var color colorFlag
-	fs.Var(&format, "format",
-		"diagnostic output format: text|json|sarif (default text)")
 	fs.Var(&color, "color",
 		"color mode for text diagnostics: auto|always|never (default auto)")
 
 	if err := fs.Parse(rest); err != nil {
 		return 2
 	}
-	resolvedFormat, ferr := resolveFormat(format, os.Getenv("FAS_FORMAT"))
+	resolvedFormat, ferr := resolveFormat(common.format, os.Getenv("FAS_FORMAT"))
 	if ferr != nil {
 		errorln(stderr, ferr)
 		return 2
@@ -241,19 +229,19 @@ func runExplain(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 		return 2
 	}
 
-	ad, ok := selectAdapter(harness)
+	ad, ok := selectAdapter(common.harness)
 	if !ok {
 		errorf(stderr, "unknown harness %q; supported: %s\n",
-			harness, strings.Join(supportedHarnesses(), ", "))
+			common.harness, strings.Join(supportedHarnesses(), ", "))
 		return 2
 	}
 
-	globalRules, err := loadRulesDir(globalConfig)
+	globalRules, err := loadRulesDir(common.globalConfig)
 	if err != nil {
 		errorln(stderr, err)
 		return 2
 	}
-	projectRules, err := loadRulesDir(projectConfig)
+	projectRules, err := loadRulesDir(common.projectConfig)
 	if err != nil {
 		errorln(stderr, err)
 		return 2
@@ -664,37 +652,48 @@ func paletteFor(mode colorMode, tty bool, noColorEnv string) diag.Palette {
 
 // parseFlags reads args into a cliOptions. The returned bool is true when the
 // user asked for help; callers should print usage and exit 0.
-func parseFlags(args []string, stderr io.Writer) (cliOptions, bool, error) {
-	fs := flag.NewFlagSet("fas eval", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Usage = func() { writeUsage(stderr) }
+type commonFlags struct {
+	harness       string
+	projectConfig string
+	globalConfig  string
+	format        formatFlag
+}
 
+func registerCommonFlags(fs *flag.FlagSet) *commonFlags {
 	defaultGlobal, err := defaultGlobalConfigDir()
 	if err != nil {
 		// Fall back to a bare relative path so flag parsing still works even
 		// when HOME is unset; loadRulesDir will treat it as "does not exist".
 		defaultGlobal = defaultGlobalRulesSubpath
 	}
-
-	opts := cliOptions{
+	cf := &commonFlags{
 		harness:       "claude",
 		projectConfig: defaultProjectRulesDir,
 		globalConfig:  defaultGlobal,
 	}
-	fs.StringVar(&opts.harness, "harness", opts.harness,
+	fs.StringVar(&cf.harness, "harness", cf.harness,
 		"vendor harness whose hook protocol to speak (e.g. claude)")
-	fs.StringVar(&opts.projectConfig, "config", opts.projectConfig,
+	fs.StringVar(&cf.projectConfig, "config", cf.projectConfig,
 		"path to the project rules directory")
-	fs.StringVar(&opts.globalConfig, "global-config", opts.globalConfig,
+	fs.StringVar(&cf.globalConfig, "global-config", cf.globalConfig,
 		"path to the user-global rules directory")
+	fs.Var(&cf.format, "format",
+		"diagnostic output format: text|json|sarif (default text)")
+	return cf
+}
+
+func parseFlags(args []string, stderr io.Writer) (cliOptions, bool, error) {
+	fs := flag.NewFlagSet("fas eval", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.Usage = func() { writeUsage(stderr) }
+
+	common := registerCommonFlags(fs)
+	var opts cliOptions
 	fs.BoolVar(&opts.failClosed, "fail-closed", false,
 		"on engine error, emit a Blocking envelope instead of Allowing")
 	fs.Var(&opts.explain, "explain",
 		"emit diagnostics to stderr: fired|missed|both (default missed when bare)")
-	var format formatFlag
 	var color colorFlag
-	fs.Var(&format, "format",
-		"diagnostic output format: text|json|sarif (default text)")
 	fs.Var(&color, "color",
 		"color mode for text diagnostics: auto|always|never (default auto)")
 
@@ -704,9 +703,12 @@ func parseFlags(args []string, stderr io.Writer) (cliOptions, bool, error) {
 		}
 		return opts, false, err
 	}
+	opts.harness = common.harness
+	opts.projectConfig = common.projectConfig
+	opts.globalConfig = common.globalConfig
 	opts.format = formatText
 	opts.color = colorAuto
-	f, rerr := resolveFormat(format, os.Getenv("FAS_FORMAT"))
+	f, rerr := resolveFormat(common.format, os.Getenv("FAS_FORMAT"))
 	if rerr != nil {
 		errorln(stderr, rerr)
 		return opts, false, rerr
@@ -798,31 +800,31 @@ func evaluate(
 	raw []byte,
 	globalRules, projectRules []config.Rule,
 	failClosed bool,
-) ([]byte, []evaluator.Match, []diag.Diagnostic, error) {
+) ([]byte, []evaluator.Match, []diag.Diagnostic, *envelope.Input, error) {
 	input, hookEventName, engineErr := prepareInput(ad, raw)
 	if engineErr != nil {
 		out := fallbackEnvelope(engineErr, failClosed)
 		resp, err := ad.RenderOutput(out, hookEventName)
-		return resp, nil, nil, err
+		return resp, nil, nil, nil, err
 	}
 
 	cueInput, err := encodeInput(input)
 	if err != nil {
 		out := fallbackEnvelope(err, failClosed)
 		resp, rerr := ad.RenderOutput(out, hookEventName)
-		return resp, nil, nil, rerr
+		return resp, nil, nil, input, rerr
 	}
 
 	matches, diags, err := pipeline.EvaluatePhases(globalRules, projectRules, cueInput)
 	if err != nil {
 		out := fallbackEnvelope(err, failClosed)
 		resp, rerr := ad.RenderOutput(out, hookEventName)
-		return resp, nil, nil, rerr
+		return resp, nil, nil, input, rerr
 	}
 
 	out := synthesis.Synthesize(matches, defaultSizeBudget)
 	resp, err := ad.RenderOutput(out, hookEventName)
-	return resp, matches, diags, err
+	return resp, matches, diags, input, err
 }
 
 // prepareInput runs the adapter parse and preprocessor. It returns the
@@ -1129,7 +1131,11 @@ Environment:
                           directory path to enable; "1" or "true" uses the
                           default (~/.local/state/fas/logs/). Each
                           invocation writes one JSON file recording raw
-                          input, loaded rules, matches, and rendered output.
+                          input, preprocessed input, loaded rules, matches,
+                          and rendered output. These payloads are written
+                          unredacted (mode 0600) and may contain secrets,
+                          prompts, or other sensitive data — point FAS_LOG
+                          only at a trusted directory.
   FAS_LOG_TTL             Max age for debug log files (default: "1h").
                           Files older than this are garbage-collected at
                           the start of each invocation. Accepts Go duration
@@ -1148,49 +1154,30 @@ func runVet(stdout, stderr io.Writer, args []string) int {
 	fs.SetOutput(stderr)
 	fs.Usage = func() { writeUsage(stderr) }
 
-	defaultGlobal, err := defaultGlobalConfigDir()
-	if err != nil {
-		defaultGlobal = defaultGlobalRulesSubpath
-	}
-
-	harness := "claude"
-	projectConfig := defaultProjectRulesDir
-	globalConfig := defaultGlobal
-	fs.StringVar(&harness, "harness", harness,
-		"vendor harness whose hook protocol to speak (e.g. claude)")
-	fs.StringVar(&projectConfig, "config", projectConfig,
-		"path to the project rules directory")
-	fs.StringVar(&globalConfig, "global-config", globalConfig,
-		"path to the user-global rules directory")
-	var format formatFlag
-	var color colorFlag
-	fs.Var(&format, "format",
-		"diagnostic output format: text|json|sarif (default text)")
-	fs.Var(&color, "color",
-		"color mode for text diagnostics: auto|always|never (default auto)")
+	common := registerCommonFlags(fs)
 
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	resolvedFormat, ferr := resolveFormat(format, os.Getenv("FAS_FORMAT"))
+	if fs.NArg() != 0 {
+		errorf(stderr, "fas vet takes no positional arguments; got %q\n", fs.Arg(0))
+		return 2
+	}
+	resolvedFormat, ferr := resolveFormat(common.format, os.Getenv("FAS_FORMAT"))
 	if ferr != nil {
 		errorln(stderr, ferr)
 		return 2
 	}
-	if _, cerr := resolveColor(color, os.Getenv("FAS_COLOR"), os.Getenv("NO_COLOR")); cerr != nil {
-		errorln(stderr, cerr)
-		return 2
-	}
 
-	ad, ok := selectAdapter(harness)
+	ad, ok := selectAdapter(common.harness)
 	if !ok {
 		errorf(stderr, "unknown harness %q; supported: %s\n",
-			harness, strings.Join(supportedHarnesses(), ", "))
+			common.harness, strings.Join(supportedHarnesses(), ", "))
 		return 2
 	}
 
-	globalRules, globalErr := loadRulesDir(globalConfig)
-	projectRules, projectErr := loadRulesDir(projectConfig)
+	globalRules, globalErr := loadRulesDir(common.globalConfig)
+	projectRules, projectErr := loadRulesDir(common.projectConfig)
 
 	loadErr := errors.Join(globalErr, projectErr)
 	if loadErr != nil {
@@ -1199,7 +1186,7 @@ func runVet(stdout, stderr io.Writer, args []string) int {
 	}
 
 	if err := checkAdapterCapabilities(ad, globalRules, projectRules); err != nil {
-		errorln(stderr, err)
+		renderVetErrors(stderr, err, resolvedFormat)
 		return 1
 	}
 
@@ -1210,14 +1197,16 @@ func runVet(stdout, stderr io.Writer, args []string) int {
 	switch resolvedFormat {
 	case formatJSON:
 		renderVetSummaryJSON(stdout, globalIDs, projectIDs)
+	case formatSARIF:
+		_, _ = stdout.Write(diag.RenderSARIF(nil))
 	default:
-		errorf(stdout, "ok: %d rules loaded (global: %d, project: %d)\n",
+		_, _ = fmt.Fprintf(stdout, "ok: %d rules loaded (global: %d, project: %d)\n",
 			total, len(globalIDs), len(projectIDs))
 		for _, id := range globalIDs {
-			errorf(stdout, "  global:  %s\n", id)
+			_, _ = fmt.Fprintf(stdout, "  global:  %s\n", id)
 		}
 		for _, id := range projectIDs {
-			errorf(stdout, "  project: %s\n", id)
+			_, _ = fmt.Fprintf(stdout, "  project: %s\n", id)
 		}
 	}
 	return 0
@@ -1251,14 +1240,15 @@ func collectDiagErrors(err error, dst *[]diag.Diagnostic) {
 	if err == nil {
 		return
 	}
-	var de *diag.DiagError
-	if errors.As(err, &de) {
-		*dst = append(*dst, de.D)
-	}
 	if joined, ok := err.(interface{ Unwrap() []error }); ok {
 		for _, child := range joined.Unwrap() {
 			collectDiagErrors(child, dst)
 		}
+		return
+	}
+	var de *diag.DiagError
+	if errors.As(err, &de) {
+		*dst = append(*dst, de.D)
 	}
 }
 
