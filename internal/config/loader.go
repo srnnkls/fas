@@ -625,7 +625,7 @@ func extractPackageRules(dir string, ruleDef, merged cue.Value, origins []fileOr
 			// typo'd stdlib reference; walk the subtree so it fails the load.
 			if when := unified.LookupPath(cue.ParsePath("when")); when.Exists() {
 				if err := whenFieldErr(when, 0); err != nil {
-					loadErrs = append(loadErrs, wrapFieldLoadError(o.path, fieldName, err))
+					loadErrs = append(loadErrs, wrapFieldLoadError(o.path, fieldName, err, stdlibSuggestion(o.file, err)))
 					continue
 				}
 			}
@@ -702,9 +702,14 @@ func wrapRuleLoadError(rulePath string, err error) error {
 // into a structured *diag.DiagError. The file path and the offending field
 // name both appear in the rendered Title so existing substring assertions
 // ("halt" / "#Action" / "helpers" / "nonexistentDef") continue to match.
-func wrapFieldLoadError(rulePath, field string, err error) error {
+func wrapFieldLoadError(rulePath, field string, err error, notes ...*diag.Label) error {
 	d := diag.FromCueError(err)
 	d.Title = fmt.Sprintf("%s: field %q does not match #Rule: %s", rulePath, field, d.Title)
+	for _, n := range notes {
+		if n != nil {
+			d.Notes = append(d.Notes, *n)
+		}
+	}
 	return diag.NewDiagError(d, nil, err)
 }
 

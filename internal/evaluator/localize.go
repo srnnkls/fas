@@ -14,6 +14,7 @@ import (
 
 	"github.com/srnnkls/fas/internal/config"
 	"github.com/srnnkls/fas/internal/diag"
+	"github.com/srnnkls/fas/internal/strdist"
 )
 
 // localize walks the rule's `when` AST paired with the input value and yields
@@ -307,18 +308,8 @@ func absentKeyDiagnostic(f *ast.Field, name string, parent cue.Value, path []str
 		available = []string{}
 	}
 	suggestion := ""
-	if len(available) > 0 {
-		bestIdx, bestDist := 0, levenshtein(name, available[0])
-		for i := 1; i < len(available); i++ {
-			d := levenshtein(name, available[i])
-			if d < bestDist {
-				bestDist = d
-				bestIdx = i
-			}
-		}
-		if bestDist <= 2 {
-			suggestion = available[bestIdx]
-		}
+	if nearest := strdist.Nearest(name, available, 1, 2); len(nearest) > 0 {
+		suggestion = nearest[0]
 	}
 	return diag.Diagnostic{
 		Code:     diag.E0201.Code,

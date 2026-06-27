@@ -332,7 +332,7 @@ func checkIdent(ruleName string, ruleNames, helperDefNames map[string]struct{}, 
 	if _, ok := permittedUniverseBuiltins[name]; ok {
 		return nil
 	}
-	return unboundDiag(ruleName, id)
+	return unboundDiag(ruleName, id, ruleNames, helperDefNames)
 }
 
 // crossRuleDiag builds an E0502 DiagError whose primary span anchors at the
@@ -387,7 +387,7 @@ func selfRefDiag(ruleName, subtree string, root *ast.Ident) error {
 // lint_diag test substring checks (`hidden` + `stdlib` / `import`) find them.
 // The rule name sits in the caret label so it survives errDetailAfter's
 // file-path anchor.
-func unboundDiag(ruleName string, id *ast.Ident) error {
+func unboundDiag(ruleName string, id *ast.Ident, ruleNames, helperDefNames map[string]struct{}) error {
 	d := diag.Diagnostic{
 		Code:     diag.E0501.Code,
 		Severity: diag.SeverityError,
@@ -403,6 +403,16 @@ func unboundDiag(ruleName string, id *ast.Ident) error {
 			"(e.g. `import \"list\"`), or use a curated universe builtin (`and`, " +
 			"`or`, `matchN`, `matchIf`, `len`). Bare identifiers in `when` must " +
 			"resolve to one of those scopes.",
+	}
+	local := make([]string, 0, len(ruleNames)+len(helperDefNames))
+	for name := range ruleNames {
+		local = append(local, name)
+	}
+	for name := range helperDefNames {
+		local = append(local, name)
+	}
+	if msg := suggest("", id.Name, local, StdlibIndex()); msg != "" {
+		d.Notes = append(d.Notes, diag.Label{Pos: id.Pos(), Len: len(id.Name), Msg: msg})
 	}
 	return diag.NewDiagError(d, nil, nil)
 }
