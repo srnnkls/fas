@@ -2829,3 +2829,324 @@ func TestRun_ExplainCode_PrecedenceOverRuleID(t *testing.T) {
 		t.Errorf("stdout must carry the E0201 help (contains %q); got %q", "path", stdout.String())
 	}
 }
+
+// -----------------------------------------------------------------------------
+// fas vet — standalone rule validation
+// -----------------------------------------------------------------------------
+
+func TestRun_Vet_ValidRules_ExitZero(t *testing.T) {
+	projectDir := writeRuleFiles(t, map[string]string{
+		"system.cue": denySystemTargetRule,
+	})
+	globalDir := writeRuleFiles(t, map[string]string{
+		"ask.cue": askOnBashRule,
+	})
+
+	var stdout, stderr bytes.Buffer
+	exit := run(nil, &stdout, &stderr,
+		[]string{"vet",
+			"--config", projectDir,
+			"--global-config", globalDir,
+		})
+
+	if exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s", exit, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "ok:") {
+		t.Errorf("expected ok summary; stdout=%q", out)
+	}
+	if !strings.Contains(out, "r1") {
+		t.Errorf("expected rule_id r1 in summary; stdout=%q", out)
+	}
+	if !strings.Contains(out, "ask-bash") {
+		t.Errorf("expected rule_id ask-bash in summary; stdout=%q", out)
+	}
+}
+
+func TestRun_Vet_EmptyDirs_ExitZero(t *testing.T) {
+	projectDir := emptyRulesDir(t)
+	globalDir := emptyRulesDir(t)
+
+	var stdout, stderr bytes.Buffer
+	exit := run(nil, &stdout, &stderr,
+		[]string{"vet",
+			"--config", projectDir,
+			"--global-config", globalDir,
+		})
+
+	if exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s", exit, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "0 rules") {
+		t.Errorf("expected 0 rules; stdout=%q", stdout.String())
+	}
+}
+
+func TestRun_Vet_MalformedRule_ExitOne(t *testing.T) {
+	projectDir := writeRuleFiles(t, map[string]string{
+		"bad.cue": malformedRuleSrc,
+	})
+	globalDir := emptyRulesDir(t)
+
+	var stdout, stderr bytes.Buffer
+	exit := run(nil, &stdout, &stderr,
+		[]string{"vet",
+			"--config", projectDir,
+			"--global-config", globalDir,
+		})
+
+	if exit != 1 {
+		t.Fatalf("exit=%d want 1; stdout=%s stderr=%s", exit, stdout.String(), stderr.String())
+	}
+}
+
+func TestRun_Vet_ModifyRuleClaudeAdapter_ExitOne(t *testing.T) {
+	projectDir := writeRuleFiles(t, map[string]string{
+		"mod.cue": modifyRuleSrc,
+	})
+	globalDir := emptyRulesDir(t)
+
+	var stdout, stderr bytes.Buffer
+	exit := run(nil, &stdout, &stderr,
+		[]string{"vet",
+			"--harness", "claude",
+			"--config", projectDir,
+			"--global-config", globalDir,
+		})
+
+	if exit != 1 {
+		t.Fatalf("exit=%d want 1; stderr=%s", exit, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "modify") {
+		t.Errorf("expected modify capability error; stderr=%q", stderr.String())
+	}
+}
+
+func TestRun_Vet_UnknownHarness_ExitTwo(t *testing.T) {
+	projectDir := emptyRulesDir(t)
+	globalDir := emptyRulesDir(t)
+
+	var stdout, stderr bytes.Buffer
+	exit := run(nil, &stdout, &stderr,
+		[]string{"vet",
+			"--harness", "unknown",
+			"--config", projectDir,
+			"--global-config", globalDir,
+		})
+
+	if exit != 2 {
+		t.Fatalf("exit=%d want 2; stderr=%s", exit, stderr.String())
+	}
+}
+
+func TestRun_Vet_FormatJSON_ExitZero(t *testing.T) {
+	projectDir := writeRuleFiles(t, map[string]string{
+		"system.cue": denySystemTargetRule,
+	})
+	globalDir := emptyRulesDir(t)
+
+	var stdout, stderr bytes.Buffer
+	exit := run(nil, &stdout, &stderr,
+		[]string{"vet",
+			"--format", "json",
+			"--config", projectDir,
+			"--global-config", globalDir,
+		})
+
+	if exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s", exit, stderr.String())
+	}
+	var summary struct {
+		Status       string   `json:"status"`
+		GlobalRules  []string `json:"global_rules"`
+		ProjectRules []string `json:"project_rules"`
+		Total        int      `json:"total"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil {
+		t.Fatalf("invalid JSON summary: %v\nstdout=%s", err, stdout.String())
+	}
+	if summary.Status != "ok" {
+		t.Errorf("status=%q, want ok", summary.Status)
+	}
+	if summary.Total != 1 {
+		t.Errorf("total=%d, want 1", summary.Total)
+	}
+}
+
+func TestRun_Vet_NoStdinNeeded(t *testing.T) {
+	projectDir := emptyRulesDir(t)
+	globalDir := emptyRulesDir(t)
+
+	var stdout, stderr bytes.Buffer
+	exit := run(nil, &stdout, &stderr,
+		[]string{"vet",
+			"--config", projectDir,
+			"--global-config", globalDir,
+		})
+
+	if exit != 0 {
+		t.Fatalf("exit=%d want 0 (nil stdin must be fine); stderr=%s", exit, stderr.String())
+	}
+}
+
+func TestRun_Vet_DuplicateRuleName_ExitOne(t *testing.T) {
+	rule1 := `package rules
+dup_rule: {
+	when: hook_event_name: "PreToolUse"
+	then: deny: { rule_id: "dup", reason: "first" }
+}
+`
+	rule2 := `package rules
+dup_rule: {
+	when: hook_event_name: "PreToolUse"
+	then: deny: { rule_id: "dup", reason: "second" }
+}
+`
+	projectDir := writeRuleFiles(t, map[string]string{
+		"a.cue": rule1,
+		"b.cue": rule2,
+	})
+	globalDir := emptyRulesDir(t)
+
+	var stdout, stderr bytes.Buffer
+	exit := run(nil, &stdout, &stderr,
+		[]string{"vet",
+			"--config", projectDir,
+			"--global-config", globalDir,
+		})
+
+	if exit != 1 {
+		t.Fatalf("exit=%d want 1; stderr=%s", exit, stderr.String())
+	}
+}
+
+// -----------------------------------------------------------------------------
+// FAS_LOG — debug payload logging
+// -----------------------------------------------------------------------------
+
+func TestRun_FasLog_Disabled_NoFiles(t *testing.T) {
+	t.Setenv("FAS_LOG", "")
+	projectDir := emptyRulesDir(t)
+	globalDir := emptyRulesDir(t)
+
+	stdin := claudeBashInput("ls")
+	_ = runCLI(t, stdin,
+		"eval", "--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+	// No assertion on files — just ensure no panic or error.
+}
+
+func TestRun_FasLog_WritesLogFile(t *testing.T) {
+	logDir := t.TempDir()
+	t.Setenv("FAS_LOG", logDir)
+	t.Setenv("FAS_LOG_TTL", "1h")
+
+	projectDir := writeRuleFiles(t, map[string]string{
+		"system.cue": denySystemTargetRule,
+	})
+	globalDir := emptyRulesDir(t)
+
+	stdin := claudeBashInput("rm -rf /etc/passwd")
+	res := runCLI(t, stdin,
+		"eval", "--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0; stderr=%s", res.exit, res.stderr)
+	}
+
+	entries, err := os.ReadDir(logDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logFiles []os.DirEntry
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
+			logFiles = append(logFiles, e)
+		}
+	}
+	if len(logFiles) != 1 {
+		t.Fatalf("expected 1 log file, got %d", len(logFiles))
+	}
+
+	data, err := os.ReadFile(filepath.Join(logDir, logFiles[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var entry map[string]any
+	if err := json.Unmarshal(data, &entry); err != nil {
+		t.Fatalf("log file is not valid JSON: %v", err)
+	}
+	if _, ok := entry["timestamp"]; !ok {
+		t.Error("log entry missing timestamp")
+	}
+	if _, ok := entry["raw_input"]; !ok {
+		t.Error("log entry missing raw_input")
+	}
+	if _, ok := entry["output"]; !ok {
+		t.Error("log entry missing output")
+	}
+	if code, ok := entry["exit_code"].(float64); !ok || code != 0 {
+		t.Errorf("exit_code=%v, want 0", entry["exit_code"])
+	}
+	if rules, ok := entry["rules"].(map[string]any); ok {
+		if _, ok := rules["project"]; !ok {
+			t.Error("log entry missing rules.project")
+		}
+	} else {
+		t.Error("log entry missing rules")
+	}
+}
+
+func TestRun_FasLog_RecordsMatchesOnDeny(t *testing.T) {
+	logDir := t.TempDir()
+	t.Setenv("FAS_LOG", logDir)
+	t.Setenv("FAS_LOG_TTL", "1h")
+
+	projectDir := writeRuleFiles(t, map[string]string{
+		"system.cue": denySystemTargetRule,
+	})
+	globalDir := emptyRulesDir(t)
+
+	stdin := claudeBashInput("rm -rf /etc/passwd")
+	_ = runCLI(t, stdin,
+		"eval", "--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+
+	entries, _ := os.ReadDir(logDir)
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".json") {
+			data, _ := os.ReadFile(filepath.Join(logDir, e.Name()))
+			var entry map[string]any
+			_ = json.Unmarshal(data, &entry)
+			matches, ok := entry["matches"].([]any)
+			if !ok || len(matches) == 0 {
+				t.Error("expected at least one match in log entry")
+			}
+		}
+	}
+}
+
+func TestRun_FasLog_NonFatalOnBadDir(t *testing.T) {
+	t.Setenv("FAS_LOG", "/nonexistent/path/that/cannot/be/created/hopefully")
+	projectDir := emptyRulesDir(t)
+	globalDir := emptyRulesDir(t)
+
+	stdin := claudeBashInput("ls")
+	res := runCLI(t, stdin,
+		"eval", "--harness", "claude",
+		"--config", projectDir,
+		"--global-config", globalDir,
+	)
+
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0 (log failure must be non-fatal); stderr=%s", res.exit, res.stderr)
+	}
+}
