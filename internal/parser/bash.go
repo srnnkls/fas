@@ -154,9 +154,18 @@ func extractCall(call *syntax.CallExpr, out *Parsed) {
 	if subIdx >= 0 {
 		subcommand = rest[subIdx].text
 	}
-	if verb := resolveVerb(name, subcommand, flags); verb != "" {
+	verb := resolveVerb(name, subcommand, flags)
+	if verb != "" {
 		out.Actions = append(out.Actions, verb)
 	}
+
+	out.Calls = append(out.Calls, Call{
+		Command:    name,
+		Subcommand: subcommand,
+		Action:     verb,
+		Targets:    positional,
+		Flags:      flags,
+	})
 }
 
 // isKnownSubcommand reports whether `<name> <candidate>` is registered in any

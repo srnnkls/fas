@@ -51,6 +51,7 @@ package fas
 	subcommands?: _
 	targets?:     _
 	flags?:       _
+	calls?:       _
 	attributes?:  {...}
 	...
 }
