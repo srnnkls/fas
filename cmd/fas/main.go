@@ -35,6 +35,7 @@ import (
 
 	"github.com/srnnkls/fas/internal/adapter"
 	"github.com/srnnkls/fas/internal/config"
+	"github.com/srnnkls/fas/internal/debuglog"
 	"github.com/srnnkls/fas/internal/diag"
 	"github.com/srnnkls/fas/internal/envelope"
 	"github.com/srnnkls/fas/internal/evaluator"
@@ -81,6 +82,12 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 		return runExplain(stdin, stdout, stderr, args[1:])
 	}
 
+	// The `vet` subcommand validates rule files without requiring stdin
+	// input — useful for CI, pre-commit hooks, and rule authoring.
+	if len(args) > 0 && args[0] == "vet" {
+		return runVet(stdout, stderr, args[1:])
+	}
+
 	// Drop an optional leading "eval" subcommand so the CLI accepts both
 	// `fas eval --harness claude` and `fas --harness claude`. The v0.1
 	// binary only has one subcommand; insisting on it buys nothing.
@@ -99,33 +106,37 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 		return 0
 	}
 
+	rec := debuglog.Open(os.Getenv("FAS_LOG"), os.Getenv("FAS_LOG_TTL"), args)
+
 	ad, ok := selectAdapter(opts.harness)
 	if !ok {
 		errorf(stderr, "unknown harness %q; supported: %s\n",
 			opts.harness, strings.Join(supportedHarnesses(), ", "))
-		return 2
+		return exitWithLog(rec, 2)
 	}
 
 	raw, err := io.ReadAll(stdin)
 	if err != nil {
 		errorf(stderr, "read stdin: %v\n", err)
-		return 1
+		return exitWithLog(rec, 1)
 	}
+	rec.SetRawInput(raw)
 
 	globalRules, err := loadRulesDir(opts.globalConfig)
 	if err != nil {
 		errorln(stderr, err)
-		return 1
+		return exitWithLog(rec, 1)
 	}
 	projectRules, err := loadRulesDir(opts.projectConfig)
 	if err != nil {
 		errorln(stderr, err)
-		return 1
+		return exitWithLog(rec, 1)
 	}
+	rec.SetRules(ruleIDs(globalRules), ruleIDs(projectRules))
 
 	if err := checkAdapterCapabilities(ad, globalRules, projectRules); err != nil {
 		errorln(stderr, err)
-		return 1
+		return exitWithLog(rec, 1)
 	}
 
 	// FAS_EXPLAIN acts as an env fallback for `--explain=missed` but only
@@ -144,18 +155,20 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 	response, matches, diags, err := evaluate(ad, raw, globalRules, projectRules, opts.failClosed)
 	if err != nil {
 		errorf(stderr, "render response: %v\n", err)
-		return 1
+		return exitWithLog(rec, 1)
 	}
+	rec.SetMatches(matchSummaries(matches))
+	rec.SetOutput(response)
 
 	if _, err := stdout.Write(response); err != nil {
 		errorf(stderr, "write stdout: %v\n", err)
-		return 1
+		return exitWithLog(rec, 1)
 	}
 
 	if opts.explain.set {
 		renderExplain(stderr, opts.explain.value, opts.format, opts.color, matches, diags, globalRules, projectRules)
 	}
-	return 0
+	return exitWithLog(rec, 0)
 }
 
 // runExplain implements `fas explain <rule_id> < input.json`. It loads both
@@ -1052,6 +1065,7 @@ func printUsage(w io.Writer) {
 // Kept in one place so the three entry points never drift.
 func writeUsage(w io.Writer) {
 	_, _ = fmt.Fprint(w, `Usage: fas eval [flags]
+       fas vet [flags]
        fas explain <rule_id> [flags]
 
 Read a vendor-native hook payload on stdin, evaluate it against the
@@ -1080,6 +1094,12 @@ Flags:
   --version               Print version and exit.
 
 Subcommands:
+  vet                     Validate rule files without evaluating a payload.
+                          Loads both rule sets, runs all checks (package
+                          clauses, duplicate names, structural lint, schema
+                          validation, adapter capabilities), and prints a
+                          summary on success. No stdin is read. Exit 0 on
+                          valid, 1 on validation error, 2 on usage error.
   explain <rule_id>       Run a single rule (resolved by rule_id across
                           project+global sets; project wins on conflict)
                           against stdin. The rule_id must precede any
@@ -1105,7 +1125,200 @@ Environment:
   NO_COLOR                Community convention: when set (any value),
                           color is disabled. Superseded by --color or
                           FAS_COLOR when those are set.
+  FAS_LOG                 Directory for debug payload logs. Set to a
+                          directory path to enable; "1" or "true" uses the
+                          default (~/.local/state/fas/logs/). Each
+                          invocation writes one JSON file recording raw
+                          input, loaded rules, matches, and rendered output.
+  FAS_LOG_TTL             Max age for debug log files (default: "1h").
+                          Files older than this are garbage-collected at
+                          the start of each invocation. Accepts Go duration
+                          syntax (e.g. 30m, 2h, 24h).
 
 Supported harnesses: claude.
 `)
+}
+
+// runVet implements `fas vet [flags]`. It loads both rule sets, runs all
+// validation checks (package clauses, duplicate names, structural lint,
+// schema validation, adapter capability check), and prints a summary of
+// loaded rules on success. No stdin is read.
+func runVet(stdout, stderr io.Writer, args []string) int {
+	fs := flag.NewFlagSet("fas vet", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.Usage = func() { writeUsage(stderr) }
+
+	defaultGlobal, err := defaultGlobalConfigDir()
+	if err != nil {
+		defaultGlobal = defaultGlobalRulesSubpath
+	}
+
+	harness := "claude"
+	projectConfig := defaultProjectRulesDir
+	globalConfig := defaultGlobal
+	fs.StringVar(&harness, "harness", harness,
+		"vendor harness whose hook protocol to speak (e.g. claude)")
+	fs.StringVar(&projectConfig, "config", projectConfig,
+		"path to the project rules directory")
+	fs.StringVar(&globalConfig, "global-config", globalConfig,
+		"path to the user-global rules directory")
+	var format formatFlag
+	var color colorFlag
+	fs.Var(&format, "format",
+		"diagnostic output format: text|json|sarif (default text)")
+	fs.Var(&color, "color",
+		"color mode for text diagnostics: auto|always|never (default auto)")
+
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	resolvedFormat, ferr := resolveFormat(format, os.Getenv("FAS_FORMAT"))
+	if ferr != nil {
+		errorln(stderr, ferr)
+		return 2
+	}
+	resolvedColor, cerr := resolveColor(color, os.Getenv("FAS_COLOR"), os.Getenv("NO_COLOR"))
+	if cerr != nil {
+		errorln(stderr, cerr)
+		return 2
+	}
+
+	ad, ok := selectAdapter(harness)
+	if !ok {
+		errorf(stderr, "unknown harness %q; supported: %s\n",
+			harness, strings.Join(supportedHarnesses(), ", "))
+		return 2
+	}
+
+	globalRules, globalErr := loadRulesDir(globalConfig)
+	projectRules, projectErr := loadRulesDir(projectConfig)
+
+	loadErr := errors.Join(globalErr, projectErr)
+	if loadErr != nil {
+		renderVetErrors(stderr, loadErr, resolvedFormat, resolvedColor)
+		return 1
+	}
+
+	if err := checkAdapterCapabilities(ad, globalRules, projectRules); err != nil {
+		errorln(stderr, err)
+		return 1
+	}
+
+	globalIDs := ruleIDs(globalRules)
+	projectIDs := ruleIDs(projectRules)
+	total := len(globalIDs) + len(projectIDs)
+
+	switch resolvedFormat {
+	case formatJSON:
+		renderVetSummaryJSON(stdout, globalIDs, projectIDs)
+	default:
+		errorf(stdout, "ok: %d rules loaded (global: %d, project: %d)\n",
+			total, len(globalIDs), len(projectIDs))
+		for _, id := range globalIDs {
+			errorf(stdout, "  global:  %s\n", id)
+		}
+		for _, id := range projectIDs {
+			errorf(stdout, "  project: %s\n", id)
+		}
+	}
+	return 0
+}
+
+// renderVetErrors writes validation errors through the format-aware renderer
+// when possible, falling back to plain text for non-diagnostic errors. It
+// handles errors.Join aggregates by collecting all embedded DiagErrors.
+func renderVetErrors(w io.Writer, err error, format outputFormat, color colorMode) {
+	if format == formatText || format == formatUnset {
+		errorln(w, err)
+		return
+	}
+	var diags []diag.Diagnostic
+	collectDiagErrors(err, &diags)
+	if len(diags) == 0 {
+		errorln(w, err)
+		return
+	}
+	switch format {
+	case formatJSON:
+		_ = diag.RenderJSONStream(w, diags)
+	case formatSARIF:
+		_, _ = w.Write(diag.RenderSARIF(diags))
+	}
+}
+
+// collectDiagErrors recursively unwraps err (including errors.Join
+// aggregates) and appends every embedded diag.Diagnostic to dst.
+func collectDiagErrors(err error, dst *[]diag.Diagnostic) {
+	if err == nil {
+		return
+	}
+	var de *diag.DiagError
+	if errors.As(err, &de) {
+		*dst = append(*dst, de.D)
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, child := range joined.Unwrap() {
+			collectDiagErrors(child, dst)
+		}
+	}
+}
+
+type vetSummary struct {
+	Status       string   `json:"status"`
+	GlobalRules  []string `json:"global_rules"`
+	ProjectRules []string `json:"project_rules"`
+	Total        int      `json:"total"`
+}
+
+func renderVetSummaryJSON(w io.Writer, globalIDs, projectIDs []string) {
+	if globalIDs == nil {
+		globalIDs = []string{}
+	}
+	if projectIDs == nil {
+		projectIDs = []string{}
+	}
+	data, _ := json.Marshal(vetSummary{
+		Status:       "ok",
+		GlobalRules:  globalIDs,
+		ProjectRules: projectIDs,
+		Total:        len(globalIDs) + len(projectIDs),
+	})
+	data = append(data, '\n')
+	_, _ = w.Write(data)
+}
+
+// ruleIDs extracts the rule_id from each rule's then clause. Rules without
+// a then clause are omitted.
+func ruleIDs(rules []config.Rule) []string {
+	var ids []string
+	for _, r := range rules {
+		if r.Then != nil && r.Then.RuleID != "" {
+			ids = append(ids, r.Then.RuleID)
+		}
+	}
+	return ids
+}
+
+// matchSummaries converts evaluator matches into lightweight log entries.
+func matchSummaries(matches []evaluator.Match) []debuglog.MatchSummary {
+	if len(matches) == 0 {
+		return nil
+	}
+	out := make([]debuglog.MatchSummary, 0, len(matches))
+	for _, m := range matches {
+		s := debuglog.MatchSummary{Source: m.Rule.Source}
+		if m.Action != nil {
+			s.RuleID = m.Action.RuleID
+			s.Kind = string(m.Action.Kind)
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// exitWithLog records the exit code and closes the recorder, then returns
+// the exit code for use in a return statement.
+func exitWithLog(rec *debuglog.Recorder, code int) int {
+	rec.Close(code)
+	return code
 }
