@@ -165,9 +165,11 @@ func lintWhen(ruleName string, ruleNames, helperDefNames map[string]struct{}, wh
 			walk(node.Value)
 			return
 		case *ast.LetClause:
-			walk(node.Expr)
+			firstErr = letInWhenDiag(ruleName, node)
 			return
 		case *ast.ForClause:
+			// ForClause is walked only via Comprehension; rejection
+			// happens at the Comprehension level (E0507).
 			walk(node.Source)
 			return
 		case *ast.Alias:
@@ -216,10 +218,7 @@ func lintWhen(ruleName string, ruleNames, helperDefNames map[string]struct{}, wh
 			}
 			return
 		case *ast.Comprehension:
-			for _, clause := range node.Clauses {
-				walk(clause)
-			}
-			walk(node.Value)
+			firstErr = comprehensionInWhenDiag(ruleName, node)
 			return
 		case *ast.IfClause:
 			walk(node.Condition)
@@ -442,6 +441,53 @@ func unboundDiag(ruleName string, id *ast.Ident, ruleNames, helperDefNames map[s
 	}
 	if msg := suggest("", id.Name, local, StdlibIndex()); msg != "" {
 		d.Notes = append(d.Notes, diag.Label{Pos: id.Pos(), Len: len(id.Name), Msg: msg})
+	}
+	return diag.NewDiagError(d, nil, nil)
+}
+
+// letInWhenDiag builds an E0506 DiagError for a `let` clause inside `when`.
+func letInWhenDiag(ruleName string, lc *ast.LetClause) error {
+	d := diag.Diagnostic{
+		Code:     diag.E0506.Code,
+		Severity: diag.SeverityError,
+		Title: "rule " + quote(ruleName) +
+			": `let` clause in `when` binds the pattern type, not the input value",
+		Primary: diag.Label{
+			Pos: lc.Pos(),
+			Len: 3, // "let"
+			Msg: "`let` in `when` of rule " + quote(ruleName),
+		},
+		Help: diag.E0506.Help,
+	}
+	return diag.NewDiagError(d, nil, nil)
+}
+
+// comprehensionInWhenDiag builds an E0507 DiagError for an `if` or `for`
+// comprehension inside `when`.
+func comprehensionInWhenDiag(ruleName string, comp *ast.Comprehension) error {
+	kind := "comprehension"
+	kwLen := 3
+	if len(comp.Clauses) > 0 {
+		switch comp.Clauses[0].(type) {
+		case *ast.IfClause:
+			kind = "`if` guard"
+			kwLen = 2
+		case *ast.ForClause:
+			kind = "`for` loop"
+			kwLen = 3
+		}
+	}
+	d := diag.Diagnostic{
+		Code:     diag.E0507.Code,
+		Severity: diag.SeverityError,
+		Title: "rule " + quote(ruleName) +
+			": " + kind + " in `when` evaluates against the pattern, not the input",
+		Primary: diag.Label{
+			Pos: comp.Pos(),
+			Len: kwLen,
+			Msg: kind + " in `when` of rule " + quote(ruleName),
+		},
+		Help: diag.E0507.Help,
 	}
 	return diag.NewDiagError(d, nil, nil)
 }

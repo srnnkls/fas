@@ -194,6 +194,29 @@ different packages the merge is ambiguous; rename them to one shared package,
 or split the divergent files into their own directory.`,
 }
 
+var E0506 = CodeInfo{
+	Code: "E0506",
+	Help: `A ` + "`let`" + ` clause inside ` + "`when`" + ` binds the pattern's type, not the input's value.
+
+` + "`let cmd = tool_input.command`" + ` names the ` + "`command`" + ` path inside the pattern,
+which is a type constraint (e.g. ` + "`string`" + `), not the concrete value from
+the input. A downstream constraint like ` + "`cmd & =~\"^git\"`" + ` then matches
+every input whose command is a string, not just git commands. Remove
+the ` + "`let`" + ` and place the constraint directly on the field.`,
+}
+
+var E0507 = CodeInfo{
+	Code: "E0507",
+	Help: `A comprehension (` + "`if`" + ` or ` + "`for`" + `) inside ` + "`when`" + ` evaluates against the pattern, not the input.
+
+` + "`if list.Contains(flags, \"--force\") { ... }`" + ` evaluates the guard against
+the pattern's own ` + "`flags`" + ` field, which is a type (e.g. ` + "`[...string]`" + `),
+not a concrete list from the input. The guarded fields either always
+appear or never appear, regardless of what the input carries. Remove
+the comprehension and express the constraint directly as a field
+pattern (e.g. ` + "`flags: list.MatchN(>0, =~\"--force\")`" + `).`,
+}
+
 // E06xx — lattice binding.
 
 var E0601 = CodeInfo{
@@ -209,7 +232,7 @@ diverged — e.g. ` + "`command`" + ` was ` + "`\"cat\"`" + ` while ` + "`target
 
 // CodesInScopeV1 freezes the code count for this scope; bumping it requires
 // a deliberate design review to justify adding a new code.
-const CodesInScopeV1 = 18
+const CodesInScopeV1 = 20
 
 // codeRegistry maps each stable code string to its CodeInfo.
 // Built at package init so that duplicate codes fail loudly rather
@@ -219,7 +242,7 @@ var codeRegistry = buildCodeRegistry(
 	E0201, E0202, E0203,
 	E0301, E0302, E0303, E0304,
 	E0401, E0402,
-	E0501, E0502, E0503, E0504, E0505,
+	E0501, E0502, E0503, E0504, E0505, E0506, E0507,
 	E0601,
 )
 

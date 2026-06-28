@@ -28,6 +28,9 @@ Fixture rules live under `tests/diagnostics_rules*/`:
   Provenance footer.
 - `tests/diagnostics_rules_broken_scope/` — load-time E0501.
 - `tests/diagnostics_rules_broken_cross/` — load-time E0502.
+- `tests/diagnostics_rules_broken_let/` — load-time E0506 (`let` in `when`).
+- `tests/diagnostics_rules_broken_if/` — load-time E0507 (`if` comprehension
+  in `when`).
 - `tests/diagnostics_rules_bind/` — E0601 (`BindingMismatch`, `@bind`
   variable equality).
 
@@ -389,6 +392,79 @@ Rules are isolated units; cross-rule references would couple their
 evaluation order and break composability. If the shared value is
 genuinely common, extract it as a hidden sibling (leading
 underscore) at the file top level where both rules can see it.
+
+[1]
+```
+
+## E0506 — `let` clause in `when` (load-time)
+
+`tests/diagnostics_rules_broken_let/let_in_when.cue` uses a `let` clause to
+name an input-derived path inside `when`. The `let` binds the pattern's type
+(e.g. `string`), not the input's concrete value, so any downstream constraint
+silently misfires. The loader rejects the directory with an E0506 diagnostic
+and the CLI exits 1.
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "ls"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/diagnostics_rules_broken_let --global-config /tmp/fas-nonexistent-global 2>&1
+error[E0506]: rule "let_rule": `let` clause in `when` binds the pattern type, not the input value
+  --> tests/diagnostics_rules_broken_let/let_in_when.cue:7:3
+  |
+7 |         let cmd = tool_input.command
+  |         ^^^ `let` in `when` of rule "let_rule"
+  |
+  = help: A `let` clause inside `when` binds the pattern's type, not the input's value.
+
+`let cmd = tool_input.command` names the `command` path inside the pattern,
+which is a type constraint (e.g. `string`), not the concrete value from
+the input. A downstream constraint like `cmd & =~"^git"` then matches
+every input whose command is a string, not just git commands. Remove
+the `let` and place the constraint directly on the field.
+
+[1]
+```
+
+## E0507 — `if` comprehension in `when` (load-time)
+
+`tests/diagnostics_rules_broken_if/if_in_when.cue` uses an `if` comprehension
+to conditionally add constraints inside `when`. The guard evaluates against the
+pattern's own types, not the input's values, so the gated fields either always
+appear or never appear. The loader rejects the directory with an E0507
+diagnostic and the CLI exits 1.
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "ls"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/diagnostics_rules_broken_if --global-config /tmp/fas-nonexistent-global 2>&1
+error[E0507]: rule "if_rule": `if` guard in `when` evaluates against the pattern, not the input
+  --> tests/diagnostics_rules_broken_if/if_in_when.cue:12:4
+   |
+12 |             if list.Contains(flags, "--force") {
+   |             ^^ `if` guard in `when` of rule "if_rule"
+   |
+   = help: A comprehension (`if` or `for`) inside `when` evaluates against the pattern, not the input.
+
+`if list.Contains(flags, "--force") { ... }` evaluates the guard against
+the pattern's own `flags` field, which is a type (e.g. `[...string]`),
+not a concrete list from the input. The guarded fields either always
+appear or never appear, regardless of what the input carries. Remove
+the comprehension and express the constraint directly as a field
+pattern (e.g. `flags: list.MatchN(>0, =~"--force")`).
 
 [1]
 ```

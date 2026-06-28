@@ -77,10 +77,12 @@ and unify at schema time, but at match time they do not reflect input content:
   that relationship.
 - **`let` bindings over input-derived values.** `let cmd = tool_input.command`
   names a path inside the pattern; it does not bind the input's command.
-- **Input-dependent `if` clauses inside `when`.** `if list.Contains(flags, "x")
-  { command: =~"..." }` evaluates the `if` against the pattern's own `flags`
-  (which is a type, not a value), so the gated fields do not appear
-  conditionally based on the input.
+  **Rejected at load time (E0506).**
+- **Input-dependent `if`/`for` clauses inside `when`.** `if list.Contains(flags,
+  "x") { command: =~"..." }` evaluates the `if` against the pattern's own
+  `flags` (which is a type, not a value), so the gated fields do not appear
+  conditionally based on the input. `for` comprehensions have the same problem.
+  **Rejected at load time (E0507).**
 - **Computed hidden count fields.** `_n: len(flags)` with `_n: >=2` —
   `flags: [...string]` materialises as `[]` at pattern level, so `_n` is `0`
   regardless of input. Bare `len` lint-passes, but `len` over an input-derived
@@ -112,6 +114,11 @@ Express these via:
 - **Unbound identifiers.** Any ident that resolves to none of a stdlib import
   binding, a locally-visible hidden sibling (`_foo`), a curated universe builtin,
   or a bare sibling top-level rule struct.
+- **`let` clauses inside `when`.** `let` binds the pattern's type, not the
+  input's value; the resulting constraint silently misfires. E0506.
+- **Comprehensions (`if`/`for`) inside `when`.** Guards and iterators evaluate
+  against the pattern's own types, not the input's values, so guarded fields
+  either always or never appear regardless of input. E0507.
 
 Imports, predeclared names (`string`, `int`, `number`, …), hidden local
 helpers, and bare references to sibling top-level rule structs all pass. The
