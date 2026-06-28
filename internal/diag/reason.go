@@ -76,6 +76,17 @@ type KeyMissing struct {
 
 func (KeyMissing) reason() {}
 
+// BindingMismatch reports that two or more fields annotated with the same
+// @bind variable resolved to different concrete values in the input. The
+// lattice requires all paths sharing a variable to unify at the same point.
+type BindingMismatch struct {
+	Variable string
+	Paths    []string
+	Values   []string
+}
+
+func (BindingMismatch) reason() {}
+
 // Provenance is a metadata Reason surfacing where a constraint was
 // introduced, used on footer labels to show cross-file origin.
 type Provenance struct {

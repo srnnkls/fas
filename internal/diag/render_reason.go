@@ -79,6 +79,8 @@ func renderReasonText(r Reason, labelMsg string) reasonRender {
 		return renderDisjunctionFailed(v, labelMsg)
 	case KeyMissing:
 		return renderKeyMissing(v)
+	case BindingMismatch:
+		return renderBindingMismatch(v)
 	case Provenance:
 		return renderProvenance(v)
 	}
@@ -260,6 +262,21 @@ func renderKeyMissing(v KeyMissing) reasonRender {
 		out.footers = []string{fmt.Sprintf("= hint: did you mean %q?", v.Suggestion)}
 	}
 	return out
+}
+
+// renderBindingMismatch emits a primary message naming the variable and
+// a footer listing each path with its resolved value.
+func renderBindingMismatch(v BindingMismatch) reasonRender {
+	msg := fmt.Sprintf("@bind(%s): values differ", v.Variable)
+	var footers []string
+	for i, p := range v.Paths {
+		val := ""
+		if i < len(v.Values) {
+			val = v.Values[i]
+		}
+		footers = append(footers, fmt.Sprintf("= note: %s = %s", p, val))
+	}
+	return reasonRender{msg: msg, footers: footers}
 }
 
 // renderProvenance emits the cross-file origin footer. Invalid spans drop
