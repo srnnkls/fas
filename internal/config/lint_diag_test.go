@@ -532,3 +532,129 @@ len_rule: {
 		t.Errorf("primary span should anchor at `len` keyword; got %q", got)
 	}
 }
+
+// TestLoadRules_LintDiag_LetInWhen_EmitsE0506 pins that a `let` clause inside
+// `when` surfaces as E0506 with the primary span anchored at the `let` keyword.
+func TestLoadRules_LintDiag_LetInWhen_EmitsE0506(t *testing.T) {
+	const src = `package rules
+
+let_rule: {
+	when: {
+		let cmd = tool_input.command
+		tool_input: command: string
+		_check: cmd & =~"^git"
+	}
+	then: deny: {
+		rule_id: "l"
+		reason:  "nope"
+	}
+}
+`
+	path := lintFixture(t, "let_when", src)
+	dir := filepath.Dir(path)
+
+	_, err := config.LoadRules(dir)
+	if err == nil {
+		t.Fatal("expected let in when to be rejected, got nil error")
+	}
+
+	de, ok := recoverDiag(t, err)
+	if !ok {
+		t.Fatalf("expected err to carry *diag.DiagError via errors.As; got: %v", err)
+	}
+	if de.D.Code != "E0506" {
+		t.Errorf("diagnostic Code = %q, want %q", de.D.Code, "E0506")
+	}
+	if got := tokenAtPos(t, de.D.Primary.Pos, 3); got != "let" {
+		t.Errorf("primary span should anchor at `let` keyword; got %q", got)
+	}
+	if de.D.Help == "" {
+		t.Errorf("E0506 diagnostic should carry a Help string; got empty")
+	}
+}
+
+// TestLoadRules_LintDiag_IfInWhen_EmitsE0507 pins that an `if` comprehension
+// inside `when` surfaces as E0507 with the primary span anchored at the `if`
+// keyword.
+func TestLoadRules_LintDiag_IfInWhen_EmitsE0507(t *testing.T) {
+	const src = `package rules
+
+import "list"
+
+if_rule: {
+	when: {
+		tool_input: parsed: {
+			flags: [...string]
+			if list.Contains(flags, "--force") {
+				commands: [...=~"^git$"]
+			}
+		}
+	}
+	then: deny: {
+		rule_id: "i"
+		reason:  "nope"
+	}
+}
+`
+	path := lintFixture(t, "if_when", src)
+	dir := filepath.Dir(path)
+
+	_, err := config.LoadRules(dir)
+	if err == nil {
+		t.Fatal("expected if comprehension in when to be rejected, got nil error")
+	}
+
+	de, ok := recoverDiag(t, err)
+	if !ok {
+		t.Fatalf("expected err to carry *diag.DiagError via errors.As; got: %v", err)
+	}
+	if de.D.Code != "E0507" {
+		t.Errorf("diagnostic Code = %q, want %q", de.D.Code, "E0507")
+	}
+	if got := tokenAtPos(t, de.D.Primary.Pos, 2); got != "if" {
+		t.Errorf("primary span should anchor at `if` keyword; got %q", got)
+	}
+	if !strings.Contains(de.D.Title, "`if` guard") {
+		t.Errorf("E0507 title should mention `if` guard; got %q", de.D.Title)
+	}
+}
+
+// TestLoadRules_LintDiag_ForInWhen_EmitsE0507 pins that a `for` comprehension
+// inside `when` surfaces as E0507.
+func TestLoadRules_LintDiag_ForInWhen_EmitsE0507(t *testing.T) {
+	const src = `package rules
+
+for_rule: {
+	when: {
+		tool_input: parsed: {
+			flags: [...string]
+			for f in flags {
+				(f): true
+			}
+		}
+	}
+	then: deny: {
+		rule_id: "f"
+		reason:  "nope"
+	}
+}
+`
+	path := lintFixture(t, "for_when", src)
+	dir := filepath.Dir(path)
+
+	_, err := config.LoadRules(dir)
+	if err == nil {
+		t.Fatal("expected for comprehension in when to be rejected, got nil error")
+	}
+
+	de, ok := recoverDiag(t, err)
+	if !ok {
+		t.Fatalf("expected err to carry *diag.DiagError via errors.As; got: %v", err)
+	}
+	if de.D.Code != "E0507" {
+		t.Errorf("diagnostic Code = %q, want %q", de.D.Code, "E0507")
+	}
+	if !strings.Contains(de.D.Title, "`for` loop") {
+		t.Errorf("E0507 title should mention `for` loop; got %q", de.D.Title)
+	}
+}
