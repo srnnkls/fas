@@ -9,7 +9,7 @@ scrut test -w . tests/policies.md
 ```
 
 The `--global-config /tmp/fas-nonexistent-global` flag points at a path that does not exist so host-level
-rules never leak into the suite; only rules under `tests/policies/` participate.
+rules never leak into the suite; only rules under `tests/policies/` or `tests/policies_bind/` participate.
 
 ## System Path Protection
 
@@ -816,5 +816,70 @@ $ cat << 'EOF' |
 > }
 > EOF
 > fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
+```
+
+## Binding Variables (`@bind`)
+
+`@bind(X)` annotations on `when` fields declare that two input paths sharing
+the same variable must resolve to equal values. The structural pattern is
+checked first via CUE subsumption; the binding equality check runs second. If
+the pattern matches but the bound values differ, the rule does not fire.
+
+### Denies when command name equals first target
+
+`cat cat` produces `parsed.commands[0] = "cat"` and `parsed.targets[0] = "cat"`.
+Both paths are bound to `@bind(X, 0)`, and the values are equal — the rule fires.
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "cat cat"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/policies_bind --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Command equals its own first target"}} (no-eol)
+```
+
+### Allows when command name differs from first target
+
+`cat /etc/passwd` produces `parsed.commands[0] = "cat"` and
+`parsed.targets[0] = "/etc/passwd"`. The binding values differ — the rule
+does not fire.
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "cat /etc/passwd"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/policies_bind --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
+```
+
+### Allows non-Bash tools (structural mismatch before binding check)
+
+A `Read` event fails the subsumption check against `tool.#Bash` before
+bindings are even evaluated — the rule does not fire.
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Read",
+>   "tool_input": {"file_path": "/tmp/f"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/policies_bind --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```
