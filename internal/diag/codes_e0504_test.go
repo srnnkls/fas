@@ -21,7 +21,7 @@ func TestE0504_Registered(t *testing.T) {
 // TestE0504_BumpsCodesInScope pins that registering E0504 advances the frozen
 // in-scope code count from 16 to 17 (E0505 is already counted).
 func TestE0504_BumpsCodesInScope(t *testing.T) {
-	if CodesInScopeV1 != 18 {
-		t.Errorf("CodesInScopeV1 = %d, want 18 after E0504 joins the registry", CodesInScopeV1)
+	if CodesInScopeV1 != 19 {
+		t.Errorf("CodesInScopeV1 = %d, want 19 after E0504 joins the registry", CodesInScopeV1)
 	}
 }

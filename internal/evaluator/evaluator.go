@@ -70,6 +70,12 @@ func Evaluate(rules []config.Rule, input cue.Value) ([]Match, []diag.Diagnostic,
 		}
 
 		if rule.When.Subsume(input, cue.Final(), cue.Schema()) == nil {
+			if bf := checkBindings(rule.Bindings, input); bf != nil {
+				if explainEnabled() {
+					diags = append(diags, bindingDiagnostic(rule, bf))
+				}
+				continue
+			}
 			matches = append(matches, Match{Rule: rule, Action: rule.Then})
 			continue
 		}

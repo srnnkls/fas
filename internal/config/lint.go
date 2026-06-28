@@ -292,6 +292,34 @@ func checkSelector(ruleName string, ruleNames, helperDefNames map[string]struct{
 	return checkIdent(ruleName, ruleNames, helperDefNames, rootIdent)
 }
 
+// predeclaredTypes are CUE predeclared type identifiers that the standalone
+// parser does not mark via IsPredeclared() (the sentinel is only set by the
+// full compiler pipeline). Without this set they false-positive as E0501.
+var predeclaredTypes = map[string]struct{}{
+	"_":      {},
+	"string": {},
+	"bytes":  {},
+	"bool":   {},
+	"int":    {},
+	"float":  {},
+	"number": {},
+	"null":   {},
+	"uint":   {},
+	"uint8":  {},
+	"uint16": {},
+	"uint32": {},
+	"uint64": {},
+	"uint128": {},
+	"int8":   {},
+	"int16":  {},
+	"int32":  {},
+	"int64":  {},
+	"int128": {},
+	"float32":  {},
+	"float64":  {},
+	"rune": {},
+}
+
 // permittedUniverseBuiltins are CUE universe functions allowed bare in `when`.
 // The parser never binds universe builtins to an ast.Node and IsPredeclared()
 // recognises only type/range names, so absent this set they false-positive as
@@ -329,9 +357,10 @@ func checkIdent(ruleName string, ruleNames, helperDefNames map[string]struct{}, 
 		// will see a struct value and unify normally.
 		return nil
 	}
-	// Predeclared identifiers (string, int, bool, etc.) and top-level builtins
-	// have IsPredeclared() true. Let them through.
 	if id.IsPredeclared() {
+		return nil
+	}
+	if _, ok := predeclaredTypes[name]; ok {
 		return nil
 	}
 	if _, ok := permittedUniverseBuiltins[name]; ok {
