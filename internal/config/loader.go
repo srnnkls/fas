@@ -74,6 +74,11 @@ type Rule struct {
 	WhenMap    map[string]any `json:",omitempty"`
 	Then       *Action
 	Meta       *Meta
+	// Bindings holds @bind variable annotations extracted from the when AST.
+	// Nil for rules without bindings (the common case). The evaluator checks
+	// bindings post-Subsume: all fields sharing a variable name must resolve
+	// to equal concrete values in the input.
+	Bindings []Binding `json:",omitempty"`
 }
 
 // RulesModuleRoot is the synthetic module-root directory used by the loader.
@@ -842,6 +847,11 @@ func decodeRule(v cue.Value, fieldVal cue.Value) (Rule, error) {
 		if original := fieldVal.LookupPath(cue.ParsePath("when")); original.Exists() {
 			if expr, ok := whenSyntax(original); ok {
 				out.WhenSyntax = expr
+				bindings, err := extractBindings(expr)
+				if err != nil {
+					return Rule{}, fmt.Errorf("extract @bind: %w", err)
+				}
+				out.Bindings = bindings
 			}
 		}
 		// Best-effort debug map. Non-concrete constraints (e.g. regex

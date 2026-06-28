@@ -205,9 +205,22 @@ it cannot react to the input's actual list length. Use ` + "`list.MatchN`" + `
 instead: ` + "`flags: list.MatchN(>=2, string)`" + `.`,
 }
 
+// E06xx — lattice binding.
+
+var E0601 = CodeInfo{
+	Code: "E0601",
+	Help: `Fields annotated with the same @bind variable resolved to different values.
+
+Two or more fields in ` + "`when`" + ` carry ` + "`@bind(X)`" + ` with the same variable
+name. At match time, the concrete input values at those paths must be
+equal (they must unify to the same point in the lattice). This diagnostic
+fires when the input structurally matched the pattern but the bound values
+diverged — e.g. ` + "`command`" + ` was ` + "`\"cat\"`" + ` while ` + "`targets[0]`" + ` was ` + "`\"dog\"`" + `.`,
+}
+
 // CodesInScopeV1 freezes the code count for this scope; bumping it requires
 // a deliberate design review to justify adding a new code.
-const CodesInScopeV1 = 18
+const CodesInScopeV1 = 19
 
 // codeRegistry maps each stable code string to its CodeInfo.
 // Built at package init so that duplicate codes fail loudly rather
@@ -218,6 +231,7 @@ var codeRegistry = buildCodeRegistry(
 	E0301, E0302, E0303, E0304,
 	E0401, E0402,
 	E0501, E0502, E0503, E0504, E0505, E0508,
+	E0601,
 )
 
 func buildCodeRegistry(entries ...CodeInfo) map[string]CodeInfo {

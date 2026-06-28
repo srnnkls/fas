@@ -42,6 +42,8 @@ func expectedCodes() []expectedCode {
 		{"E0504", "scope/binding", func() diag.CodeInfo { return diag.E0504 }},
 		{"E0505", "scope/binding", func() diag.CodeInfo { return diag.E0505 }},
 		{"E0508", "scope/binding", func() diag.CodeInfo { return diag.E0508 }},
+		// E06xx — lattice binding
+		{"E0601", "lattice binding", func() diag.CodeInfo { return diag.E0601 }},
 	}
 }
 
@@ -74,7 +76,7 @@ func TestCodeStringMatchesVariableName(t *testing.T) {
 // Codes fall within the documented ranges defined by the design.
 // E01xx → rule load, E02xx → path resolution, etc.
 func TestCodesFallWithinDocumentedRanges(t *testing.T) {
-	pattern := regexp.MustCompile(`^E(0[1-5])\d{2}$`)
+	pattern := regexp.MustCompile(`^E(0[1-6])\d{2}$`)
 	for _, ec := range expectedCodes() {
 		t.Run(ec.code, func(t *testing.T) {
 			if !pattern.MatchString(ec.code) {
@@ -185,7 +187,7 @@ func TestCodeInfoZeroValue(t *testing.T) {
 
 // Asserts that this scope adds no new error codes.
 func TestNoNewCodesInScope(t *testing.T) {
-	const frozen = 18
+	const frozen = 19
 	if got := diag.CodesInScopeV1; got != frozen {
 		t.Errorf("diag.CodesInScopeV1 = %d, want %d", got, frozen)
 	}
