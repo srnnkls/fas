@@ -821,42 +821,42 @@ $ cat << 'EOF' |
 
 ## Binding Variables (`@bind`)
 
-`@bind(X)` annotations on `when` fields declare that two input paths sharing
+`@bind(Var)` annotations on `when` fields declare that two input paths sharing
 the same variable must resolve to equal values. The structural pattern is
 checked first via CUE subsumption; the binding equality check runs second. If
 the pattern matches but the bound values differ, the rule does not fire.
 
-### Denies when command name equals first target
+### Denies self-referencing copy (source == destination)
 
-`cat cat` produces `parsed.commands[0] = "cat"` and `parsed.targets[0] = "cat"`.
-Both paths are bound to `@bind(X, 0)`, and the values are equal — the rule fires.
+`cp file.txt file.txt` produces `parsed.targets = ["file.txt", "file.txt"]`.
+Both sub-indices are bound to `@bind(Path)`, and the values are equal — the
+rule fires.
 
 ```scrut
 $ cat << 'EOF' |
 > {
 >   "hook_event_name": "PreToolUse",
 >   "tool_name": "Bash",
->   "tool_input": {"command": "cat cat"},
+>   "tool_input": {"command": "cp file.txt file.txt"},
 >   "session_id": "test",
 >   "cwd": "/tmp"
 > }
 > EOF
 > fas eval --harness claude --config tests/policies_bind --global-config /tmp/fas-nonexistent-global 2>/dev/null
-{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Command equals its own first target"}} (no-eol)
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Source and destination are the same file"}} (no-eol)
 ```
 
-### Allows when command name differs from first target
+### Allows move with different source and destination
 
-`cat /etc/passwd` produces `parsed.commands[0] = "cat"` and
-`parsed.targets[0] = "/etc/passwd"`. The binding values differ — the rule
-does not fire.
+`mv src.go dst.go` produces `parsed.targets = ["src.go", "dst.go"]`. The
+binding values differ — the rule does not fire.
 
 ```scrut
 $ cat << 'EOF' |
 > {
 >   "hook_event_name": "PreToolUse",
 >   "tool_name": "Bash",
->   "tool_input": {"command": "cat /etc/passwd"},
+>   "tool_input": {"command": "mv src.go dst.go"},
 >   "session_id": "test",
 >   "cwd": "/tmp"
 > }

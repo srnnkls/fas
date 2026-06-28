@@ -5,18 +5,16 @@ import (
 	"github.com/srnnkls/fas/cue/tool"
 )
 
-// Deny when the first parsed target exactly equals the parsed command name.
-// Exercises @bind path equality at the policy level.
-command_is_target: {
+// Deny when a move or copy command's source and destination are the same file.
+// Exercises @bind path equality at the policy level: targets[0] must equal
+// targets[1] for the rule to fire.
+self_copy: {
 	when: hook.#PreToolUse & tool.#Bash & {
-		tool_input: parsed: {
-			commands: [...string] @bind(X, 0)
-			targets:  [...string] @bind(X, 0)
-		}
+		tool_input: parsed: targets: [...string] @bind(Path, 0) @bind(Path, 1)
 	}
 	then: deny: {
-		rule_id:  "command-is-target"
-		reason:   "Command equals its own first target"
+		rule_id:  "self-copy"
+		reason:   "Source and destination are the same file"
 		severity: "LOW"
 	}
 }

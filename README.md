@@ -100,10 +100,21 @@ fas eval --harness claude < event.json
 
 Rules can declare that two input paths must carry equal values using `@bind`
 attributes. Annotate fields in `when` with `@bind(VarName)` — any two fields
-sharing the same variable must resolve to the same concrete value in the input:
+sharing the same variable must resolve to the same concrete value in the input.
+
+CUE subsumption checks a pattern against the input but cannot express "field A
+must equal field B" — the pattern doesn't see the input's own values during
+matching. `@bind` fills that gap: the structural pattern is checked first, then
+a second pass verifies that all paths sharing a variable resolved to the same
+concrete value.
+
+### Self-referencing copy/move
+
+Block `cp` or `mv` when source and destination are the same file. Two
+`@bind(Path, N)` annotations on the same field select different list elements:
 
 ```cue
-// .fas/rules/self_reference.cue
+// .fas/rules/self_copy.cue
 package rules
 
 import (
@@ -111,29 +122,48 @@ import (
 	"github.com/srnnkls/fas/cue/tool"
 )
 
-self_reference: {
+self_copy: {
 	when: hook.#PreToolUse & tool.#Bash & {
-		tool_input: parsed: {
-			commands: [...string] @bind(X, 0)
-			targets:  [...string] @bind(X, 0)
-		}
+		tool_input: parsed: targets: [...string] @bind(Path, 0) @bind(Path, 1)
 	}
 	then: deny: {
-		rule_id:  "self-reference"
-		reason:   "Command name equals its own first target"
+		rule_id:  "self-copy"
+		reason:   "Source and destination are the same file"
 		severity: "LOW"
 	}
 }
 ```
 
-The structural pattern is checked first via CUE subsumption; the binding
-equality check runs as a second pass. A single variable referenced once is a
-capture (no constraint). Two or more fields sharing a variable must all unify
-to the same concrete value.
+`cp file.txt file.txt` fires (targets[0] == targets[1]); `mv a.go b.go` does
+not (targets differ).
+
+### Deleting the working directory
+
+Bind a top-level field (`cwd`) against a nested field (`parsed.targets[0]`):
+
+```cue
+rm_cwd: {
+	when: hook.#PreToolUse & tool.#Bash & {
+		cwd: string @bind(Dir)
+		tool_input: parsed: targets: [...string] @bind(Dir, 0)
+	}
+	then: deny: {
+		rule_id:  "rm-cwd"
+		reason:   "Refusing to delete the working directory"
+		severity: "HIGH"
+	}
+}
+```
+
+`rm -rf /home/user/project` when `cwd` is `/home/user/project` fires;
+`rm -rf /tmp/junk` from the same directory does not.
+
+### Syntax
 
 `@bind(Var, SubPath)` supports an optional sub-path — typically a list index
 (`@bind(X, 0)` selects the first element). Variable names must start with an
-uppercase letter.
+uppercase letter. A variable referenced only once is a capture with no
+constraint.
 
 When `--explain` is enabled and a binding fails, *fas* emits an E0601
 diagnostic showing each path and its resolved value.

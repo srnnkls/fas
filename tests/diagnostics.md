@@ -590,29 +590,29 @@ error[E0201]: key not found
 
 ## E0601 — binding variable mismatch
 
-The `bind_eq` rule annotates `parsed.commands` and `parsed.targets` with
-`@bind(X, 0)`, declaring that the first command name must equal the first
-target. When the input carries `cat /etc/passwd` (commands[0]="cat",
-targets[0]="/etc/passwd") subsumption passes but the binding check fails,
-producing an E0601 diagnostic with `= note:` footers showing each path's
-resolved value.
+The `bind_eq` rule annotates `parsed.targets` with `@bind(Path, 0)` and
+`@bind(Path, 1)`, declaring that the source (first target) must equal the
+destination (second target) — a self-referencing copy/move. When the input
+carries `mv src.go dst.go` (targets[0]="src.go", targets[1]="dst.go")
+subsumption passes but the binding check fails, producing an E0601
+diagnostic with `= note:` footers showing each path's resolved value.
 
 ```scrut
 $ cat << 'EOF' |
 > {
 >   "hook_event_name": "PreToolUse",
 >   "tool_name": "Bash",
->   "tool_input": {"command": "cat /etc/passwd"},
+>   "tool_input": {"command": "mv src.go dst.go"},
 >   "session_id": "test",
 >   "cwd": "/tmp"
 > }
 > EOF
 > fas explain bind-eq --config tests/diagnostics_rules_bind --global-config /tmp/fas-nonexistent-global 2>&1
 error[E0601]: binding variable mismatch
-  --> tests/diagnostics_rules_bind/bind_eq.cue:11:26
+  --> tests/diagnostics_rules_bind/bind_eq.cue:10:44
    |
-11 |             commands: [...string] @bind(X, 0)
-   |                                   ^^^^^^^^ @bind(X): values differ
+10 |         tool_input: parsed: targets: [...string] @bind(Path, 0) @bind(Path, 1)
+   |                                                  ^^^^^^^^^^^ @bind(Path): values differ
    |
    = help: Fields annotated with the same @bind variable resolved to different values.
 
@@ -621,20 +621,20 @@ name. At match time, the concrete input values at those paths must be
 equal (they must unify to the same point in the lattice). This diagnostic
 fires when the input structurally matched the pattern but the bound values
 diverged — e.g. `command` was `"cat"` while `targets[0]` was `"dog"`.
-   = note: tool_input.parsed.commands[0] = "cat"
-   = note: tool_input.parsed.targets[0] = "/etc/passwd"
+   = note: tool_input.parsed.targets[0] = "src.go"
+   = note: tool_input.parsed.targets[1] = "dst.go"
 [1]
 ```
 
-When the first command name and the first target are the same the binding
-is satisfied and the rule fires silently (exit 0, no diagnostic output).
+When source and destination are the same (`mv src.go src.go`) the binding is
+satisfied and the rule fires silently (exit 0, no diagnostic output).
 
 ```scrut
 $ cat << 'EOF' |
 > {
 >   "hook_event_name": "PreToolUse",
 >   "tool_name": "Bash",
->   "tool_input": {"command": "cat cat"},
+>   "tool_input": {"command": "mv src.go src.go"},
 >   "session_id": "test",
 >   "cwd": "/tmp"
 > }
