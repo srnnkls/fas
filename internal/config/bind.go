@@ -50,6 +50,15 @@ func extractBindings(whenExpr ast.Expr) ([]Binding, error) {
 }
 
 func walkBindings(expr ast.Expr, path []string, out *[]Binding) error {
+	switch node := expr.(type) {
+	case *ast.BinaryExpr:
+		if err := walkBindings(node.X, path, out); err != nil {
+			return err
+		}
+		return walkBindings(node.Y, path, out)
+	case *ast.ParenExpr:
+		return walkBindings(node.X, path, out)
+	}
 	st, ok := expr.(*ast.StructLit)
 	if !ok {
 		return nil

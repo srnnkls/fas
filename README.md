@@ -96,6 +96,48 @@ on stdin and writes the response on stdout:
 fas eval --harness claude < event.json
 ```
 
+## Binding variables (`@bind`)
+
+Rules can declare that two input paths must carry equal values using `@bind`
+attributes. Annotate fields in `when` with `@bind(VarName)` — any two fields
+sharing the same variable must resolve to the same concrete value in the input:
+
+```cue
+// .fas/rules/self_reference.cue
+package rules
+
+import (
+	"github.com/srnnkls/fas/cue/hook"
+	"github.com/srnnkls/fas/cue/tool"
+)
+
+self_reference: {
+	when: hook.#PreToolUse & tool.#Bash & {
+		tool_input: parsed: {
+			commands: [...string] @bind(X, 0)
+			targets:  [...string] @bind(X, 0)
+		}
+	}
+	then: deny: {
+		rule_id:  "self-reference"
+		reason:   "Command name equals its own first target"
+		severity: "LOW"
+	}
+}
+```
+
+The structural pattern is checked first via CUE subsumption; the binding
+equality check runs as a second pass. A single variable referenced once is a
+capture (no constraint). Two or more fields sharing a variable must all unify
+to the same concrete value.
+
+`@bind(Var, SubPath)` supports an optional sub-path — typically a list index
+(`@bind(X, 0)` selects the first element). Variable names must start with an
+uppercase letter.
+
+When `--explain` is enabled and a binding fails, *fas* emits an E0601
+diagnostic showing each path and its resolved value.
+
 ## Organizing rules
 
 A rules directory is loaded as CUE **packages**, recursively. Each directory
