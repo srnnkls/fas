@@ -28,6 +28,7 @@ Fixture rules live under `tests/diagnostics_rules*/`:
   Provenance footer.
 - `tests/diagnostics_rules_broken_scope/` — load-time E0501.
 - `tests/diagnostics_rules_broken_cross/` — load-time E0502.
+- `tests/diagnostics_rules_broken_len/` — load-time E0508 (`len()` in `when`).
 
 Each block redirects stderr into stdout (`2>&1`) so scrut — which only
 captures stdout by default — sees the diagnostic stream. The
@@ -387,6 +388,42 @@ Rules are isolated units; cross-rule references would couple their
 evaluation order and break composability. If the shared value is
 genuinely common, extract it as a hidden sibling (leading
 underscore) at the file top level where both rules can see it.
+
+[1]
+```
+
+## E0508 — `len()` in `when` (load-time)
+
+`tests/diagnostics_rules_broken_len/len_in_when.cue` uses `len(flags)` inside
+`when` to compute over an input-derived field. The pattern materialises
+`flags: [...string]` as `[]`, so `len(flags)` is always `0` — the count
+constraint is either a static conflict or vacuously true. The loader rejects
+the directory with an E0508 diagnostic and the CLI exits 1.
+
+```scrut
+$ cat << 'EOF' |
+> {
+>   "hook_event_name": "PreToolUse",
+>   "tool_name": "Bash",
+>   "tool_input": {"command": "ls"},
+>   "session_id": "test",
+>   "cwd": "/tmp"
+> }
+> EOF
+> fas eval --harness claude --config tests/diagnostics_rules_broken_len --global-config /tmp/fas-nonexistent-global 2>&1
+error[E0508]: rule "len_rule": `len` in `when` computes over the pattern, not the input
+  --> tests/diagnostics_rules_broken_len/len_in_when.cue:10:8
+   |
+10 |             _n: len(flags)
+   |                 ^^^ `len` in `when` of rule "len_rule"
+   |
+   = help: `len` inside `when` computes over the pattern's materialised value, not the input's.
+
+`_n: len(flags)` where `flags: [...string]` always yields `0` because the
+pattern materialises the open list as `[]`. A downstream constraint like
+`_n: >=2` either conflicts statically or is vacuously true — either way,
+it cannot react to the input's actual list length. Use `list.MatchN`
+instead: `flags: list.MatchN(>=2, string)`.
 
 [1]
 ```

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -1153,50 +1152,6 @@ func TestEvaluate_MatchIfBuiltinInWhen_Matches(t *testing.T) {
 			t.Fatalf("expected 0 matches for tool_name=Bat, got %d: %+v", len(got), got)
 		}
 	})
-}
-
-// `when` is checked by static subsumption, never evaluated against the input,
-// so `len` over an input-derived field materialises as `len([]) == 0` before
-// any payload is seen. The gate value is fixed at compile time and cannot react
-// to the input list length — this is the intended trap, not a bug to "fix".
-func TestEvaluate_LenOverInputDerivedField_InertUnderSubsumption(t *testing.T) {
-	dir := t.TempDir()
-	mustWriteRule(t, dir, "gate_zero.cue", `{
-		when: {
-			tool_input: parsed: flags: [...]
-			_n:    len(tool_input.parsed.flags)
-			_gate: _n & 0
-		}
-		then: deny: {rule_id: "gate-zero", reason: "len gate & 0"}
-	}`)
-	rules := loadRules(t, dir)
-
-	ctx := cuecontext.New()
-
-	matchedIDs := func(t *testing.T, src string) []string {
-		t.Helper()
-		input := mustCompile(t, ctx, src)
-		got, _, err := evaluator.Evaluate(rules, input)
-		if err != nil {
-			t.Fatalf("Evaluate: %v", err)
-		}
-		ids := make([]string, 0, len(got))
-		for _, m := range got {
-			if m.Action != nil {
-				ids = append(ids, m.Action.RuleID)
-			}
-		}
-		return ids
-	}
-
-	empty := matchedIDs(t, `{tool_input: parsed: flags: []}`)
-	three := matchedIDs(t, `{tool_input: parsed: flags: ["-r", "-f", "-x"]}`)
-	if !slices.Contains(empty, "gate-zero") {
-		t.Fatalf("gate-zero should match empty flags, matched: %v", empty)
-	}
-	if !slices.Contains(three, "gate-zero") {
-		t.Fatalf("gate-zero should match 3-element flags identically (len stays len([])==0), matched: %v", three)
-	}
 }
 
 // -----------------------------------------------------------------------------
