@@ -194,9 +194,20 @@ different packages the merge is ambiguous; rename them to one shared package,
 or split the divergent files into their own directory.`,
 }
 
+var E0508 = CodeInfo{
+	Code: "E0508",
+	Help: "`len` inside `" + `when` + "` computes over the pattern's materialised value, not the input's." + `
+
+` + "`_n: len(flags)`" + ` where ` + "`flags: [...string]`" + ` always yields ` + "`0`" + ` because the
+pattern materialises the open list as ` + "`[]`" + `. A downstream constraint like
+` + "`_n: >=2`" + ` either conflicts statically or is vacuously true — either way,
+it cannot react to the input's actual list length. Use ` + "`list.MatchN`" + `
+instead: ` + "`flags: list.MatchN(>=2, string)`" + `.`,
+}
+
 // CodesInScopeV1 freezes the code count for this scope; bumping it requires
 // a deliberate design review to justify adding a new code.
-const CodesInScopeV1 = 17
+const CodesInScopeV1 = 18
 
 // codeRegistry maps each stable code string to its CodeInfo.
 // Built at package init so that duplicate codes fail loudly rather
@@ -206,7 +217,7 @@ var codeRegistry = buildCodeRegistry(
 	E0201, E0202, E0203,
 	E0301, E0302, E0303, E0304,
 	E0401, E0402,
-	E0501, E0502, E0503, E0504, E0505,
+	E0501, E0502, E0503, E0504, E0505, E0508,
 )
 
 func buildCodeRegistry(entries ...CodeInfo) map[string]CodeInfo {
