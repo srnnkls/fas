@@ -292,7 +292,7 @@ clean_rule: {
 }
 
 // TestLoadRules_LintDiag_PermittedUniverseBuiltins_NoE05xx pins that the
-// curated universe builtins (and, or, matchN, matchIf, len) may be used bare in
+// curated universe builtins (and, or, matchN, matchIf) may be used bare in
 // `when` without tripping E0501. Each fixture exercises the builtin's real
 // validator arity in the srnnkls/cue fork.
 func TestLoadRules_LintDiag_PermittedUniverseBuiltins_NoE05xx(t *testing.T) {
@@ -315,10 +315,6 @@ func TestLoadRules_LintDiag_PermittedUniverseBuiltins_NoE05xx(t *testing.T) {
 		{
 			name: "matchIf_conditional",
 			when: `when: {tool_name: matchIf({}, {}, {})}`,
-		},
-		{
-			name: "len_over_concrete_list",
-			when: `when: {tool_name: "Bash", _n: len(["a", "b"]) & 2}`,
 		},
 	}
 
@@ -621,5 +617,44 @@ for_rule: {
 	}
 	if !strings.Contains(de.D.Title, "`for` loop") {
 		t.Errorf("E0507 title should mention `for` loop; got %q", de.D.Title)
+	}
+}
+
+// TestLoadRules_LintDiag_LenInWhen_EmitsE0508 pins that a `len()` call inside
+// `when` surfaces as E0508 with the primary span anchored at `len`.
+func TestLoadRules_LintDiag_LenInWhen_EmitsE0508(t *testing.T) {
+	const src = `package rules
+
+len_rule: {
+	when: {
+		tool_input: parsed: {
+			flags: [...string]
+			_n: len(flags)
+			_n: >=2
+		}
+	}
+	then: deny: {
+		rule_id: "n"
+		reason:  "nope"
+	}
+}
+`
+	path := lintFixture(t, "len_when", src)
+	dir := filepath.Dir(path)
+
+	_, err := config.LoadRules(dir)
+	if err == nil {
+		t.Fatal("expected len in when to be rejected, got nil error")
+	}
+
+	de, ok := recoverDiag(t, err)
+	if !ok {
+		t.Fatalf("expected err to carry *diag.DiagError via errors.As; got: %v", err)
+	}
+	if de.D.Code != "E0508" {
+		t.Errorf("diagnostic Code = %q, want %q", de.D.Code, "E0508")
+	}
+	if got := tokenAtPos(t, de.D.Primary.Pos, 3); got != "len" {
+		t.Errorf("primary span should anchor at `len` keyword; got %q", got)
 	}
 }

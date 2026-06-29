@@ -85,10 +85,8 @@ and unify at schema time, but at match time they do not reflect input content:
   **Rejected at load time (E0507).**
 - **Computed hidden count fields.** `_n: len(flags)` with `_n: >=2` —
   `flags: [...string]` materialises as `[]` at pattern level, so `_n` is `0`
-  regardless of input. Bare `len` lint-passes, but `len` over an input-derived
-  field stays inert this way: the gate is fixed at `len([]) == 0` and cannot
-  react to the input length, so a count constraint either matches every input
-  (`_n & 0`) or fails to load as a static conflict (`_n & >=1`).
+  regardless of input. **Rejected at load time (E0508).** Use `list.MatchN`
+  instead: `flags: list.MatchN(>=2, string)`.
 - **`close` over a `when` struct.** `when: close({tool_name: "Bash"})` closes an
   open struct pattern, so on extensible hook payloads the closed pattern never
   subsumes the input and the rule silently never matches. `close` is excluded
@@ -119,12 +117,15 @@ Express these via:
 - **Comprehensions (`if`/`for`) inside `when`.** Guards and iterators evaluate
   against the pattern's own types, not the input's values, so guarded fields
   either always or never appear regardless of input. E0507.
+- **`len()` calls inside `when`.** `len` computes over the pattern's
+  materialised value (`[]` for open lists), not the input's. Use `list.MatchN`
+  instead. E0508.
 
 Imports, predeclared names (`string`, `int`, `number`, …), hidden local
 helpers, and bare references to sibling top-level rule structs all pass. The
-curated universe builtins `and`, `or`, `matchN`, `matchIf`, and `len` also pass
-bare in `when`. `close` and the arithmetic helpers (`div`, `mod`, `quo`, `rem`)
-stay rejected.
+curated universe builtins `and`, `or`, `matchN`, and `matchIf` also pass
+bare in `when`. `close`, `len`, and the arithmetic helpers (`div`, `mod`,
+`quo`, `rem`) stay rejected.
 
 ### Organizing rules into packages
 

@@ -305,10 +305,11 @@ types rather than the input's values:
   directly:
   `tool_input: {parsed: flags: list.MatchN(>0, =~"--force"), command: =~"^git push"}`.
   For "either of these shapes," use a struct-level disjunction (`{...} | {...}`).
-- Computed counts. `_n: len(flags)` with `_n: >=2` materialises `flags` as
-  `[]` at pattern level, so `_n` is always `0`. CUE catches the static conflict
-  (`0 & >=2`), so the rule fails to load. Count with a list pattern instead:
-  `tool_input: parsed: flags: list.MatchN(>=2, =~"^-")`.
+- `len()` in `when` (E0508). `_n: len(flags)` where `flags: [...string]`
+  materialises as `[]` at pattern level, so `len(flags)` is always `0`. The
+  count constraint is either a static conflict or vacuously true — either way,
+  it cannot react to input. Count with a list pattern instead:
+  `flags: list.MatchN(>=2, =~"^-")`.
 - `close` over a `when` struct (E0501). Closing an open hook payload makes the
   pattern never subsume an extensible input, so the rule silently never matches.
   `close` is excluded from the permitted universe builtins. Constrain the leaf
@@ -566,6 +567,7 @@ The error codes you'll meet:
 | `E0504` / `E0505` | duplicate rule name / conflicting package names (load-time) |
 | `E0506` | `let` clause in `when` — binds pattern type, not input value (load-time) |
 | `E0507` | `if`/`for` comprehension in `when` — evaluates against pattern, not input (load-time) |
+| `E0508` | `len()` in `when` — computes over pattern, not input (load-time) |
 | `E0601` | `@bind` variable mismatch — bound fields resolved to different values |
 
 Diagnostics render three ways: `--format=text` (default, ANSI-colored, honors

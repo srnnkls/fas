@@ -43,6 +43,7 @@ func expectedCodes() []expectedCode {
 		{"E0505", "scope/binding", func() diag.CodeInfo { return diag.E0505 }},
 		{"E0506", "scope/binding", func() diag.CodeInfo { return diag.E0506 }},
 		{"E0507", "scope/binding", func() diag.CodeInfo { return diag.E0507 }},
+		{"E0508", "scope/binding", func() diag.CodeInfo { return diag.E0508 }},
 		// E06xx — lattice binding
 		{"E0601", "lattice binding", func() diag.CodeInfo { return diag.E0601 }},
 	}
@@ -188,7 +189,7 @@ func TestCodeInfoZeroValue(t *testing.T) {
 
 // Asserts that this scope adds no new error codes.
 func TestNoNewCodesInScope(t *testing.T) {
-	const frozen = 20
+	const frozen = 21
 	if got := diag.CodesInScopeV1; got != frozen {
 		t.Errorf("diag.CodesInScopeV1 = %d, want %d", got, frozen)
 	}

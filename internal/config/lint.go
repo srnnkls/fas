@@ -207,6 +207,10 @@ func lintWhen(ruleName string, ruleNames, helperDefNames map[string]struct{}, wh
 			walk(node.High)
 			return
 		case *ast.CallExpr:
+			if id, ok := node.Fun.(*ast.Ident); ok && id.Name == "len" {
+				firstErr = lenInWhenDiag(ruleName, node)
+				return
+			}
 			walk(node.Fun)
 			for _, arg := range node.Args {
 				walk(arg)
@@ -319,14 +323,15 @@ var predeclaredTypes = map[string]struct{}{
 // The parser never binds universe builtins to an ast.Node and IsPredeclared()
 // recognises only type/range names, so absent this set they false-positive as
 // E0501. close is excluded because it closes an open struct pattern, silently
-// breaking matches on extensible hook payloads; div/mod/quo/rem/error/self are
-// excluded as arithmetic/inert helpers with no pattern meaning in `when`.
+// breaking matches on extensible hook payloads; len is caught at the CallExpr
+// level (E0508) since it computes over the pattern's materialised value, not
+// the input's; div/mod/quo/rem/error/self are excluded as arithmetic/inert
+// helpers with no pattern meaning in `when`.
 var permittedUniverseBuiltins = map[string]struct{}{
 	"and":     {},
 	"or":      {},
 	"matchN":  {},
 	"matchIf": {},
-	"len":     {},
 }
 
 // checkIdent classifies a bare identifier reference. Returns a *diag.DiagError
@@ -488,6 +493,23 @@ func comprehensionInWhenDiag(ruleName string, comp *ast.Comprehension) error {
 			Msg: kind + " in `when` of rule " + quote(ruleName),
 		},
 		Help: diag.E0507.Help,
+	}
+	return diag.NewDiagError(d, nil, nil)
+}
+
+// lenInWhenDiag builds an E0508 DiagError for a `len()` call inside `when`.
+func lenInWhenDiag(ruleName string, call *ast.CallExpr) error {
+	d := diag.Diagnostic{
+		Code:     diag.E0508.Code,
+		Severity: diag.SeverityError,
+		Title: "rule " + quote(ruleName) +
+			": `len` in `when` computes over the pattern, not the input",
+		Primary: diag.Label{
+			Pos: call.Pos(),
+			Len: 3, // "len"
+			Msg: "`len` in `when` of rule " + quote(ruleName),
+		},
+		Help: diag.E0508.Help,
 	}
 	return diag.NewDiagError(d, nil, nil)
 }
