@@ -20,6 +20,7 @@ a rule fired — or why it didn't — you're in the right place.
   - [The parsed view](#the-parsed-view)
   - [Structural negation](#structural-negation)
   - [What `when` cannot express](#what-when-cannot-express)
+  - [Binding variables (`@bind`)](#binding-variables-bind)
 - [Deciding: the `then` verbs](#deciding-the-then-verbs)
 - [How decisions combine](#how-decisions-combine)
 - [Layering: global and project](#layering-global-and-project)
@@ -287,7 +288,7 @@ genuinely need a command bound to *its own* argument (read verb acting on a
 secret), use `parsed.calls`, where the parser has already grouped each call
 with its arguments — the *parsed view* section shows the pattern. For the rare
 case where you genuinely need cross-field equality (e.g. `cwd` equals a
-target), the `@bind` escape hatch exists — see the README.
+target), the [`@bind` escape hatch](#binding-variables-bind) exists.
 
 The lint catches four idioms that look right but evaluate against the pattern's
 types rather than the input's values:
@@ -312,6 +313,51 @@ types rather than the input's values:
   pattern never subsume an extensible input, so the rule silently never matches.
   `close` is excluded from the permitted universe builtins. Constrain the leaf
   and leave the struct open: `tool_name: !="Bash"` to exclude a tool.
+
+### Binding variables (`@bind`)
+
+Most rules don't need cross-field equality — constrain each field independently
+and you're done. For the rare case where two input paths must carry the same
+concrete value, `@bind` attributes fill the gap that subsumption leaves.
+
+Annotate fields in `when` with `@bind(VarName)`. After subsumption passes, a
+second pass resolves each annotated path against the input and checks that all
+paths sharing a variable name resolved to the same value. If they diverge, the
+rule does not fire.
+
+The motivating case is tying a top-level field to a nested one — something
+subsumption structurally cannot do. For example, denying a delete of the
+working directory:
+
+```cue
+rm_cwd: {
+    when: hook.#PreToolUse & tool.#Bash & {
+        cwd: string @bind(Dir)
+        tool_input: parsed: targets: [...string] @bind(Dir, 0)
+    }
+    then: deny: {
+        rule_id:  "rm-cwd"
+        reason:   "Refusing to delete the working directory"
+        severity: "HIGH"
+    }
+}
+```
+
+`@bind(Dir)` on `cwd` captures its value; `@bind(Dir, 0)` on `targets` selects
+`targets[0]`. When `cwd` is `/home/user/project` and `targets[0]` is
+`/home/user/project`, the binding holds and the rule fires. When `targets[0]` is
+`/tmp/junk`, the values diverge and the rule stays silent — even though the
+structural pattern matched.
+
+The sub-path argument selects into the annotated value. `@bind(X, 0)` selects
+the first list element; `@bind(X)` with no sub-path captures the whole value.
+Two annotations on the same field select different elements —
+`@bind(Path, 0) @bind(Path, 1)` checks that a list's first and second elements
+are equal. Variable names must start with an uppercase letter. A variable
+referenced only once captures but does not constrain.
+
+When `--explain` is enabled and a binding fails, fas emits an E0601 diagnostic
+showing each path and its resolved value.
 
 ## Deciding: the `then` verbs
 
