@@ -905,14 +905,17 @@ func encodeInput(input *envelope.Input) (cue.Value, error) {
 }
 
 // peekHookEventName best-effort extracts the hook_event_name from raw JSON
-// before the adapter has parsed it. Used only for fallback rendering when
-// parsing itself fails — a missing name means adapter.RenderOutput will emit
-// an empty hookEventName, which is still better than aborting.
+// before the adapter has parsed it, used only for fallback rendering when
+// parsing itself fails. An unextractable name defaults to PreToolUse, the one
+// event whose response carries the fail-open/fail-closed permissionDecision.
 func peekHookEventName(raw []byte) string {
 	var probe struct {
 		HookEventName string `json:"hook_event_name"`
 	}
 	_ = json.Unmarshal(raw, &probe)
+	if probe.HookEventName == "" {
+		return "PreToolUse"
+	}
 	return probe.HookEventName
 }
 
