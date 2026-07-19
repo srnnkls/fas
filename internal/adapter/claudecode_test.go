@@ -319,13 +319,63 @@ func TestClaudeCode_RenderOutput_Allowing_EmitsAllowDecision(t *testing.T) {
 }
 
 func TestClaudeCode_RenderOutput_HookEventName_EchoedFromArg(t *testing.T) {
-	cases := []string{"PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "Stop"}
+	cases := []string{"PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop"}
 	for _, event := range cases {
 		t.Run(event, func(t *testing.T) {
 			out := envelope.OutputEnvelope{Category: envelope.Allowing}
 			resp := renderAndDecode(t, out, event)
 			if got := resp.HookSpecificOutput.HookEventName; got != event {
 				t.Errorf("hookEventName = %q, want %q", got, event)
+			}
+		})
+	}
+}
+
+func TestClaudeCode_RenderOutput_BareEvents_OmitHookSpecificOutput(t *testing.T) {
+	for _, event := range []string{"SessionEnd", "SessionStart", "Notification", "PreCompact", ""} {
+		t.Run(event, func(t *testing.T) {
+			out := envelope.OutputEnvelope{
+				Category:          envelope.Allowing,
+				AdditionalContext: "ignored for bare events",
+			}
+			raw, err := newClaude().RenderOutput(out, event)
+			if err != nil {
+				t.Fatalf("RenderOutput: %v", err)
+			}
+			if bytes.Contains(raw, []byte("hookSpecificOutput")) {
+				t.Errorf("%q must not carry hookSpecificOutput; got %s", event, raw)
+			}
+			if bytes.Contains(raw, []byte("permissionDecision")) {
+				t.Errorf("%q must not carry permissionDecision; got %s", event, raw)
+			}
+			var probe map[string]any
+			if err := json.Unmarshal(raw, &probe); err != nil {
+				t.Fatalf("emitted JSON not parseable: %v (raw=%s)", err, raw)
+			}
+		})
+	}
+}
+
+func TestClaudeCode_RenderOutput_ContextEvents_OmitPermissionDecision(t *testing.T) {
+	for _, event := range []string{"UserPromptSubmit", "PostToolUse", "Stop"} {
+		t.Run(event, func(t *testing.T) {
+			out := envelope.OutputEnvelope{
+				Category:          envelope.Allowing,
+				AdditionalContext: "context payload",
+			}
+			raw, err := newClaude().RenderOutput(out, event)
+			if err != nil {
+				t.Fatalf("RenderOutput: %v", err)
+			}
+			if bytes.Contains(raw, []byte("permissionDecision")) {
+				t.Errorf("%q must not carry permissionDecision; got %s", event, raw)
+			}
+			resp := decodeCCFromBytes(t, raw)
+			if got := resp.HookSpecificOutput.HookEventName; got != event {
+				t.Errorf("hookEventName = %q, want %q", got, event)
+			}
+			if got, want := resp.HookSpecificOutput.AdditionalContext, "context payload"; got != want {
+				t.Errorf("additionalContext = %q, want %q", got, want)
 			}
 		})
 	}
