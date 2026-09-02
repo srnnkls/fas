@@ -30,15 +30,23 @@ package fas
 	}
 	tool_response?:          _
 	tool_use_id?:            string
+	duration_ms?:            int
 	prompt?:                 string
+	message?:                string
+	title?:                  string
+	notification_type?:      string
 	last_assistant_message?: string
-	agent_id?:               string
-	agent_type?:             string
-	session_id?:             string
-	prompt_id?:              string
-	transcript_path?:        string
-	cwd?:                    string
-	permission_mode?:        string
+	stop_hook_active?:       bool
+	background_tasks?: [...{...}]
+	session_crons?: [...{...}]
+	agent_id?:              string
+	agent_type?:            string
+	agent_transcript_path?: string
+	session_id?:            string
+	prompt_id?:             string
+	transcript_path?:       string
+	cwd?:                   string
+	permission_mode?:       string
 	effort?: {
 		level?: string
 		...

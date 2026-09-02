@@ -122,3 +122,40 @@ func TestSignalResultOmitEmpty(t *testing.T) {
 		t.Errorf("got %s, want %s", blob, want)
 	}
 }
+
+func TestInputPreservesPresentZeroValues(t *testing.T) {
+	no, zero := false, int64(0)
+	in := envelope.Input{
+		HookEventName:   "Stop",
+		StopHookActive:  &no,
+		DurationMS:      &zero,
+		BackgroundTasks: json.RawMessage(`[]`),
+		SessionCrons:    json.RawMessage(`[]`),
+	}
+
+	blob, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	want := `{"hook_event_name":"Stop","duration_ms":0,"stop_hook_active":false,"background_tasks":[],"session_crons":[],"agent_id":""}`
+	if string(blob) != want {
+		t.Errorf("got %s, want %s", blob, want)
+	}
+}
+
+func TestInputOmitsAbsentStopFields(t *testing.T) {
+	blob, err := json.Marshal(envelope.Input{HookEventName: "PreToolUse", ToolName: "Bash"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(blob, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, k := range []string{"stop_hook_active", "duration_ms", "background_tasks", "session_crons"} {
+		if _, ok := decoded[k]; ok {
+			t.Errorf("%s present in %s", k, blob)
+		}
+	}
+}

@@ -60,6 +60,37 @@ package catalog
 	BypassPermissions: "bypassPermissions"
 }
 
+// #NotificationType names the notification kinds a Notification hook carries.
+// These double as Claude Code's own matcher values for that event.
+#NotificationType: {
+	PermissionPrompt:        "permission_prompt"
+	IdlePrompt:              "idle_prompt"
+	AuthSuccess:             "auth_success"
+	ElicitationDialog:       "elicitation_dialog"
+	ElicitationURLDialog:    "elicitation_url_dialog"
+	ElicitationComplete:     "elicitation_complete"
+	ElicitationResponse:     "elicitation_response"
+	AgentNeedsInput:         "agent_needs_input"
+	AgentCompleted:          "agent_completed"
+	QuotaAutoResumeFired:    "quota_auto_resume_fired"
+	QuotaAutoResumeStale:    "quota_auto_resume_stale"
+	QuotaAutoResumeDisabled: "quota_auto_resume_disabled"
+}
+
+// #BackgroundTaskType labels the feature that created an in-flight task. Claude
+// Code falls back to a raw discriminant for kinds it doesn't recognise, so
+// hook.#BackgroundTask keeps the field a plain string; these are the known
+// labels, not a closed set.
+#BackgroundTaskType: {
+	Shell:        "shell"
+	Subagent:     "subagent"
+	Monitor:      "monitor"
+	Workflow:     "workflow"
+	Teammate:     "teammate"
+	CloudSession: "cloud session"
+	MCPTask:      "MCP task"
+}
+
 // Ultracode is not a distinct effort level; it reports as "xhigh".
 #EffortLevel: {
 	Low:    "low"

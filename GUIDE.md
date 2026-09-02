@@ -161,7 +161,7 @@ scratch. Import what you need; reference the `#defs`.
 
 | Package | Import path | What it gives you |
 | --- | --- | --- |
-| `hook` | `github.com/srnnkls/fas/cue/hook` | per-event shapes: `#PreToolUse`, `#PostToolUse`, `#UserPromptSubmit`, `#Stop`, `#SubagentStart`, `#SubagentStop`, `#Notification`; the fields they share (`#Common`) and their value types (`#PermissionMode`, `#EffortLevel`); origin gates `#MainThread` and `#InSubagent` |
+| `hook` | `github.com/srnnkls/fas/cue/hook` | per-event shapes: `#PreToolUse`, `#PostToolUse`, `#UserPromptSubmit`, `#Stop`, `#SubagentStart`, `#SubagentStop`, `#Notification`; the fields they share (`#Common`, and `#Stopping` for the two stop events); the entry shapes `#BackgroundTask` and `#SessionCron`; value types `#PermissionMode`, `#EffortLevel`, `#NotificationType`; origin gates `#MainThread` and `#InSubagent` |
 | `tool` | `…/cue/tool` | tool identities: `#Bash`, `#Edit`, `#Write`, `#WebFetch`, … and `#Known` (any built-in tool) |
 | `agent` | `…/cue/agent` | subagent identities: `#Explore`, `#Plan`, `#GeneralPurpose`, `#Known` |
 | `bash` | `…/cue/bash` | the executable inside a Bash call: `#command`, `#subcommand`, `#commandOrRaw` |
@@ -169,7 +169,7 @@ scratch. Import what you need; reference the `#defs`.
 | `flag` | `…/cue/flag` | command-line flag shapes: `#hasFlagMatching`, `#hasOption` |
 | `action` | `…/cue/action` | destructive semantic verbs: `#hasDestructiveAction` |
 | `escalation` | `…/cue/escalation` | privilege-escalation prefixes: `#hasPrivilegeEscalation` |
-| `catalog` | `…/cue/catalog` | the raw name tables (`#ToolName`, `#AgentType`, `#EventName`, `#PermissionMode`, `#EffortLevel`) the layers above are built from |
+| `catalog` | `…/cue/catalog` | the raw name tables (`#ToolName`, `#AgentType`, `#EventName`, `#PermissionMode`, `#EffortLevel`, `#NotificationType`, `#BackgroundTaskType`) the layers above are built from |
 
 Composition reads left to right as a conjunction — *this event, and this tool,
 and this property*:
@@ -198,6 +198,28 @@ when: hook.#PreToolUse & hook.#MainThread & tool.#Write
 subagent call — the difference between an instruction the orchestrator can act
 on and one a delegated agent will trip over. Both key on `agent_id`, which
 Claude Code sends exactly when a hook fires inside a subagent.
+
+`#SubagentStop` is the exception: its `agent_id` is the *stopping subagent's*, so
+`#MainThread` can never match it and its `additionalContext` lands in that
+subagent's context. Key on `hook.#PostToolUse & tool.#Agent` to react in the
+parent instead.
+
+Beyond the common set, each event carries its own fields — `tool_use_id` and
+`duration_ms` on a tool event, `message`/`title`/`notification_type` on a
+notification, and on `Stop` and `SubagentStop` the `stop_hook_active` flag plus
+the `background_tasks` and `session_crons` arrays:
+
+```cue
+when: hook.#Stop & {
+	stop_hook_active: false
+	background_tasks: []
+}
+```
+
+That is "the turn is really over", not just "the turn ended": the arrays arrive
+empty rather than absent when nothing is in flight, so an empty-list constraint
+distinguishes a finished session from one parked on a background task. Checking
+`stop_hook_active` keeps a blocking rule from re-blocking its own continuation.
 
 The catalog is the single source of every name. `catalog.#ToolName.Bsh` (a typo)
 is an undefined field the loader rejects at load time, not a rule that silently
