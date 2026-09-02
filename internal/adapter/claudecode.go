@@ -39,10 +39,18 @@ type ccInput struct {
 	ToolInput            json.RawMessage  `json:"tool_input"`
 	ToolResponse         json.RawMessage  `json:"tool_response"`
 	ToolUseID            string           `json:"tool_use_id"`
+	DurationMS           *int64           `json:"duration_ms"`
 	Prompt               string           `json:"prompt"`
+	Message              string           `json:"message"`
+	Title                string           `json:"title"`
+	NotificationType     string           `json:"notification_type"`
 	LastAssistantMessage string           `json:"last_assistant_message"`
+	StopHookActive       *bool            `json:"stop_hook_active"`
+	BackgroundTasks      json.RawMessage  `json:"background_tasks"`
+	SessionCrons         json.RawMessage  `json:"session_crons"`
 	AgentID              string           `json:"agent_id"`
 	AgentType            string           `json:"agent_type"`
+	AgentTranscriptPath  string           `json:"agent_transcript_path"`
 	SessionID            string           `json:"session_id"`
 	PromptID             string           `json:"prompt_id"`
 	TranscriptPath       string           `json:"transcript_path"`
@@ -80,10 +88,18 @@ func (ClaudeCode) ParseInput(raw json.RawMessage) (*envelope.Input, error) {
 		ToolInput:            parsed.ToolInput,
 		ToolResponse:         parsed.ToolResponse,
 		ToolUseID:            parsed.ToolUseID,
+		DurationMS:           parsed.DurationMS,
 		Prompt:               parsed.Prompt,
+		Message:              parsed.Message,
+		Title:                parsed.Title,
+		NotificationType:     parsed.NotificationType,
 		LastAssistantMessage: parsed.LastAssistantMessage,
+		StopHookActive:       parsed.StopHookActive,
+		BackgroundTasks:      parsed.BackgroundTasks,
+		SessionCrons:         parsed.SessionCrons,
 		AgentID:              parsed.AgentID,
 		AgentType:            parsed.AgentType,
+		AgentTranscriptPath:  parsed.AgentTranscriptPath,
 		SessionID:            parsed.SessionID,
 		PromptID:             parsed.PromptID,
 		TranscriptPath:       parsed.TranscriptPath,

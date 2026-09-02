@@ -49,6 +49,47 @@ import "github.com/srnnkls/fas/cue/catalog"
 	...
 }
 
+#NotificationType: or([for _, v in catalog.#NotificationType {v}])
+
+// #BackgroundTask is one entry of the background_tasks array Stop and
+// SubagentStop carry. Only id, type, status, and description are always
+// present; the rest are per-kind, so a rule keying on `command` implicitly
+// selects shell tasks.
+#BackgroundTask: {
+	id:           string
+	type:         string
+	status:       string
+	description?: string
+	command?:     string
+	agent_type?:  string
+	server?:      string
+	tool?:        string
+	name?:        string
+	...
+}
+
+// #SessionCron is one entry of the session_crons array, sourced from
+// CronCreate, ScheduleWakeup, and /loop.
+#SessionCron: {
+	id:         string
+	schedule?:  string
+	recurring?: bool
+	prompt?:    string
+	...
+}
+
+// #Stopping carries the fields Stop and SubagentStop share. Both arrays arrive
+// empty rather than absent when the task registry is reachable and nothing is
+// in flight, which is why `background_tasks: []` is a usable match for "the
+// session is really done" and absence is not.
+#Stopping: {
+	stop_hook_active?:       bool
+	last_assistant_message?: string
+	background_tasks?: [...#BackgroundTask]
+	session_crons?: [...#SessionCron]
+	...
+}
+
 // #PreToolUse: a tool invocation is about to run — tool_name must be present.
 #PreToolUse: #Common & {
 	hook_event_name: catalog.#EventName.PreToolUse
@@ -70,6 +111,7 @@ import "github.com/srnnkls/fas/cue/catalog"
 		...
 	}
 	tool_response?: _
+	duration_ms?:   int
 	...
 }
 
@@ -82,9 +124,11 @@ import "github.com/srnnkls/fas/cue/catalog"
 
 // #Stop: the session is stopping — last_assistant_message carries the turn's
 // final assistant text, which the transcript file may not have caught up to.
-#Stop: #Common & {
-	hook_event_name:         catalog.#EventName.Stop
-	last_assistant_message?: string
+// stop_hook_active is true when Claude Code is already continuing because of a
+// stop hook; a rule that blocks without checking it can loop until Claude Code
+// overrides it after 8 consecutive blocks.
+#Stop: #Common & #Stopping & {
+	hook_event_name: catalog.#EventName.Stop
 	...
 }
 
@@ -99,15 +143,24 @@ import "github.com/srnnkls/fas/cue/catalog"
 
 // #SubagentStop: a subagent just finished — agent_type names the subagent that
 // stopped, letting rules react to one kind of subagent completing.
-#SubagentStop: #Common & {
-	hook_event_name:         catalog.#EventName.SubagentStop
-	agent_type?:             string
-	last_assistant_message?: string
+//
+// agent_id is the stopping subagent's, so #MainThread never matches this event,
+// and its additionalContext lands in that subagent's context rather than the
+// orchestrator's. To react in the parent, key on #PostToolUse & tool.#Agent.
+// background_tasks and session_crons are scoped to the parent session.
+#SubagentStop: #Common & #Stopping & {
+	hook_event_name:        catalog.#EventName.SubagentStop
+	agent_type?:            string
+	agent_transcript_path?: string
 	...
 }
 
-// #Notification: a harness-level notification fired — no extra fields required.
+// #Notification: a harness-level notification fired. notification_type is the
+// value Claude Code's own matcher filters on.
 #Notification: #Common & {
-	hook_event_name: catalog.#EventName.Notification
+	hook_event_name:    catalog.#EventName.Notification
+	message?:           string
+	title?:             string
+	notification_type?: #NotificationType
 	...
 }

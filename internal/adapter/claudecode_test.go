@@ -574,3 +574,59 @@ func jsonEqual(a, b map[string]any) bool {
 	bj, _ := json.Marshal(b)
 	return bytes.Equal(aj, bj)
 }
+
+// The payload is the SubagentStop example from Claude Code's hooks reference,
+// which carries every field the event adds over the common set.
+func TestClaudeCodeParseInput_SubagentStopFullPayload(t *testing.T) {
+	raw := []byte(`{
+	  "session_id": "abc123",
+	  "transcript_path": "/p/abc123.jsonl",
+	  "cwd": "/w",
+	  "permission_mode": "default",
+	  "hook_event_name": "SubagentStop",
+	  "stop_hook_active": false,
+	  "agent_id": "def456",
+	  "agent_type": "Explore",
+	  "agent_transcript_path": "/p/abc123/subagents/agent-def456.jsonl",
+	  "last_assistant_message": "Analysis complete.",
+	  "background_tasks": [{"id":"t1","type":"subagent","status":"running","agent_type":"Explore"}],
+	  "session_crons": []
+	}`)
+
+	in, err := adapter.ClaudeCode{}.ParseInput(raw)
+	if err != nil {
+		t.Fatalf("ParseInput: %v", err)
+	}
+	if in.AgentTranscriptPath != "/p/abc123/subagents/agent-def456.jsonl" {
+		t.Errorf("agent_transcript_path = %q", in.AgentTranscriptPath)
+	}
+	if in.StopHookActive == nil || *in.StopHookActive {
+		t.Errorf("stop_hook_active = %v, want pointer to false", in.StopHookActive)
+	}
+	if string(in.SessionCrons) != "[]" {
+		t.Errorf("session_crons = %s, want []", in.SessionCrons)
+	}
+	if !strings.Contains(string(in.BackgroundTasks), `"agent_type":"Explore"`) {
+		t.Errorf("background_tasks lost its entry: %s", in.BackgroundTasks)
+	}
+}
+
+func TestClaudeCodeParseInput_NotificationAndDuration(t *testing.T) {
+	in, err := adapter.ClaudeCode{}.ParseInput([]byte(
+		`{"hook_event_name":"Notification","message":"Claude needs your permission","title":"Permission needed","notification_type":"permission_prompt"}`))
+	if err != nil {
+		t.Fatalf("ParseInput: %v", err)
+	}
+	if in.Message != "Claude needs your permission" || in.Title != "Permission needed" || in.NotificationType != "permission_prompt" {
+		t.Errorf("notification fields dropped: %+v", in)
+	}
+
+	post, err := adapter.ClaudeCode{}.ParseInput([]byte(
+		`{"hook_event_name":"PostToolUse","tool_name":"Write","duration_ms":12}`))
+	if err != nil {
+		t.Fatalf("ParseInput: %v", err)
+	}
+	if post.DurationMS == nil || *post.DurationMS != 12 {
+		t.Errorf("duration_ms = %v, want 12", post.DurationMS)
+	}
+}

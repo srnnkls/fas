@@ -71,6 +71,22 @@ func TestValidateInput_RejectsWrongTypeForEffortLevel(t *testing.T) {
 	}
 }
 
+func TestValidateInput_AcceptsStopPayloadWithTaskArrays(t *testing.T) {
+	raw := []byte(`{"hook_event_name":"Stop","stop_hook_active":true,` +
+		`"background_tasks":[{"id":"task-001","type":"shell","status":"running","description":"tail logs","command":"tail -f /var/log/syslog"}],` +
+		`"session_crons":[{"id":"cron-001","schedule":"0 9 * * 1-5","recurring":true,"prompt":"check the build"}]}`)
+	if err := config.ValidateInput(raw); err != nil {
+		t.Fatalf("Stop payload from the hooks reference must validate, got: %v", err)
+	}
+}
+
+func TestValidateInput_RejectsWrongTypeForStopHookActive(t *testing.T) {
+	raw := []byte(`{"hook_event_name":"Stop","stop_hook_active":"yes"}`)
+	if err := config.ValidateInput(raw); err == nil {
+		t.Fatal("expected type mismatch for stop_hook_active, got nil")
+	}
+}
+
 func TestValidateInput_RejectsInvalidJSON(t *testing.T) {
 	raw := []byte(`{not valid json`)
 	if err := config.ValidateInput(raw); err == nil {
