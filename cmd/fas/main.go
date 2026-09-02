@@ -868,16 +868,8 @@ func runPreprocessor(input *envelope.Input) (*envelope.Input, error) {
 		return nil, err
 	}
 
-	out := &envelope.Input{
-		HookEventName: input.HookEventName,
-		ToolName:      input.ToolName,
-		ToolResponse:  input.ToolResponse,
-		Prompt:        input.Prompt,
-		AgentType:     input.AgentType,
-		SessionID:     input.SessionID,
-		CWD:           input.CWD,
-		Signals:       input.Signals,
-	}
+	out := *input
+	out.ToolInput = nil
 	if ti, ok := enriched["tool_input"]; ok {
 		raw, err := json.Marshal(ti)
 		if err != nil {
@@ -885,7 +877,7 @@ func runPreprocessor(input *envelope.Input) (*envelope.Input, error) {
 		}
 		out.ToolInput = raw
 	}
-	return out, nil
+	return &out, nil
 }
 
 // encodeInput converts the enriched envelope.Input into a cue.Value suitable

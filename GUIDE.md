@@ -161,7 +161,7 @@ scratch. Import what you need; reference the `#defs`.
 
 | Package | Import path | What it gives you |
 | --- | --- | --- |
-| `hook` | `github.com/srnnkls/fas/cue/hook` | per-event shapes: `#PreToolUse`, `#PostToolUse`, `#UserPromptSubmit`, `#Stop`, `#SubagentStart`, `#SubagentStop`, `#Notification` |
+| `hook` | `github.com/srnnkls/fas/cue/hook` | per-event shapes: `#PreToolUse`, `#PostToolUse`, `#UserPromptSubmit`, `#Stop`, `#SubagentStart`, `#SubagentStop`, `#Notification`; the fields they share (`#Common`) and their value types (`#PermissionMode`, `#EffortLevel`); origin gates `#MainThread` and `#InSubagent` |
 | `tool` | `…/cue/tool` | tool identities: `#Bash`, `#Edit`, `#Write`, `#WebFetch`, … and `#Known` (any built-in tool) |
 | `agent` | `…/cue/agent` | subagent identities: `#Explore`, `#Plan`, `#GeneralPurpose`, `#Known` |
 | `bash` | `…/cue/bash` | the executable inside a Bash call: `#command`, `#subcommand`, `#commandOrRaw` |
@@ -169,7 +169,7 @@ scratch. Import what you need; reference the `#defs`.
 | `flag` | `…/cue/flag` | command-line flag shapes: `#hasFlagMatching`, `#hasOption` |
 | `action` | `…/cue/action` | destructive semantic verbs: `#hasDestructiveAction` |
 | `escalation` | `…/cue/escalation` | privilege-escalation prefixes: `#hasPrivilegeEscalation` |
-| `catalog` | `…/cue/catalog` | the raw name tables (`#ToolName`, `#AgentType`, `#EventName`) the layers above are built from |
+| `catalog` | `…/cue/catalog` | the raw name tables (`#ToolName`, `#AgentType`, `#EventName`, `#PermissionMode`, `#EffortLevel`) the layers above are built from |
 
 Composition reads left to right as a conjunction — *this event, and this tool,
 and this property*:
@@ -184,6 +184,20 @@ command line references a system path like `/etc`. The stdlib matchers prefer
 parsed facts over raw-string scans for exactly this reason: they survive the
 prefixes (`sudo`, env assignments, leading whitespace) that defeat a naive
 `^tee\b`.
+
+Every event also carries the harness's common fields — `session_id`, `prompt_id`,
+`transcript_path`, `cwd`, `permission_mode`, `effort.level`, and, inside a
+subagent, `agent_id` and `agent_type`. `hook.#Common` folds them into each event
+shape, so a rule constrains them the same way it constrains `tool_name`:
+
+```cue
+when: hook.#PreToolUse & hook.#MainThread & tool.#Write
+```
+
+`#MainThread` matches only the main conversation and `#InSubagent` only a
+subagent call — the difference between an instruction the orchestrator can act
+on and one a delegated agent will trip over. Both key on `agent_id`, which
+Claude Code sends exactly when a hook fires inside a subagent.
 
 The catalog is the single source of every name. `catalog.#ToolName.Bsh` (a typo)
 is an undefined field the loader rejects at load time, not a rule that silently

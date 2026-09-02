@@ -48,3 +48,23 @@ package catalog
 	SubagentStop:     "SubagentStop"
 	Notification:     "Notification"
 }
+
+// Claude Code's Manual mode has no wire value of its own; it arrives as
+// "default".
+#PermissionMode: {
+	Default:           "default"
+	Plan:              "plan"
+	AcceptEdits:       "acceptEdits"
+	Auto:              "auto"
+	DontAsk:           "dontAsk"
+	BypassPermissions: "bypassPermissions"
+}
+
+// Ultracode is not a distinct effort level; it reports as "xhigh".
+#EffortLevel: {
+	Low:    "low"
+	Medium: "medium"
+	High:   "high"
+	XHigh:  "xhigh"
+	Max:    "max"
+}

@@ -79,6 +79,48 @@ func TestClaudeCode_ParseInput_ValidPreToolUseBash(t *testing.T) {
 	}
 }
 
+func TestClaudeCode_ParseInput_CapturesCommonFields(t *testing.T) {
+	raw := json.RawMessage(`{
+	  "hook_event_name": "PreToolUse",
+	  "tool_name": "Bash",
+	  "tool_input": {"command": "npm test"},
+	  "tool_use_id": "toolu_01ABC123",
+	  "session_id": "sess-abc",
+	  "prompt_id": "550e8400-e29b-41d4-a716-446655440000",
+	  "transcript_path": "/tmp/transcript.jsonl",
+	  "cwd": "/tmp/project",
+	  "permission_mode": "acceptEdits",
+	  "effort": {"level": "xhigh"},
+	  "agent_id": "agent-xyz",
+	  "agent_type": "reviewer"
+	}`)
+
+	in, err := newClaude().ParseInput(raw)
+	if err != nil {
+		t.Fatalf("ParseInput: unexpected error: %v", err)
+	}
+	for _, c := range []struct {
+		field, got, want string
+	}{
+		{"ToolUseID", in.ToolUseID, "toolu_01ABC123"},
+		{"PromptID", in.PromptID, "550e8400-e29b-41d4-a716-446655440000"},
+		{"TranscriptPath", in.TranscriptPath, "/tmp/transcript.jsonl"},
+		{"PermissionMode", in.PermissionMode, "acceptEdits"},
+		{"AgentID", in.AgentID, "agent-xyz"},
+		{"AgentType", in.AgentType, "reviewer"},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s = %q, want %q", c.field, c.got, c.want)
+		}
+	}
+	if in.Effort == nil {
+		t.Fatal("Effort is nil; expected {level: xhigh}")
+	}
+	if got, want := in.Effort.Level, "xhigh"; got != want {
+		t.Errorf("Effort.Level = %q, want %q", got, want)
+	}
+}
+
 func TestClaudeCode_ParseInput_SubagentStart_CapturesAgentType(t *testing.T) {
 	raw := json.RawMessage(`{
 	  "hook_event_name": "SubagentStart",

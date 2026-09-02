@@ -84,9 +84,28 @@ func TestInputOmitEmpty(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 
-	want := `{"hook_event_name":"SessionStart"}`
+	want := `{"hook_event_name":"SessionStart","agent_id":""}`
 	if string(blob) != want {
 		t.Errorf("got %s, want %s", blob, want)
+	}
+}
+
+func TestInputAlwaysEncodesAgentID(t *testing.T) {
+	for _, in := range []envelope.Input{
+		{HookEventName: "PreToolUse", ToolName: "Bash"},
+		{HookEventName: "PreToolUse", ToolName: "Bash", AgentID: "agent-7"},
+	} {
+		blob, err := json.Marshal(in)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(blob, &decoded); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if _, ok := decoded["agent_id"]; !ok {
+			t.Errorf("agent_id absent from %s", blob)
+		}
 	}
 }
 
