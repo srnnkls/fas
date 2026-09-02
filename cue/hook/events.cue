@@ -27,7 +27,10 @@ import "github.com/srnnkls/fas/cue/catalog"
 	transcript_path?: string
 	cwd?:             string
 	permission_mode?: #PermissionMode
-	effort?: level?: #EffortLevel
+	effort?: {
+		level?: #EffortLevel
+		...
+	}
 	agent_id?:   string
 	agent_type?: string
 	...

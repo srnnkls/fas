@@ -39,7 +39,10 @@ package fas
 	transcript_path?:        string
 	cwd?:                    string
 	permission_mode?:        string
-	effort?: level?: string
+	effort?: {
+		level?: string
+		...
+	}
 	signals?: {[string]: #SignalResult}
 	...
 }
