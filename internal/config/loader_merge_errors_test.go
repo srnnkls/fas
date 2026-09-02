@@ -19,8 +19,7 @@ func recoverMergeDiags(err error) []*diag.DiagError {
 		if e == nil {
 			return
 		}
-		var de *diag.DiagError
-		if errors.As(e, &de) {
+		if de, ok := errors.AsType[*diag.DiagError](e); ok {
 			out = append(out, de)
 		}
 		if multi, ok := e.(interface{ Unwrap() []error }); ok {

@@ -944,7 +944,8 @@ func fallbackEnvelope(cause error, failClosed bool) envelope.OutputEnvelope {
 // renderer may see.
 func renderExplain(w io.Writer, filter explainFilter, format outputFormat, color colorMode, matches []evaluator.Match, diags []diag.Diagnostic, ruleSets ...[]config.Rule) {
 	if filter == explainFired || filter == explainBoth {
-		for _, m := range matches {
+		for i := range matches {
+			m := &matches[i]
 			ruleID := ""
 			if m.Action != nil {
 				ruleID = m.Action.RuleID
@@ -1249,8 +1250,7 @@ func collectDiagErrors(err error, dst *[]diag.Diagnostic) {
 		}
 		return
 	}
-	var de *diag.DiagError
-	if errors.As(err, &de) {
+	if de, ok := errors.AsType[*diag.DiagError](err); ok {
 		*dst = append(*dst, de.D)
 	}
 }
@@ -1297,7 +1297,8 @@ func matchSummaries(matches []evaluator.Match) []debuglog.MatchSummary {
 		return nil
 	}
 	out := make([]debuglog.MatchSummary, 0, len(matches))
-	for _, m := range matches {
+	for i := range matches {
+		m := &matches[i]
 		s := debuglog.MatchSummary{Source: m.Rule.Source}
 		if m.Action != nil {
 			s.RuleID = m.Action.RuleID

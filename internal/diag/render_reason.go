@@ -268,7 +268,7 @@ func renderKeyMissing(v KeyMissing) reasonRender {
 // a footer listing each path with its resolved value.
 func renderBindingMismatch(v BindingMismatch) reasonRender {
 	msg := fmt.Sprintf("@bind(%s): values differ", v.Variable)
-	var footers []string
+	footers := make([]string, 0, len(v.Paths))
 	for i, p := range v.Paths {
 		val := ""
 		if i < len(v.Values) {

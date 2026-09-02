@@ -33,8 +33,7 @@ func collectDiagErrors(err error) []*diag.DiagError {
 		if e == nil {
 			return
 		}
-		var de *diag.DiagError
-		if errors.As(e, &de) {
+		if de, ok := errors.AsType[*diag.DiagError](e); ok {
 			out = append(out, de)
 		}
 		// errors.Join returns a joinError that implements Unwrap() []error.
@@ -182,8 +181,7 @@ second_broken: {
 	}
 
 	// errors.As must recover at least one structured diagnostic.
-	var de *diag.DiagError
-	if !errors.As(err, &de) {
+	if _, ok := errors.AsType[*diag.DiagError](err); !ok {
 		t.Fatalf("errors.As failed: expected at least one *diag.DiagError, got %T: %v", err, err)
 	}
 

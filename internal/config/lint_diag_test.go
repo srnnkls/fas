@@ -30,8 +30,7 @@ func recoverDiag(t *testing.T, err error) (*diag.DiagError, bool) {
 	if err == nil {
 		return nil, false
 	}
-	var de *diag.DiagError
-	if errors.As(err, &de) {
+	if de, ok := errors.AsType[*diag.DiagError](err); ok {
 		return de, de != nil
 	}
 	return nil, false
@@ -47,8 +46,7 @@ func collectDiags(err error) []*diag.DiagError {
 		if e == nil {
 			return
 		}
-		var de *diag.DiagError
-		if errors.As(e, &de) {
+		if de, ok := errors.AsType[*diag.DiagError](e); ok {
 			out = append(out, de)
 		}
 		// Descend through Join aggregates.
