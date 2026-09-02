@@ -1,6 +1,8 @@
 package evaluator
 
 import (
+	"strings"
+
 	"cuelang.org/go/cue"
 
 	"github.com/srnnkls/fas/internal/config"
@@ -132,11 +134,7 @@ func joinDotPath(parts []string) string {
 	if len(parts) == 0 {
 		return "<root>"
 	}
-	result := parts[0]
-	for _, p := range parts[1:] {
-		result += "." + p
-	}
-	return result
+	return strings.Join(parts, ".")
 }
 
 func bindingPaths(bindings []config.Binding) []string {

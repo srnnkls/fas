@@ -355,8 +355,7 @@ bad_ref: {
 	if !strings.Contains(msg, path) && !strings.Contains(msg, base) {
 		t.Errorf("error should mention the rule file path (%s) or basename (%s), got: %s", path, base, msg)
 	}
-	var cueErr cueerrors.Error
-	if !errors.As(err, &cueErr) {
+	if _, ok := errors.AsType[cueerrors.Error](err); !ok {
 		t.Errorf("error should unwrap to cue/errors.Error for position metadata, got type %T: %v", err, err)
 	}
 }

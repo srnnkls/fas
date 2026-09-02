@@ -287,8 +287,7 @@ legit: {
 	// Unwrap check — CUE diagnostics must survive wrapping so callers can
 	// render position metadata the same way the existing stdlib-error test
 	// asserts.
-	var cueErr cueerrors.Error
-	if !errors.As(err, &cueErr) {
+	if _, ok := errors.AsType[cueerrors.Error](err); !ok {
 		t.Errorf("error should unwrap to cue/errors.Error, got type %T: %v", err, err)
 	}
 }

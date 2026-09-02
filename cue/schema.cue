@@ -28,10 +28,21 @@ package fas
 		parsed?:  #Parsed
 		...
 	}
-	tool_response?: _
-	agent_type?:    string
-	session_id?:    string
-	cwd?:           string
+	tool_response?:          _
+	tool_use_id?:            string
+	prompt?:                 string
+	last_assistant_message?: string
+	agent_id?:               string
+	agent_type?:             string
+	session_id?:             string
+	prompt_id?:              string
+	transcript_path?:        string
+	cwd?:                    string
+	permission_mode?:        string
+	effort?: {
+		level?: string
+		...
+	}
 	signals?: {[string]: #SignalResult}
 	...
 }
@@ -52,7 +63,7 @@ package fas
 	targets?:     _
 	flags?:       _
 	calls?:       _
-	attributes?:  {...}
+	attributes?: {...}
 	...
 }
 
@@ -99,7 +110,7 @@ package fas
 #Action: #Deny | #Ask | #Modify | #Inject | #Allow
 
 #Rule: {
-	when:  {...}
+	when: {...}
 	then?: #Action
 	meta?: #Meta
 }

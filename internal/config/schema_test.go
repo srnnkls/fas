@@ -57,6 +57,20 @@ func TestValidateInput_AcceptsOptionalFieldsAbsent(t *testing.T) {
 	}
 }
 
+func TestValidateInput_AcceptsUnknownKeysUnderEffort(t *testing.T) {
+	raw := []byte(`{"hook_event_name":"Stop","effort":{"level":"high","budget":4000}}`)
+	if err := config.ValidateInput(raw); err != nil {
+		t.Fatalf("effort must tolerate keys the harness adds later, got: %v", err)
+	}
+}
+
+func TestValidateInput_RejectsWrongTypeForEffortLevel(t *testing.T) {
+	raw := []byte(`{"hook_event_name":"Stop","effort":{"level":42}}`)
+	if err := config.ValidateInput(raw); err == nil {
+		t.Fatal("expected type mismatch for effort.level, got nil")
+	}
+}
+
 func TestValidateInput_RejectsInvalidJSON(t *testing.T) {
 	raw := []byte(`{not valid json`)
 	if err := config.ValidateInput(raw); err == nil {

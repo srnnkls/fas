@@ -44,7 +44,8 @@ func Synthesize(matches []evaluator.Match, sizeBudget int) envelope.OutputEnvelo
 		modifies []*config.Action
 	)
 
-	for _, m := range matches {
+	for i := range matches {
+		m := &matches[i]
 		if m.Action == nil {
 			continue
 		}

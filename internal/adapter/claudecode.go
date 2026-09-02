@@ -33,19 +33,22 @@ func (ClaudeCode) AllowsModify() bool {
 	return false
 }
 
-// ccInput mirrors the Claude Code PreToolUse hook payload subset the engine
-// consumes. transcript_path is tolerated but intentionally not stored: the
-// envelope has no slot for it.
 type ccInput struct {
-	HookEventName  string          `json:"hook_event_name"`
-	ToolName       string          `json:"tool_name"`
-	ToolInput      json.RawMessage `json:"tool_input"`
-	ToolResponse   json.RawMessage `json:"tool_response"`
-	Prompt         string          `json:"prompt"`
-	AgentType      string          `json:"agent_type"`
-	SessionID      string          `json:"session_id"`
-	CWD            string          `json:"cwd"`
-	TranscriptPath string          `json:"transcript_path"`
+	HookEventName        string           `json:"hook_event_name"`
+	ToolName             string           `json:"tool_name"`
+	ToolInput            json.RawMessage  `json:"tool_input"`
+	ToolResponse         json.RawMessage  `json:"tool_response"`
+	ToolUseID            string           `json:"tool_use_id"`
+	Prompt               string           `json:"prompt"`
+	LastAssistantMessage string           `json:"last_assistant_message"`
+	AgentID              string           `json:"agent_id"`
+	AgentType            string           `json:"agent_type"`
+	SessionID            string           `json:"session_id"`
+	PromptID             string           `json:"prompt_id"`
+	TranscriptPath       string           `json:"transcript_path"`
+	CWD                  string           `json:"cwd"`
+	PermissionMode       string           `json:"permission_mode"`
+	Effort               *envelope.Effort `json:"effort"`
 }
 
 // ParseInput normalizes a Claude Code hook JSON payload into envelope.Input.
@@ -72,14 +75,21 @@ func (ClaudeCode) ParseInput(raw json.RawMessage) (*envelope.Input, error) {
 	}
 
 	return &envelope.Input{
-		HookEventName: parsed.HookEventName,
-		ToolName:      parsed.ToolName,
-		ToolInput:     parsed.ToolInput,
-		ToolResponse:  parsed.ToolResponse,
-		Prompt:        parsed.Prompt,
-		AgentType:     parsed.AgentType,
-		SessionID:     parsed.SessionID,
-		CWD:           parsed.CWD,
+		HookEventName:        parsed.HookEventName,
+		ToolName:             parsed.ToolName,
+		ToolInput:            parsed.ToolInput,
+		ToolResponse:         parsed.ToolResponse,
+		ToolUseID:            parsed.ToolUseID,
+		Prompt:               parsed.Prompt,
+		LastAssistantMessage: parsed.LastAssistantMessage,
+		AgentID:              parsed.AgentID,
+		AgentType:            parsed.AgentType,
+		SessionID:            parsed.SessionID,
+		PromptID:             parsed.PromptID,
+		TranscriptPath:       parsed.TranscriptPath,
+		CWD:                  parsed.CWD,
+		PermissionMode:       parsed.PermissionMode,
+		Effort:               parsed.Effort,
 	}, nil
 }
 

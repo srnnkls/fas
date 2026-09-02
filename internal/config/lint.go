@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"slices"
 
 	"cuelang.org/go/cue/ast"
 
@@ -295,28 +296,28 @@ func checkSelector(ruleName string, ruleNames, helperDefNames map[string]struct{
 // parser does not mark via IsPredeclared() (the sentinel is only set by the
 // full compiler pipeline). Without this set they false-positive as E0501.
 var predeclaredTypes = map[string]struct{}{
-	"_":      {},
-	"string": {},
-	"bytes":  {},
-	"bool":   {},
-	"int":    {},
-	"float":  {},
-	"number": {},
-	"null":   {},
-	"uint":   {},
-	"uint8":  {},
-	"uint16": {},
-	"uint32": {},
-	"uint64": {},
+	"_":       {},
+	"string":  {},
+	"bytes":   {},
+	"bool":    {},
+	"int":     {},
+	"float":   {},
+	"number":  {},
+	"null":    {},
+	"uint":    {},
+	"uint8":   {},
+	"uint16":  {},
+	"uint32":  {},
+	"uint64":  {},
 	"uint128": {},
-	"int8":   {},
-	"int16":  {},
-	"int32":  {},
-	"int64":  {},
-	"int128": {},
-	"float32":  {},
-	"float64":  {},
-	"rune": {},
+	"int8":    {},
+	"int16":   {},
+	"int32":   {},
+	"int64":   {},
+	"int128":  {},
+	"float32": {},
+	"float64": {},
+	"rune":    {},
 }
 
 // permittedUniverseBuiltins are CUE universe functions allowed bare in `when`.
@@ -547,8 +548,8 @@ func selectorPath(sel *ast.SelectorExpr) []ast.Node {
 	// Final root — whatever wasn't a SelectorExpr.
 	path := make([]ast.Node, 0, len(reversed)+1)
 	path = append(path, cur)
-	for i := len(reversed) - 1; i >= 0; i-- {
-		path = append(path, reversed[i])
+	for _, r := range slices.Backward(reversed) {
+		path = append(path, r)
 	}
 	return path
 }
