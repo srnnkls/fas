@@ -81,7 +81,7 @@ error[E0201]: key not found
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found at <root>
    |
-   = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
+   = help: <root> has keys: agent_id, cwd, hook_event_name, session_id, tool_input, tool_name
 [1]
 ```
 
@@ -557,7 +557,7 @@ error[E0201]: key not found
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found at <root>
    |
-   = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
+   = help: <root> has keys: agent_id, cwd, hook_event_name, session_id, tool_input, tool_name
 rule_id: leaf-regex
 error[E0301]: leaf constraint failed
   --> tests/diagnostics_rules/leaf_regex.cue:11:20
@@ -606,7 +606,7 @@ error[E0201]: key not found
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found at <root>
    |
-   = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
+   = help: <root> has keys: agent_id, cwd, hook_event_name, session_id, tool_input, tool_name
 rule_id: leaf-regex
 error[E0301]: leaf constraint failed
   --> tests/diagnostics_rules/leaf_regex.cue:11:20
@@ -647,7 +647,7 @@ error[E0201]: key not found
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found at <root>
    |
-   = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
+   = help: <root> has keys: agent_id, cwd, hook_event_name, session_id, tool_input, tool_name
 rule_id: leaf-regex
 error[E0301]: leaf constraint failed
   --> tests/diagnostics_rules/leaf_regex.cue:11:20
@@ -753,7 +753,7 @@ error[E0201]: key not found
 11 |         signals: user_confirmed: true
    |         ^^^^^^^ key "signals" not found at <root>
    |
-   = help: <root> has keys: cwd, hook_event_name, session_id, tool_input, tool_name
+   = help: <root> has keys: agent_id, cwd, hook_event_name, session_id, tool_input, tool_name
 [1]
 ```
 
