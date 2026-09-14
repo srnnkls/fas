@@ -42,8 +42,9 @@ func Preprocess(toolName string, input map[string]any) (map[string]any, error) {
 	return out, nil
 }
 
-// builtinParsers pairs a tool name with the bash-shaped command parser it
+// builtinParsers pairs a tool name with the command parser it
 // should run. Parsers all consume the command string from tool_input.command.
 var builtinParsers = map[string]func(string) Parsed{
-	"Bash": ParseBash,
+	"Bash":        ParseBash,
+	"apply_patch": ParseApplyPatch,
 }

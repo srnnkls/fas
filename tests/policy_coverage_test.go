@@ -19,6 +19,7 @@ type coverage struct {
 // allow that shares the trigger but lacks the deny condition (INV-7). A rule_id
 // without an entry here is a reported gap, so adding a policy forces coverage.
 var policyCoverage = map[string]coverage{
+	"system-patch": {deny: []string{"Blocks Codex patch to system path"}, allow: "Allows Codex patch outside system paths"},
 	"system-path": {
 		deny:  []string{"Blocks rm -rf /etc/passwd", "Blocks cat /etc/shadow", "Blocks rm -rf /sys/power"},
 		allow: "Allows rm -rf /devops (prefix is not a complete path component)",
