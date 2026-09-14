@@ -19,6 +19,10 @@ _byName: {
 #AskUserQuestion: _byName.AskUserQuestion
 #Bash:            _byName.Bash
 #Edit:            _byName.Edit
+#EnterWorktree:   _byName.EnterWorktree
+#ExitWorktree:    _byName.ExitWorktree
+#Skill:           _byName.Skill
+#Task:            _byName.Task
 #Glob:            _byName.Glob
 #Grep:            _byName.Grep
 #MultiEdit:       _byName.MultiEdit

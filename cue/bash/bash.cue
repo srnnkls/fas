@@ -7,6 +7,21 @@ package bash
 
 import "list"
 
+// #call keeps command, flags, and arguments within one shell invocation.
+#call: {
+	#match: {...}
+	tool_input: {parsed: {calls: list.MatchN(>0, #match), ...}, ...}
+	...
+}
+
+// #argumentPair matches adjacent literal arguments, including --name=value.
+#argumentPair: {
+	#first:  string
+	#second: string
+	argument_pairs: list.MatchN(>0, {first: #first, second: #second, ...})
+	...
+}
+
 // #command matches on parsed.commands (the resolved executable names) rather
 // than the raw string, so it survives sudo/env/whitespace prefixes that defeat
 // the ^cmd\b matchers below.
@@ -26,7 +41,8 @@ import "list"
 		commands:    list.MatchN(>0, #of)
 		subcommands: list.MatchN(>0, #name)
 		...
-	}, ...}
+	}, ...
+	}
 	...
 }
 

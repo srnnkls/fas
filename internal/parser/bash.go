@@ -3,9 +3,11 @@ package parser
 import (
 	"bytes"
 	"fmt"
+	"path"
 	"slices"
 	"strings"
 
+	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 )
 
@@ -75,20 +77,27 @@ func extractCall(call *syntax.CallExpr, out *Parsed) {
 		}
 	}
 
-	// Strip leading escalation prefixes (sudo/doas/su) without consuming
-	// substituted words, which can never be literal command names.
 	for len(tokens) > 0 && !tokens[0].hasSubst {
-		if _, ok := escalationPrefixes[tokens[0].text]; !ok {
+		name := path.Base(tokens[0].text)
+		if _, ok := escalationPrefixes[name]; !ok && name != "env" {
 			break
 		}
-		appendAttrString(out, "prefix_commands", tokens[0].text)
-		tokens = tokens[1:]
+		args := make([]string, len(tokens)-1)
+		for i, token := range tokens[1:] {
+			args[i] = token.text
+		}
+		count := commandPrefixArgs(name, args)
+		if count < 0 {
+			break
+		}
+		appendAttrString(out, "prefix_commands", name)
+		tokens = tokens[count+1:]
 	}
 	if len(tokens) == 0 {
 		return
 	}
 
-	name := tokens[0].text
+	name := path.Base(tokens[0].text)
 	rest := tokens[1:]
 	out.Commands = append(out.Commands, name)
 
@@ -159,12 +168,31 @@ func extractCall(call *syntax.CallExpr, out *Parsed) {
 		out.Actions = append(out.Actions, verb)
 	}
 
+	arguments := make([]any, len(rest))
+	for i, word := range call.Args[len(call.Args)-len(rest):] {
+		if value, ok := literalWord(word); ok {
+			arguments[i] = value
+		}
+	}
+	callSubIdx := subIdx
+	if name == "git" {
+		callSubIdx = gitSubcommandIndex(arguments)
+	}
+	var subcommandArgs []any
+	callSubcommand := ""
+	if callSubIdx >= 0 {
+		callSubcommand, _ = arguments[callSubIdx].(string)
+		subcommandArgs = arguments[callSubIdx+1:]
+	}
 	out.Calls = append(out.Calls, Call{
-		Command:    name,
-		Subcommand: subcommand,
-		Action:     verb,
-		Targets:    positional,
-		Flags:      flags,
+		Command:        name,
+		Subcommand:     callSubcommand,
+		Action:         verb,
+		Targets:        positional,
+		Flags:          flags,
+		Arguments:      arguments,
+		SubcommandArgs: subcommandArgs,
+		ArgumentPairs:  argumentPairs(arguments),
 	})
 }
 
@@ -227,9 +255,133 @@ func resolveVerb(name, subcommand string, flags []string) string {
 	return bashVerbs[name]
 }
 
+func commandPrefixArgs(command string, args []string) int {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			return i + 1
+		}
+		if command == "env" {
+			if strings.Contains(arg, "=") && !strings.HasPrefix(arg, "-") {
+				continue
+			}
+			switch arg {
+			case "-i", "--ignore-environment", "-":
+				continue
+			case "-u", "--unset", "-C", "--chdir":
+				if i+1 >= len(args) {
+					return -1
+				}
+				i++
+				continue
+			}
+			if strings.HasPrefix(arg, "--unset=") || strings.HasPrefix(arg, "--chdir=") {
+				continue
+			}
+		} else {
+			switch arg {
+			case "-n", "-E", "-H", "-k", "-K", "--non-interactive", "--preserve-env":
+				continue
+			case "-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "--user", "--group", "--host", "--prompt", "--chdir", "--chroot":
+				if i+1 >= len(args) {
+					return -1
+				}
+				i++
+				continue
+			}
+			if strings.HasPrefix(arg, "--") && strings.Contains(arg, "=") {
+				continue
+			}
+		}
+		if strings.HasPrefix(arg, "-") {
+			return -1
+		}
+		return i
+	}
+	return len(args)
+}
+
+func literalWord(w *syntax.Word) (string, bool) {
+	literal := true
+	syntax.Walk(w, func(node syntax.Node) bool {
+		switch n := node.(type) {
+		case nil, *syntax.Word, *syntax.SglQuoted:
+		case *syntax.DblQuoted:
+			if n.Dollar {
+				literal = false
+			}
+		case *syntax.Lit:
+		default:
+			literal = false
+		}
+		return literal
+	})
+	if !literal {
+		return "", false
+	}
+	// Unquoted tilde and glob patterns depend on the filesystem or environment.
+	for _, part := range w.Parts {
+		if lit, ok := part.(*syntax.Lit); ok && strings.ContainsAny(lit.Value, "~*?[") {
+			return "", false
+		}
+	}
+	values, err := expand.Fields(nil, w)
+	if err != nil || len(values) != 1 {
+		return "", false
+	}
+	return values[0], true
+}
+
+func argumentPairs(arguments []any) []ArgumentPair {
+	pairs := []ArgumentPair{}
+	for i, arg := range arguments {
+		value, ok := arg.(string)
+		if !ok {
+			continue
+		}
+		if i+1 < len(arguments) {
+			if next, ok := arguments[i+1].(string); ok {
+				pairs = append(pairs, ArgumentPair{First: value, Second: next})
+			}
+		}
+		if strings.HasPrefix(value, "--") {
+			if first, second, ok := strings.Cut(value, "="); ok {
+				pairs = append(pairs, ArgumentPair{First: first, Second: second})
+			}
+		}
+	}
+	return pairs
+}
+
+func gitSubcommandIndex(arguments []any) int {
+	for i := 0; i < len(arguments); i++ {
+		arg, ok := arguments[i].(string)
+		if !ok {
+			return -1
+		}
+		switch arg {
+		case "-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix":
+			i++
+		case "--":
+			if i+1 < len(arguments) {
+				return i + 1
+			}
+			return -1
+		default:
+			if !strings.HasPrefix(arg, "-") {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
 func wordString(w *syntax.Word) string {
 	if w == nil {
 		return ""
+	}
+	if value, ok := literalWord(w); ok {
+		return value
 	}
 	if lit := w.Lit(); lit != "" {
 		return lit
