@@ -672,7 +672,7 @@ func registerCommonFlags(fs *flag.FlagSet) *commonFlags {
 		globalConfig:  defaultGlobal,
 	}
 	fs.StringVar(&cf.harness, "harness", cf.harness,
-		"vendor harness whose hook protocol to speak (e.g. claude)")
+		"vendor harness whose hook protocol to speak (claude or codex)")
 	fs.StringVar(&cf.projectConfig, "config", cf.projectConfig,
 		"path to the project rules directory")
 	fs.StringVar(&cf.globalConfig, "global-config", cf.globalConfig,
@@ -739,6 +739,8 @@ func selectAdapter(name string) (adapter.Adapter, bool) {
 	switch name {
 	case "claude":
 		return adapter.ClaudeCode{}, true
+	case "codex":
+		return adapter.Codex{}, true
 	default:
 		return nil, false
 	}
@@ -747,7 +749,7 @@ func selectAdapter(name string) (adapter.Adapter, bool) {
 // supportedHarnesses returns the registry names in a stable order so error
 // messages stay deterministic.
 func supportedHarnesses() []string {
-	return []string{"claude"}
+	return []string{"claude", "codex"}
 }
 
 // loadRulesDir wraps config.LoadRules with the "missing dir is empty" policy
@@ -1073,7 +1075,7 @@ Pipeline: adapter.ParseInput -> parser.Preprocess -> EvaluatePhases (global,
 then project) -> synthesis.Synthesize -> adapter.RenderOutput.
 
 Flags:
-  --harness <name>        Vendor harness to speak (default: claude).
+  --harness <name>        Vendor harness to speak: claude or codex (default: claude).
   --config <path>         Project rules directory (default: `+defaultProjectRulesDir+`).
   --global-config <path>  User-global rules directory (default: ~/`+defaultGlobalRulesSubpath+`).
   --fail-closed           On engine error, emit a Blocking envelope instead
@@ -1137,7 +1139,7 @@ Environment:
                           the start of each invocation. Accepts Go duration
                           syntax (e.g. 30m, 2h, 24h).
 
-Supported harnesses: claude.
+Supported harnesses: claude, codex.
 `)
 }
 

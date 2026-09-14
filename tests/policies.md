@@ -1,7 +1,7 @@
 # Fas Policy Tests
 
 End-to-end integration tests for the `fas eval` CLI using [scrut](https://github.com/facebookincubator/scrut).
-Each block pipes a Claude Code hook event into `fas eval --harness claude` and asserts the exact response JSON.
+Each block pipes a hook event into `fas eval` with the named harness and asserts the exact response JSON.
 
 Run with:
 ```bash
@@ -881,5 +881,57 @@ $ cat << 'EOF' |
 > }
 > EOF
 > fas eval --harness claude --config tests/policies_bind --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
+```
+
+## Codex harness
+
+### Allows Codex shell call
+
+```scrut
+$ cat << 'EOF' |
+> {"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo hello"}}
+> EOF
+> fas eval --harness codex --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{} (no-eol)
+```
+
+### Blocks Codex shell call
+
+```scrut
+$ cat << 'EOF' |
+> {"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat /etc/shadow"}}
+> EOF
+> fas eval --harness codex --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"System path blocked"}} (no-eol)
+```
+
+### Blocks Codex patch to system path
+
+```scrut
+$ cat << 'EOF' |
+> {"hook_event_name":"PreToolUse","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: /etc/hosts\n@@\n-old\n+new\n*** End Patch"}}
+> EOF
+> fas eval --harness codex --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"System patch blocked"}} (no-eol)
+```
+
+### Allows Codex patch outside system paths
+
+```scrut
+$ cat << 'EOF' |
+> {"hook_event_name":"PreToolUse","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Add File: note.txt\n+hello\n*** End Patch"}}
+> EOF
+> fas eval --harness codex --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{} (no-eol)
+```
+
+### Claude patch retains Claude response
+
+```scrut
+$ cat << 'EOF' |
+> {"hook_event_name":"PreToolUse","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Add File: note.txt\n+hello\n*** End Patch"}}
+> EOF
+> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```

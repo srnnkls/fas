@@ -96,6 +96,7 @@ func assertTriad(t *testing.T, axis string, expected, catalog, binder map[string
 // a wire value) requires an intentional edit here and cannot silently pass.
 func TestDerivation_CatalogBinderBijection(t *testing.T) {
 	wantTools := map[string]string{
+		"ApplyPatch":      "apply_patch",
 		"Agent":           "Agent",
 		"AskUserQuestion": "AskUserQuestion",
 		"Bash":            "Bash",

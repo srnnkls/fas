@@ -1,4 +1,4 @@
-// Package tool binds the built-in tool identities in cue/catalog to the harness
+// Package tool binds the curated tool identities in cue/catalog to the harness
 // wire field `tool_name`. Each member pins tool_name to one catalog identity, so
 // a rule matches a tool by composing the event with it — hook.#PreToolUse &
 // tool.#Bash. Matchers over the *command* a Bash call runs (rm, tee, …) live in
@@ -15,6 +15,7 @@ _byName: {
 	for k, v in catalog.#ToolName {(k): {tool_name: v, ...}}
 }
 
+#ApplyPatch:      _byName.ApplyPatch
 #Agent:           _byName.Agent
 #AskUserQuestion: _byName.AskUserQuestion
 #Bash:            _byName.Bash
@@ -38,7 +39,7 @@ _byName: {
 #WebSearch:       _byName.WebSearch
 #Write:           _byName.Write
 
-// #Known matches any built-in tool — the disjunction of the members above.
+// #Known matches exactly the curated catalog identities above.
 // Compose as hook.#PreToolUse & tool.#Known. The event shapes keep tool_name an
 // open string, so custom MCP/skill tools still match via {tool_name: "your-tool"}.
 #Known: or([for _, m in _byName {m}])
