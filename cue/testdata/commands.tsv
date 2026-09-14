@@ -34,8 +34,8 @@ sudo rm -rf /x	match
 FOO=1 rm file	match
  rm -rf /x	match
 #
-# `env rm` resolves to commands=["env"] (env is not an escalation prefix; it
-# becomes the leading command), and `echo rm` resolves to commands=["echo"]:
-# rm is an argument, not the executable. Both stay nomatch.
-env rm file	nomatch
+env rm file	match
+env MODE=test rm file	match
+sudo -u root rm file	match
+/bin/rm file	match
 echo rm	nomatch

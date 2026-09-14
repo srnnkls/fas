@@ -23,9 +23,18 @@ type Parsed struct {
 
 // Call groups one resolved command invocation with its own targets and flags.
 type Call struct {
-	Command    string   `json:"command"`
-	Subcommand string   `json:"subcommand,omitempty"`
-	Action     string   `json:"action,omitempty"`
-	Targets    []string `json:"targets"`
-	Flags      []string `json:"flags"`
+	Command        string         `json:"command"`
+	Subcommand     string         `json:"subcommand,omitempty"`
+	Action         string         `json:"action,omitempty"`
+	Targets        []string       `json:"targets"`
+	Flags          []string       `json:"flags"`
+	Arguments      []any          `json:"arguments"`
+	SubcommandArgs []any          `json:"subcommand_args"`
+	ArgumentPairs  []ArgumentPair `json:"argument_pairs"`
+}
+
+// ArgumentPair records adjacent literal arguments and the two sides of --name=value.
+type ArgumentPair struct {
+	First  string `json:"first"`
+	Second string `json:"second"`
 }

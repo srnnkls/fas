@@ -13,11 +13,16 @@ import "list"
 	...
 }
 
-// #hasOption is regex-free set membership over parsed.flags. The
-// `or([for s in #spellings {s}])` idiom turns the data list into a disjunction
-// constraint — a bare list literal would not constrain (works for one element).
+// #option matches a flag within a parsed call.
+#option: {
+	#spellings: [string, ...string]
+	flags: list.MatchN(>0, or(#spellings))
+	...
+}
+
 #hasOption: {
 	#spellings: [string, ...string]
-	tool_input: {parsed: {flags: list.MatchN(>0, or([for s in #spellings {s}])), ...}, ...}
+	tool_input: {parsed: #option & {#spellings: S}, ...}
+	let S = #spellings
 	...
 }
