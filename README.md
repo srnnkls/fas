@@ -210,7 +210,7 @@ Three output formats: `--format=text` (default, ANSI-coloured), `--format=json`
 
 | Flag                 | Env var       | Default                  |
 |----------------------|---------------|--------------------------|
-| `--harness <name>`   | —             | `claude`                 |
+| `--harness <name>` (`claude`, `codex`) | — | `claude` |
 | `--config <path>`    | —             | `.fas/rules`             |
 | `--global-config <path>` | —         | `~/.config/fas/rules`    |
 | `--fail-closed`      | —             | off (fail-open)          |
@@ -219,6 +219,60 @@ Three output formats: `--format=text` (default, ANSI-coloured), `--format=json`
 | `--color <mode>`     | `FAS_COLOR`   | `auto`                   |
 
 `fas --version` prints the build version. `fas --help` documents every flag.
+
+## Codex CLI
+
+Use `fas eval --harness codex` for Codex hooks. The adapter targets the hook
+protocol verified against Codex CLI 0.148.0. Add this to `~/.codex/hooks.json`
+(or `$CODEX_HOME/hooks.json` when configured):
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [{"type": "command", "command": "fas eval --harness codex"}]
+      }
+    ]
+  }
+}
+```
+
+Approve the hook in Codex's interactive hooks-review screen before using it.
+An untrusted hook is skipped silently. Project-local `.codex/hooks.json` also
+requires the project to have `trust_level = "trusted"` in Codex's `config.toml`.
+
+Under Codex, an `ask` rule **blocks**, just like `deny`: the supported protocol
+has no ask response. Confirmable behavior needs a Codex-specific allow rule;
+do not assume Claude Code's confirmation semantics carry over. Payload
+rewrites (`modify`) are rejected when loading rules for this harness.
+
+Codex shell calls use `tool.#Bash`. File edits use `tool.#ApplyPatch`; the
+parser exposes every add, update, delete, and move path in
+`tool_input.parsed.targets`, including both source and destination of a move.
+For example, protect system paths with:
+
+```cue
+import (
+    "github.com/srnnkls/fas/cue/hook"
+    "github.com/srnnkls/fas/cue/tool"
+    "github.com/srnnkls/fas/cue/path"
+)
+
+system_patch: {
+    when: hook.#PreToolUse & tool.#ApplyPatch & path.#hasSystemTarget
+    then: deny: {
+        rule_id: "system-patch"
+        reason: "System patch blocked"
+        severity: "HIGH"
+    }
+}
+```
+
+Rules keyed only on `Write`, `Edit`, or `MultiEdit` need an `ApplyPatch`
+counterpart to cover Codex file edits. Malformed patches expose
+`tool_input.parsed.attributes.parse_error`; parsing does not itself deny a call.
 
 ## Building
 
