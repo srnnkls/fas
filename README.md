@@ -210,15 +210,39 @@ Three output formats: `--format=text` (default, ANSI-coloured), `--format=json`
 
 | Flag                 | Env var       | Default                  |
 |----------------------|---------------|--------------------------|
-| `--harness <name>` (`claude`, `codex`) | — | `claude` |
+| `--harness <name>` (`claude`, `codex`, `pi`) | — | `claude` |
 | `--config <path>`    | —             | `.fas/rules`             |
 | `--global-config <path>` | —         | `~/.config/fas/rules`    |
+| `--follow-symlinks`  | `FAS_FOLLOW_SYMLINKS` | off              |
 | `--fail-closed`      | —             | off (fail-open)          |
 | `--explain[=MODE]`   | `FAS_EXPLAIN` | off                      |
 | `--format <fmt>`     | `FAS_FORMAT`  | `text`                   |
 | `--color <mode>`     | `FAS_COLOR`   | `auto`                   |
 
 `fas --version` prints the build version. `fas --help` documents every flag.
+
+User-wide defaults live in `~/.config/fas/config.cue`, validated against
+`#Config` in `cue/schema.cue`. A flag wins over its `FAS_*` variable, which
+wins over the file; unknown fields are an error.
+
+```cue
+project_rules:   ".fas/rules"          // --config
+global_rules:    "~/.config/fas/rules" // --global-config
+follow_symlinks: true                  // --follow-symlinks
+fail_closed:     true                  // --fail-closed
+explain:         "missed"              // --explain: fired | missed | both
+format:          "text"                // --format: text | json | sarif
+color:           "auto"                // --color: auto | always | never
+log:             true                  // FAS_LOG: true or a directory
+log_ttl:         "24h"                 // FAS_LOG_TTL
+```
+
+`NO_COLOR` still outranks the file's `color`. `--harness` has no setting: the
+calling agent picks it.
+
+Symlinked rule directories, including a symlinked `.fas/rules` itself, are
+skipped with a stderr warning unless `follow_symlinks` is enabled. Symlinked
+`.cue` files always load.
 
 ## Codex CLI
 
@@ -273,6 +297,36 @@ system_patch: {
 Rules keyed only on `Write`, `Edit`, or `MultiEdit` need an `ApplyPatch`
 counterpart to cover Codex file edits. Malformed patches expose
 `tool_input.parsed.attributes.parse_error`; parsing does not itself deny a call.
+
+## pi and omp
+
+pi and omp (oh-my-pi) have no shell hooks, so fas ships an extension in
+`extensions/fas/` that calls `fas eval --harness pi` on every tool call and
+tool result. Link it into either host:
+
+```sh
+ln -s "$PWD/extensions/fas" ~/.pi/agent/extensions/fas
+ln -s "$PWD/extensions/fas" ~/.omp/agent/extensions/fas
+```
+
+`FAS_BIN` overrides the `fas` binary the extension runs. Rules resolve as for
+any other harness: `.fas/rules` under the session's working directory plus
+`~/.config/fas/rules`.
+
+The adapter maps host tool names onto the catalog (`bash`→`Bash`,
+`read`→`Read`, `write`→`Write`, `edit`→`Edit`, `grep`→`Grep`,
+`find`/`glob`→`Glob`), so `tool.#Bash` and the `bash`/`path` matchers apply
+unchanged. `tool_input` keeps the host's shape: file tools carry `path`, not
+Claude's `file_path`.
+
+- `deny` blocks the tool call with the rule's reason.
+- `ask` opens a confirmation dialog. Without a UI (`-p`, JSON mode) it blocks.
+- `modify` is supported: `updated_input` replaces the tool arguments before
+  the call runs.
+- `inject` on `PostToolUse` appends the text to the tool result.
+
+If `fas` fails (missing binary, rule load error, bad output), the extension
+shows a warning and lets the call through, matching fas's fail-open default.
 
 ## Building
 

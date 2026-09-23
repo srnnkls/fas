@@ -12,10 +12,11 @@ import (
 // `#Input` and `#Rule` values so callers (LoadRules on the eval path,
 // ValidateInput in tests) avoid re-parsing schema.cue on every call.
 type schemaBundle struct {
-	ctx      *cue.Context
-	schema   cue.Value
-	inputDef cue.Value
-	ruleDef  cue.Value
+	ctx       *cue.Context
+	schema    cue.Value
+	inputDef  cue.Value
+	ruleDef   cue.Value
+	configDef cue.Value
 }
 
 var (
@@ -45,11 +46,17 @@ func loadSchema() (schemaBundle, error) {
 			cachedErr = fmt.Errorf("lookup #Rule: %w", err)
 			return
 		}
+		configDef := schema.LookupPath(cue.ParsePath("#Config"))
+		if err := configDef.Err(); err != nil {
+			cachedErr = fmt.Errorf("lookup #Config: %w", err)
+			return
+		}
 		cachedBundle = schemaBundle{
-			ctx:      ctx,
-			schema:   schema,
-			inputDef: inputDef,
-			ruleDef:  ruleDef,
+			ctx:       ctx,
+			schema:    schema,
+			inputDef:  inputDef,
+			ruleDef:   ruleDef,
+			configDef: configDef,
 		}
 	})
 	return cachedBundle, cachedErr

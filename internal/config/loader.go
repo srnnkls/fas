@@ -126,16 +126,28 @@ const rulesModulePath = "fas.local/rules@v0"
 // tree hosts the embedded fas stdlib, so rule authors may import
 // `github.com/srnnkls/fas/cue/hook` (etc.). An empty tree returns an empty slice.
 func LoadRules(dir string) ([]Rule, error) {
-	pkgDirs, err := discoverPackageDirs(dir)
+	rules, _, err := LoadRulesWith(dir, LoadOptions{})
+	return rules, err
+}
+
+// LoadOptions tunes rule discovery.
+type LoadOptions struct {
+	FollowSymlinks bool
+}
+
+// LoadRulesWith is LoadRules with discovery options. It also returns the
+// symlinked directories that were skipped because FollowSymlinks is off.
+func LoadRulesWith(dir string, opts LoadOptions) ([]Rule, []string, error) {
+	pkgDirs, skipped, err := discoverPackageDirs(dir, opts.FollowSymlinks)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	pkgs := make([]packageOrigins, 0, len(pkgDirs))
 	for _, pkgDir := range pkgDirs {
 		pkg, err := parsePackageDir(dir, pkgDir)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if pkg != nil {
 			pkgs = append(pkgs, *pkg)
@@ -144,18 +156,18 @@ func LoadRules(dir string) ([]Rule, error) {
 
 	bundle, err := loadSchema()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	overlay, err := buildSharedOverlay(pkgs)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var out []Rule
 	for _, pkg := range pkgs {
 		rules, err := loadPackage(dir, pkg, bundle, overlay, pkgs)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		out = append(out, rules...)
 	}
@@ -164,37 +176,76 @@ func LoadRules(dir string) ([]Rule, error) {
 		return CompareModulePath(a.ModuleRelPath, b.ModuleRelPath)
 	})
 	if out == nil {
-		return []Rule{}, nil
+		return []Rule{}, skipped, nil
 	}
-	return out, nil
+	return out, skipped, nil
 }
 
 // discoverPackageDirs returns every directory in the tree rooted at root that
 // directly holds at least one `.cue` file. Dotfile dirs (`.x`), underscore dirs
 // (`_x`), and `cue.mod` dirs are pruned along with their whole subtree.
-func discoverPackageDirs(root string) ([]string, error) {
+// Symlinked directories, root included, are descended only when follow is set;
+// otherwise they are returned as skipped. Returned paths keep the symlinked
+// spelling so module subpaths stay relative to root.
+func discoverPackageDirs(root string, follow bool) (dirs, skipped []string, err error) {
 	seen := map[string]struct{}{}
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() {
-			if p != root && isPrunedDir(d.Name()) {
-				return fs.SkipDir
+	visited := map[string]struct{}{}
+	var walk func(logical, physical string) error
+	walk = func(logical, physical string) error {
+		return filepath.WalkDir(physical, func(p string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			rel, err := filepath.Rel(physical, p)
+			if err != nil {
+				return err
+			}
+			lp := filepath.Join(logical, rel)
+			if lp != root && (d.IsDir() || d.Type()&fs.ModeSymlink != 0) && isPrunedDir(d.Name()) {
+				if d.IsDir() {
+					return fs.SkipDir
+				}
+				return nil
+			}
+			if d.IsDir() {
+				return nil
+			}
+			if d.Type()&fs.ModeSymlink != 0 {
+				if info, err := os.Stat(p); err == nil && info.IsDir() {
+					if !follow {
+						skipped = append(skipped, lp)
+						return nil
+					}
+					target, err := filepath.EvalSymlinks(p)
+					if err != nil {
+						return err
+					}
+					if _, ok := visited[target]; ok {
+						return nil
+					}
+					visited[target] = struct{}{}
+					return walk(lp, target)
+				}
+			}
+			if filepath.Ext(p) == ".cue" {
+				seen[filepath.Dir(lp)] = struct{}{}
 			}
 			return nil
-		}
-		if filepath.Ext(p) == ".cue" {
-			seen[filepath.Dir(p)] = struct{}{}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("walk rules dir %s: %w", root, err)
+		})
 	}
-	dirs := slices.Collect(maps.Keys(seen))
+	start := root
+	if follow {
+		if target, err := filepath.EvalSymlinks(root); err == nil {
+			start = target
+			visited[target] = struct{}{}
+		}
+	}
+	if err := walk(root, start); err != nil {
+		return nil, nil, fmt.Errorf("walk rules dir %s: %w", root, err)
+	}
+	dirs = slices.Collect(maps.Keys(seen))
 	slices.Sort(dirs)
-	return dirs, nil
+	return dirs, skipped, nil
 }
 
 func isPrunedDir(name string) bool {
