@@ -21,6 +21,7 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -55,6 +56,9 @@ const defaultProjectRulesDir = ".fas/rules"
 // defaultGlobalRulesSubpath is joined onto $HOME/.config to find the
 // user-global rules directory when --global-config is omitted.
 const defaultGlobalRulesSubpath = ".config/fas/rules"
+
+// defaultSettingsSubpath is the user-global settings file, relative to $HOME.
+const defaultSettingsSubpath = ".config/fas/config.cue"
 
 // version is overridden at release-build time via -ldflags
 // "-X main.version=v0.1.0". Local `go build` keeps the "dev" sentinel.
@@ -106,7 +110,7 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 		return 0
 	}
 
-	rec := debuglog.Open(os.Getenv("FAS_LOG"), os.Getenv("FAS_LOG_TTL"), args, stderr)
+	rec := debuglog.Open(envOr("FAS_LOG", opts.settings.Log), envOr("FAS_LOG_TTL", opts.settings.LogTTL), args, stderr)
 
 	ad, ok := selectAdapter(opts.harness)
 	if !ok {
@@ -122,12 +126,12 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 	}
 	rec.SetRawInput(raw)
 
-	globalRules, err := loadRulesDir(opts.globalConfig)
+	globalRules, err := loadRulesDir(opts.globalConfig, opts.followSymlinks, stderr)
 	if err != nil {
 		errorln(stderr, err)
 		return exitWithLog(rec, 1)
 	}
-	projectRules, err := loadRulesDir(opts.projectConfig)
+	projectRules, err := loadRulesDir(opts.projectConfig, opts.followSymlinks, stderr)
 	if err != nil {
 		errorln(stderr, err)
 		return exitWithLog(rec, 1)
@@ -218,12 +222,16 @@ func runExplain(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 	if err := fs.Parse(rest); err != nil {
 		return 2
 	}
-	resolvedFormat, ferr := resolveFormat(common.format, os.Getenv("FAS_FORMAT"))
+	if _, err := common.applySettings(fs); err != nil {
+		errorln(stderr, err)
+		return 2
+	}
+	resolvedFormat, ferr := resolveFormat(common.format, envOr("FAS_FORMAT", common.settings.Format))
 	if ferr != nil {
 		errorln(stderr, ferr)
 		return 2
 	}
-	resolvedColor, cerr := resolveColor(color, os.Getenv("FAS_COLOR"), os.Getenv("NO_COLOR"))
+	resolvedColor, cerr := resolveColor(color, colorSetting(common.settings), os.Getenv("NO_COLOR"))
 	if cerr != nil {
 		errorln(stderr, cerr)
 		return 2
@@ -236,12 +244,12 @@ func runExplain(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 		return 2
 	}
 
-	globalRules, err := loadRulesDir(common.globalConfig)
+	globalRules, err := loadRulesDir(common.globalConfig, common.followSymlinks, stderr)
 	if err != nil {
 		errorln(stderr, err)
 		return 2
 	}
-	projectRules, err := loadRulesDir(common.projectConfig)
+	projectRules, err := loadRulesDir(common.projectConfig, common.followSymlinks, stderr)
 	if err != nil {
 		errorln(stderr, err)
 		return 2
@@ -454,13 +462,15 @@ func isTruthyEnv(v string) bool {
 
 // cliOptions bundles the parsed flag state so run stays flat.
 type cliOptions struct {
-	harness       string
-	projectConfig string
-	globalConfig  string
-	failClosed    bool
-	explain       explainFlag
-	format        outputFormat
-	color         colorMode
+	harness        string
+	projectConfig  string
+	globalConfig   string
+	followSymlinks bool
+	settings       config.Settings
+	failClosed     bool
+	explain        explainFlag
+	format         outputFormat
+	color          colorMode
 }
 
 // outputFormat enumerates diagnostic emission formats wired through to the
@@ -653,10 +663,12 @@ func paletteFor(mode colorMode, tty bool, noColorEnv string) diag.Palette {
 // parseFlags reads args into a cliOptions. The returned bool is true when the
 // user asked for help; callers should print usage and exit 0.
 type commonFlags struct {
-	harness       string
-	projectConfig string
-	globalConfig  string
-	format        formatFlag
+	harness        string
+	projectConfig  string
+	globalConfig   string
+	followSymlinks bool
+	format         formatFlag
+	settings       config.Settings
 }
 
 func registerCommonFlags(fs *flag.FlagSet) *commonFlags {
@@ -672,11 +684,13 @@ func registerCommonFlags(fs *flag.FlagSet) *commonFlags {
 		globalConfig:  defaultGlobal,
 	}
 	fs.StringVar(&cf.harness, "harness", cf.harness,
-		"vendor harness whose hook protocol to speak (claude or codex)")
+		"vendor harness whose hook protocol to speak (claude, codex, or pi)")
 	fs.StringVar(&cf.projectConfig, "config", cf.projectConfig,
 		"path to the project rules directory")
 	fs.StringVar(&cf.globalConfig, "global-config", cf.globalConfig,
 		"path to the user-global rules directory")
+	fs.BoolVar(&cf.followSymlinks, "follow-symlinks", false,
+		"descend into symlinked rule directories")
 	fs.Var(&cf.format, "format",
 		"diagnostic output format: text|json|sarif (default text)")
 	return cf
@@ -703,18 +717,31 @@ func parseFlags(args []string, stderr io.Writer) (cliOptions, bool, error) {
 		}
 		return opts, false, err
 	}
+	set, serr := common.applySettings(fs)
+	if serr != nil {
+		errorln(stderr, serr)
+		return opts, false, serr
+	}
+	if !set["fail-closed"] && common.settings.FailClosed != nil {
+		opts.failClosed = *common.settings.FailClosed
+	}
+	if !opts.explain.set && os.Getenv("FAS_EXPLAIN") == "" && common.settings.Explain != "" {
+		_ = opts.explain.Set(common.settings.Explain)
+	}
+	opts.settings = common.settings
 	opts.harness = common.harness
 	opts.projectConfig = common.projectConfig
 	opts.globalConfig = common.globalConfig
+	opts.followSymlinks = common.followSymlinks
 	opts.format = formatText
 	opts.color = colorAuto
-	f, rerr := resolveFormat(common.format, os.Getenv("FAS_FORMAT"))
+	f, rerr := resolveFormat(common.format, envOr("FAS_FORMAT", common.settings.Format))
 	if rerr != nil {
 		errorln(stderr, rerr)
 		return opts, false, rerr
 	}
 	opts.format = f
-	c, rerr := resolveColor(color, os.Getenv("FAS_COLOR"), os.Getenv("NO_COLOR"))
+	c, rerr := resolveColor(color, colorSetting(common.settings), os.Getenv("NO_COLOR"))
 	if rerr != nil {
 		errorln(stderr, rerr)
 		return opts, false, rerr
@@ -725,6 +752,50 @@ func parseFlags(args []string, stderr io.Writer) (cliOptions, bool, error) {
 
 // defaultGlobalConfigDir resolves ~/.config/fas/rules using os.UserHomeDir
 // so tilde expansion never leaks a literal "~" into downstream path handling.
+// applySettings loads ~/.config/fas/config.cue and fills every common flag
+// the user did not pass. Precedence is flag, then FAS_* env var, then file.
+func (c *commonFlags) applySettings(fs *flag.FlagSet) (map[string]bool, error) {
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	if home, err := os.UserHomeDir(); err == nil {
+		settings, err := config.LoadSettings(filepath.Join(home, defaultSettingsSubpath))
+		if err != nil {
+			return nil, err
+		}
+		c.settings = settings
+	}
+	if !set["config"] && c.settings.ProjectRules != "" {
+		c.projectConfig = c.settings.ProjectRules
+	}
+	if !set["global-config"] && c.settings.GlobalRules != "" {
+		c.globalConfig = c.settings.GlobalRules
+	}
+	if !set["follow-symlinks"] {
+		c.followSymlinks = isTruthyEnv(envOr("FAS_FOLLOW_SYMLINKS", boolSetting(c.settings.FollowSymlinks)))
+	}
+	return set, nil
+}
+
+// envOr returns the environment variable, or fallback when it is unset or empty.
+func envOr(name, fallback string) string {
+	return cmp.Or(os.Getenv(name), fallback)
+}
+
+func boolSetting(b *bool) string {
+	if b != nil && *b {
+		return "1"
+	}
+	return "0"
+}
+
+// colorSetting is FAS_COLOR, else the settings-file color unless NO_COLOR is set.
+func colorSetting(s config.Settings) string {
+	if os.Getenv("NO_COLOR") != "" {
+		return os.Getenv("FAS_COLOR")
+	}
+	return envOr("FAS_COLOR", s.Color)
+}
+
 func defaultGlobalConfigDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -741,6 +812,8 @@ func selectAdapter(name string) (adapter.Adapter, bool) {
 		return adapter.ClaudeCode{}, true
 	case "codex":
 		return adapter.Codex{}, true
+	case "pi":
+		return adapter.Pi{}, true
 	default:
 		return nil, false
 	}
@@ -749,13 +822,13 @@ func selectAdapter(name string) (adapter.Adapter, bool) {
 // supportedHarnesses returns the registry names in a stable order so error
 // messages stay deterministic.
 func supportedHarnesses() []string {
-	return []string{"claude", "codex"}
+	return []string{"claude", "codex", "pi"}
 }
 
 // loadRulesDir wraps config.LoadRules with the "missing dir is empty" policy
 // that the CLI guarantees to users. Rule-load failures propagate as-is so the
 // underlying filename surfaces in the error message.
-func loadRulesDir(dir string) ([]config.Rule, error) {
+func loadRulesDir(dir string, followSymlinks bool, stderr io.Writer) ([]config.Rule, error) {
 	info, err := os.Stat(dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -766,7 +839,11 @@ func loadRulesDir(dir string) ([]config.Rule, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("rules path %s is not a directory", dir)
 	}
-	return config.LoadRules(dir)
+	rules, skipped, err := config.LoadRulesWith(dir, config.LoadOptions{FollowSymlinks: followSymlinks})
+	for _, path := range skipped {
+		errorf(stderr, "warning: skipped symlinked rules directory %s; set follow_symlinks: true in ~/%s, FAS_FOLLOW_SYMLINKS=1, or --follow-symlinks to load it\n", path, defaultSettingsSubpath)
+	}
+	return rules, err
 }
 
 // checkAdapterCapabilities rejects rulesets that emit effects the selected
@@ -1075,9 +1152,11 @@ Pipeline: adapter.ParseInput -> parser.Preprocess -> EvaluatePhases (global,
 then project) -> synthesis.Synthesize -> adapter.RenderOutput.
 
 Flags:
-  --harness <name>        Vendor harness to speak: claude or codex (default: claude).
+  --harness <name>        Vendor harness to speak: claude, codex, or pi (default: claude).
   --config <path>         Project rules directory (default: `+defaultProjectRulesDir+`).
   --global-config <path>  User-global rules directory (default: ~/`+defaultGlobalRulesSubpath+`).
+  --follow-symlinks       Descend into symlinked rule directories. Without
+                          it, fas skips them and warns on stderr.
   --fail-closed           On engine error, emit a Blocking envelope instead
                           of the default Allowing envelope.
   --explain[=MODE]        Emit diagnostics to stderr. MODE is one of
@@ -1118,6 +1197,9 @@ Environment:
   FAS_EXPLAIN            Truthy (1, true, yes — case-insensitive) enables
                           --explain=missed when --explain is absent. The
                           flag always wins when both are set.
+  FAS_FOLLOW_SYMLINKS    Truthy enables --follow-symlinks when the flag
+                          is absent; any other non-empty value disables
+                          it. Overrides the settings file.
   FAS_FORMAT             Selects the diagnostic output format when
                           --format is absent (text|json|sarif).
   FAS_COLOR              Selects the color mode when --color is absent
@@ -1139,7 +1221,13 @@ Environment:
                           the start of each invocation. Accepts Go duration
                           syntax (e.g. 30m, 2h, 24h).
 
-Supported harnesses: claude, codex.
+Settings file:
+  ~/`+defaultSettingsSubpath+` sets user-wide defaults, validated against
+  #Config in cue/schema.cue. Flags win over FAS_* variables, which win over
+  the file. Fields: project_rules, global_rules, follow_symlinks,
+  fail_closed, explain, format, color, log, log_ttl.
+
+Supported harnesses: claude, codex, pi.
 `)
 }
 
@@ -1161,7 +1249,11 @@ func runVet(stdout, stderr io.Writer, args []string) int {
 		errorf(stderr, "fas vet takes no positional arguments; got %q\n", fs.Arg(0))
 		return 2
 	}
-	resolvedFormat, ferr := resolveFormat(common.format, os.Getenv("FAS_FORMAT"))
+	if _, err := common.applySettings(fs); err != nil {
+		errorln(stderr, err)
+		return 2
+	}
+	resolvedFormat, ferr := resolveFormat(common.format, envOr("FAS_FORMAT", common.settings.Format))
 	if ferr != nil {
 		errorln(stderr, ferr)
 		return 2
@@ -1174,8 +1266,8 @@ func runVet(stdout, stderr io.Writer, args []string) int {
 		return 2
 	}
 
-	globalRules, globalErr := loadRulesDir(common.globalConfig)
-	projectRules, projectErr := loadRulesDir(common.projectConfig)
+	globalRules, globalErr := loadRulesDir(common.globalConfig, common.followSymlinks, stderr)
+	projectRules, projectErr := loadRulesDir(common.projectConfig, common.followSymlinks, stderr)
 
 	loadErr := errors.Join(globalErr, projectErr)
 	if loadErr != nil {

@@ -935,3 +935,25 @@ $ cat << 'EOF' |
 > fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```
+
+## pi harness
+
+### Blocks pi bash call to system path
+
+```scrut
+$ cat << 'EOF' |
+> {"hook_event_name":"PreToolUse","tool_name":"bash","tool_input":{"command":"cat /etc/shadow"},"tool_call_id":"c1"}
+> EOF
+> fas eval --harness pi --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{"decision":"deny","reason":"System path blocked"} (no-eol)
+```
+
+### Allows pi bash call
+
+```scrut
+$ cat << 'EOF' |
+> {"hook_event_name":"PreToolUse","tool_name":"bash","tool_input":{"command":"echo hello"},"tool_call_id":"c1"}
+> EOF
+> fas eval --harness pi --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
+{} (no-eol)
+```

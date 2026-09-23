@@ -128,3 +128,17 @@ package fas
 // `Rules:` envelope — it iterates every top-level non-hidden field and
 // unifies each against #Rule directly.
 #Rules: [string]: #Rule
+
+// #Config is the user-global settings file, ~/.config/fas/config.cue. Each
+// field is the fallback for its flag and environment variable.
+#Config: close({
+	project_rules?:   string & !=""
+	global_rules?:    string & !=""
+	follow_symlinks?: bool
+	fail_closed?:     bool
+	explain?:         "fired" | "missed" | "both"
+	format?:          "text" | "json" | "sarif"
+	color?:           "auto" | "always" | "never"
+	log?:             bool | string & !=""
+	log_ttl?:         string & =~"^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$"
+})
