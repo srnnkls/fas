@@ -63,7 +63,7 @@ func TestLoadRules_SymlinkedSubdir(t *testing.T) {
 		t.Fatal(err)
 	}
 	byID := rulesByID(rules)
-	if len(rules) != 2 || byID["shared_rule"].ModuleRelPath != "shared/shared.cue" {
+	if len(rules) != 2 || byID["shared_rule"].ModuleRelPath != filepath.Join("shared", "shared.cue") {
 		t.Fatalf("follow: %+v", byID)
 	}
 }

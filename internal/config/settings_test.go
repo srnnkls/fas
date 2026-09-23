@@ -22,6 +22,7 @@ func writeSettings(t *testing.T, src string) string {
 func TestLoadSettings(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	yes, no := true, false
 
 	settings, err := config.LoadSettings(filepath.Join(t.TempDir(), "missing.cue"))

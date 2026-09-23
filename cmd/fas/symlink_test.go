@@ -23,6 +23,7 @@ rule: {
 	input := claudeBashInput("ls")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("FAS_FOLLOW_SYMLINKS", "")
 
 	res := runCLI(t, input, "eval", "--config", link, "--global-config", empty)

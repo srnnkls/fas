@@ -10,8 +10,10 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	if err := os.Setenv("HOME", home); err != nil {
-		panic(err)
+	for _, name := range []string{"HOME", "USERPROFILE"} {
+		if err := os.Setenv(name, home); err != nil {
+			panic(err)
+		}
 	}
 	code := m.Run()
 	_ = os.RemoveAll(home)

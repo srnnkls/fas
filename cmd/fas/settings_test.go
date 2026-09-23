@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -11,6 +12,7 @@ func writeUserSettings(t *testing.T, src string) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	for _, name := range []string{"FAS_FOLLOW_SYMLINKS", "FAS_EXPLAIN", "FAS_FORMAT", "FAS_COLOR", "NO_COLOR", "FAS_LOG", "FAS_LOG_TTL"} {
 		t.Setenv(name, "")
 	}
@@ -34,13 +36,12 @@ rule: {
 `})
 	empty := emptyRulesDir(t)
 	logs := t.TempDir()
-	writeUserSettings(t, `project_rules: "`+project+`"
-global_rules: "`+empty+`"
+	writeUserSettings(t, "project_rules: "+strconv.Quote(project)+`
+global_rules: `+strconv.Quote(empty)+`
 fail_closed: true
 explain: "missed"
 format: "json"
-log: "`+logs+`"
-`)
+log: `+strconv.Quote(logs)+"\n")
 
 	res := runCLI(t, claudeBashInput("ls"), "eval")
 	if res.exit != 0 || !strings.Contains(string(res.stdout), "settings rules") {
