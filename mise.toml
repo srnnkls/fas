@@ -4,7 +4,7 @@ cue = "latest"
 "github:srnnkls/git-worktreeinclude" = "0.9.3"
 go = "1.26.2"
 "golangci-lint" = "2.11.4"
-hk = "1.48.0"
+hk = "2.4.0"
 pkl = "0.31.0"
 
 [env]
