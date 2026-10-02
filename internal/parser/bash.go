@@ -320,8 +320,16 @@ func literalWord(w *syntax.Word) (string, bool) {
 		return "", false
 	}
 	// Unquoted tilde and glob patterns depend on the filesystem or environment.
-	for _, part := range w.Parts {
-		if lit, ok := part.(*syntax.Lit); ok && strings.ContainsAny(lit.Value, "~*?[") {
+	// Bash expands a tilde only at the start of a word or after = or :, so
+	// revision syntax like HEAD~1 stays literal.
+	for i, part := range w.Parts {
+		lit, ok := part.(*syntax.Lit)
+		if !ok {
+			continue
+		}
+		if strings.ContainsAny(lit.Value, "*?[") ||
+			(i == 0 && strings.HasPrefix(lit.Value, "~")) ||
+			strings.Contains(lit.Value, "=~") || strings.Contains(lit.Value, ":~") {
 			return "", false
 		}
 	}

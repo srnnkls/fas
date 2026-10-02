@@ -16,6 +16,8 @@ func TestBashLiteralArguments(t *testing.T) {
 		{`printf '%s' "$VALUE" $(pwd) '*.go' *.go`, []any{"%s", nil, nil, "*.go", nil}},
 		{`printf '%s' a\ b 'a'"b" $'a\tb'`, []any{"%s", "a b", "ab", "a\tb"}},
 		{`printf '%s' ~/a /tmp/a`, []any{"%s", nil, "/tmp/a"}},
+		{`git checkout HEAD~1 main~2^ -- f`, []any{"checkout", "HEAD~1", "main~2^", "--", "f"}},
+		{`printf '%s' --dir=~/a PATH=/b:~/c ~user`, []any{"%s", nil, nil, nil}},
 	} {
 		t.Run(tt.command, func(t *testing.T) {
 			got := parser.ParseBash(tt.command)
