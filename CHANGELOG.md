@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.13](https://github.com/srnnkls/fas/compare/v0.1.0-alpha.12...v0.1.0-alpha.13) (2026-10-03)
+
+
+### Features
+
+* **adapter:** add a henia harness for skill preloads ([c361a4f](https://github.com/srnnkls/fas/commit/c361a4fdd7db9defe38cc54f65c4a17043423b26))
+
 ## [0.1.0-alpha.12](https://github.com/srnnkls/fas/compare/v0.1.0-alpha.11...v0.1.0-alpha.12) (2026-10-02)
 
 
