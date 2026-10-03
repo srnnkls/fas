@@ -60,6 +60,10 @@ var policyCoverage = map[string]coverage{
 		deny:  []string{"Blocks tee /etc/sudoers.d/override", "Blocks tee -a /etc/cron.d/task"},
 		allow: "Allows tee ./build.log",
 	},
+	"henia-project-fetch": {
+		deny:  []string{"Blocks curl in a project preload"},
+		allow: "Allows curl in a global preload",
+	},
 	"universe-or-doc-tools": {
 		deny:  []string{"Blocks WebFetch via or() builtin"},
 		allow: "Allows Read (tool_name outside the or() list)",

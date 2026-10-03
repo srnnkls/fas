@@ -16,6 +16,7 @@ const (
 // UpdatedInput is dropped (nil) when Category is Blocking.
 type OutputEnvelope struct {
 	Category          Category
+	RuleID            string
 	UserReason        string
 	AgentReason       string
 	AdditionalContext string

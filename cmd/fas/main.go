@@ -684,7 +684,7 @@ func registerCommonFlags(fs *flag.FlagSet) *commonFlags {
 		globalConfig:  defaultGlobal,
 	}
 	fs.StringVar(&cf.harness, "harness", cf.harness,
-		"vendor harness whose hook protocol to speak (claude, codex, or pi)")
+		"vendor harness whose hook protocol to speak (claude, codex, pi, or henia)")
 	fs.StringVar(&cf.projectConfig, "config", cf.projectConfig,
 		"path to the project rules directory")
 	fs.StringVar(&cf.globalConfig, "global-config", cf.globalConfig,
@@ -814,6 +814,8 @@ func selectAdapter(name string) (adapter.Adapter, bool) {
 		return adapter.Codex{}, true
 	case "pi":
 		return adapter.Pi{}, true
+	case "henia":
+		return adapter.Henia{}, true
 	default:
 		return nil, false
 	}
@@ -822,7 +824,7 @@ func selectAdapter(name string) (adapter.Adapter, bool) {
 // supportedHarnesses returns the registry names in a stable order so error
 // messages stay deterministic.
 func supportedHarnesses() []string {
-	return []string{"claude", "codex", "pi"}
+	return []string{"claude", "codex", "pi", "henia"}
 }
 
 // loadRulesDir wraps config.LoadRules with the "missing dir is empty" policy
@@ -1152,7 +1154,7 @@ Pipeline: adapter.ParseInput -> parser.Preprocess -> EvaluatePhases (global,
 then project) -> synthesis.Synthesize -> adapter.RenderOutput.
 
 Flags:
-  --harness <name>        Vendor harness to speak: claude, codex, or pi (default: claude).
+  --harness <name>        Vendor harness to speak: claude, codex, pi, or henia (default: claude).
   --config <path>         Project rules directory (default: `+defaultProjectRulesDir+`).
   --global-config <path>  User-global rules directory (default: ~/`+defaultGlobalRulesSubpath+`).
   --follow-symlinks       Descend into symlinked rule directories. Without
@@ -1227,7 +1229,7 @@ Settings file:
   the file. Fields: project_rules, global_rules, follow_symlinks,
   fail_closed, explain, format, color, log, log_ttl.
 
-Supported harnesses: claude, codex, pi.
+Supported harnesses: claude, codex, pi, henia.
 `)
 }
 

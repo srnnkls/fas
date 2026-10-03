@@ -52,6 +52,13 @@ package fas
 		...
 	}
 	signals?: {[string]: #SignalResult}
+	henia?: {
+		skill:   string
+		source:  string
+		tier:    "project" | "global"
+		caller?: string
+		...
+	}
 	...
 }
 

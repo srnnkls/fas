@@ -34,6 +34,15 @@ type Input struct {
 	PermissionMode       string                  `json:"permission_mode,omitempty"`
 	Effort               *Effort                 `json:"effort,omitempty"`
 	Signals              map[string]SignalResult `json:"signals,omitempty"`
+	Henia                *Henia                  `json:"henia,omitempty"`
+}
+
+// Henia identifies the skill preload a henia-harness evaluation is about.
+type Henia struct {
+	Skill  string `json:"skill"`
+	Source string `json:"source"`
+	Tier   string `json:"tier"`
+	Caller string `json:"caller,omitempty"`
 }
 
 // Effort is the reasoning-effort level in force when the hook fired.

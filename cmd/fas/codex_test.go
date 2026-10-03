@@ -11,7 +11,7 @@ func TestCodexHarness(t *testing.T) {
 	if !ok || a.Name() != "codex" {
 		t.Fatal("codex adapter not registered")
 	}
-	if !slices.Equal(supportedHarnesses(), []string{"claude", "codex", "pi"}) {
+	if !slices.Equal(supportedHarnesses(), []string{"claude", "codex", "pi", "henia"}) {
 		t.Fatal(supportedHarnesses())
 	}
 	empty := emptyRulesDir(t)
@@ -20,7 +20,7 @@ func TestCodexHarness(t *testing.T) {
 		t.Fatalf("exit=%d stdout=%s stderr=%s", res.exit, res.stdout, res.stderr)
 	}
 	res = runCLI(t, nil, "--help")
-	if res.exit != 0 || !strings.Contains(string(res.stdout), "Supported harnesses: claude, codex, pi.") {
+	if res.exit != 0 || !strings.Contains(string(res.stdout), "Supported harnesses: claude, codex, pi, henia.") {
 		t.Fatalf("help: %s %s", res.stdout, res.stderr)
 	}
 	res = runCLI(t, claudeBashInput("echo hello"), "eval", "--harness", "bogus")
