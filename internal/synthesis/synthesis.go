@@ -212,10 +212,8 @@ func applyGate(out *envelope.OutputEnvelope, gate *config.Action) {
 	}
 	switch gate.Kind {
 	case config.ActionDeny:
-		out.RuleID = gate.RuleID
 		out.UserReason = gate.Reason
 	case config.ActionAsk:
-		out.RuleID = gate.RuleID
 		out.UserReason = joinNonEmpty("\n", gate.Reason, gate.Question)
 	}
 }

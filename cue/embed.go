@@ -16,7 +16,7 @@ import (
 //go:embed schema.cue
 var schemaSource []byte
 
-//go:embed schema.cue catalog/*.cue hook/*.cue tool/*.cue agent/*.cue bash/*.cue path/*.cue escalation/*.cue action/*.cue flag/*.cue henia/*.cue
+//go:embed schema.cue catalog/*.cue hook/*.cue tool/*.cue agent/*.cue bash/*.cue path/*.cue escalation/*.cue action/*.cue flag/*.cue
 var stdlibFS embed.FS
 
 // SchemaSource returns the bytes of the shipped `schema.cue` file. It holds
@@ -29,7 +29,7 @@ func SchemaSource() []byte {
 
 // StdlibFS returns the embedded filesystem containing every CUE source
 // shipped with fas: the core schema.cue plus every sub-package (catalog/,
-// hook/, tool/, agent/, bash/, path/, escalation/, action/, flag/, henia/). Callers
+// hook/, tool/, agent/, bash/, path/, escalation/, action/, flag/). Callers
 // mount it into a `cue/load` overlay so rule files can resolve
 // `import "github.com/srnnkls/fas/cue/<sub>"` without touching disk.
 //
@@ -42,5 +42,5 @@ func StdlibFS() fs.FS {
 // StdlibImportPathPrefix is the canonical import-path prefix each sub-package
 // is reachable under. A rule author writes
 // `import "<StdlibImportPathPrefix>/hook"` (and so on) to pull in the catalog,
-// hook, tool, agent, bash, path, escalation, action, flag, or henia sub-package.
+// hook, tool, agent, bash, path, escalation, action, or flag sub-package.
 const StdlibImportPathPrefix = "github.com/srnnkls/fas/cue"
