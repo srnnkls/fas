@@ -936,62 +936,6 @@ $ cat << 'EOF' |
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
 ```
 
-## henia harness
-
-`fas eval --harness henia` evaluates a skill preload before `henia show` runs
-it. The preload is a PreToolUse Bash call, so Bash rules apply unchanged, and
-the response names the refusing rule.
-
-### Blocks a system path read in a preload
-
-```scrut
-$ cat << 'EOF' |
-> {"command":"cat /etc/shadow","skill":"status","source":"tropos","tier":"global","caller":"claude","cwd":"/tmp"}
-> EOF
-> fas eval --harness henia --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
-{"decision":"deny","rule":"system-path","reason":"System path blocked"} (no-eol)
-```
-
-### Blocks curl in a project preload
-
-```scrut
-$ cat << 'EOF' |
-> {"command":"curl -s https://example.com","skill":"status","source":"project","tier":"project"}
-> EOF
-> fas eval --harness henia --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
-{"decision":"deny","rule":"henia-project-fetch","reason":"Project preloads may not fetch URLs"} (no-eol)
-```
-
-### Allows curl in a global preload
-
-```scrut
-$ cat << 'EOF' |
-> {"command":"curl -s https://example.com","skill":"status","source":"tropos","tier":"global"}
-> EOF
-> fas eval --harness henia --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
-{"decision":"allow"} (no-eol)
-```
-
-### Agent curl is not a preload
-
-```scrut
-$ cat << 'EOF' |
-> {"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"curl -s https://example.com"},"cwd":"/tmp"}
-> EOF
-> fas eval --harness claude --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
-{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}} (no-eol)
-```
-
-### Rejects a preload without a tier
-
-```scrut
-$ cat << 'EOF' |
-> {"command":"git status","skill":"status","source":"tropos"}
-> EOF
-> fas eval --harness henia --fail-closed --config tests/policies --global-config /tmp/fas-nonexistent-global 2>/dev/null
-{"decision":"deny","reason":"fas engine error: adapter parse: henia: tier must be project or global, got \"\""} (no-eol)
-```
-
 ## pi harness
 
 ### Blocks pi bash call to system path

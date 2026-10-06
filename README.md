@@ -210,7 +210,7 @@ Three output formats: `--format=text` (default, ANSI-coloured), `--format=json`
 
 | Flag                 | Env var       | Default                  |
 |----------------------|---------------|--------------------------|
-| `--harness <name>` (`claude`, `codex`, `pi`, `henia`) | — | `claude` |
+| `--harness <name>` (`claude`, `codex`, `pi`) | — | `claude` |
 | `--config <path>`    | —             | `.fas/rules`             |
 | `--global-config <path>` | —         | `~/.config/fas/rules`    |
 | `--follow-symlinks`  | `FAS_FOLLOW_SYMLINKS` | off              |
@@ -327,50 +327,6 @@ Claude's `file_path`.
 
 If `fas` fails (missing binary, rule load error, bad output), the extension
 shows a warning and lets the call through, matching fas's fail-open default.
-
-## Henia preloads
-
-[Henia](https://github.com/srnnkls/henia) asks `fas eval --harness henia`
-before `henia show` runs a skill preload (`` !`git status` ``). fas is an
-optional policy layer there: Henia sandboxes preloads and refuses known
-mutating commands on its own, then consults fas when it is on PATH.
-
-Input is one JSON object:
-
-```json
-{"command": "git status", "skill": "status", "source": "tropos", "tier": "global", "caller": "claude", "cwd": "/repo"}
-```
-
-`tier` is `project` for a project's own `.henia/skills`, `global` for an
-installed source. The preload reaches rules as a PreToolUse Bash call, so
-every Bash rule applies, plus a `henia` object with `skill`, `source`, `tier`,
-and `caller`. The response is `{"decision":"allow"}`,
-`{"decision":"allow","command":"<rewritten>"}` for a silent `modify`, or
-`{"decision":"deny","rule":"<rule_id>","reason":"<reason>"}`. `ask` denies:
-a preload has no one to confirm it.
-
-`cue/henia` matches preloads only, never an agent's own Bash call:
-
-```cue
-import (
-    "github.com/srnnkls/fas/cue/bash"
-    "github.com/srnnkls/fas/cue/henia"
-)
-
-project_preload_fetch: {
-    when: henia.#Project & (bash.#command & {#name: "curl"})
-    then: deny: {
-        rule_id: "henia-project-fetch"
-        reason: "Project preloads may not fetch URLs"
-        severity: "HIGH"
-    }
-}
-```
-
-`henia.#Preload` matches any preload, `henia.#Project` and `henia.#Global` a
-tier, and `henia.#Source & {#source: "tropos"}`,
-`henia.#Skill & {#skill: "status"}`, `henia.#Caller & {#caller: "codex"}` one
-source, skill, or calling harness.
 
 ## Building
 
