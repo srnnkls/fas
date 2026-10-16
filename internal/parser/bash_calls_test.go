@@ -1,6 +1,7 @@
 package parser_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -80,5 +81,44 @@ func TestBash_Calls_CarrySubcommandAndFlags(t *testing.T) {
 	}
 	if !cmp.Equal([]string{"-f"}, c.Flags) {
 		t.Errorf("git call flags = %v, want [-f]", c.Flags)
+	}
+}
+
+func TestBash_Calls_NestedShellScript(t *testing.T) {
+	cases := map[string][]string{
+		`sh -c "rm -rf /tmp/x"`:                   {"/tmp/x"},
+		`bash -lc 'cd /repo && rm -r build'`:      {"build"},
+		`sudo bash -o pipefail -c "rm -rf $HOME"`: {"$HOME"},
+		`zsh -c 'sh -c "rm -f a"'`:                {"a"},
+		`env X=1 bash -ec -- 'rm -rf dist; ls'`:   {"dist"},
+	}
+	for command, want := range cases {
+		got := parser.ParseBash(command)
+		rm, ok := findCall(got.Calls, "rm")
+		if !ok {
+			t.Errorf("%s: calls %+v missing nested rm call", command, got.Calls)
+			continue
+		}
+		if diff := cmp.Diff(want, rm.Targets); diff != "" {
+			t.Errorf("%s: rm targets (-want +got):\n%s", command, diff)
+		}
+	}
+}
+
+func TestBash_Calls_ShellScriptFileIsNotParsed(t *testing.T) {
+	got := parser.ParseBash(`bash rm.sh -c`)
+	if _, ok := findCall(got.Calls, "rm"); ok {
+		t.Errorf("script file operand parsed as inline script: %+v", got.Calls)
+	}
+}
+
+func TestBash_Calls_DeeplyNestedShellScript(t *testing.T) {
+	script := "rm -rf x"
+	for range 10 {
+		script = "sh -c '" + strings.ReplaceAll(script, "'", `'\''`) + "'"
+	}
+	got := parser.ParseBash(script)
+	if _, ok := findCall(got.Calls, "rm"); !ok {
+		t.Errorf("calls %+v missing rm nested 10 levels deep", got.Calls)
 	}
 }

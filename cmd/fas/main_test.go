@@ -431,6 +431,31 @@ func TestRun_BlockingPath_EndToEnd(t *testing.T) {
 	}
 }
 
+func TestRun_UnresolvedNestedScript_Denies(t *testing.T) {
+	cases := map[string]string{
+		`bash -c "$CMD"`:             "deny",
+		`bash -c "$(cat script)"`:    "deny",
+		`sh -c 'rm -rf "x'`:          "deny",
+		`bash -c "ls -la"`:           "allow",
+		`bash -c "rm -rf $HOME/tmp"`: "allow",
+	}
+	for command, want := range cases {
+		res := runCLI(t, claudeBashInput(command),
+			"eval",
+			"--harness", "claude",
+			"--config", emptyRulesDir(t),
+			"--global-config", emptyRulesDir(t),
+		)
+		if res.exit != 0 {
+			t.Fatalf("%s: exit=%d want 0; stderr=%s", command, res.exit, res.stderr)
+		}
+		resp := decodeCC(t, res.stdout)
+		if got := resp.HookSpecificOutput.PermissionDecision; got != want {
+			t.Errorf("%.60s: permissionDecision=%q, want %q\nstdout=%s", command, got, want, res.stdout)
+		}
+	}
+}
+
 func TestRun_AskingPath_EndToEnd(t *testing.T) {
 	projectDir := writeRuleFiles(t, map[string]string{
 		"ask.cue": askOnBashRule,

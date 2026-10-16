@@ -17,6 +17,22 @@ import (
 // returned error, so callers can still consume the partial structural facts
 // extracted from tokens that did parse.
 func ParseBash(command string) Parsed {
+	return parseBash(command, 0)
+}
+
+// maxNestedScripts bounds recursion into `sh -c` scripts.
+const maxNestedScripts = 32
+
+// UnresolvedScript is the attribute listing why a nested shell script could
+// not be fully parsed. Its presence means the parsed facts are incomplete.
+const UnresolvedScript = "unresolved_script"
+
+// nestedShells run their -c operand as a script.
+var nestedShells = map[string]struct{}{
+	"sh": {}, "bash": {}, "zsh": {}, "dash": {}, "ksh": {}, "fish": {},
+}
+
+func parseBash(command string, depth int) Parsed {
 	trimmed := strings.TrimSpace(command)
 	if trimmed == "" {
 		return Parsed{}
@@ -49,14 +65,14 @@ func ParseBash(command string) Parsed {
 		case *syntax.Subshell:
 			p.Attributes["subshell"] = true
 		case *syntax.CallExpr:
-			extractCall(n, &p)
+			extractCall(n, &p, depth)
 		}
 		return true
 	})
 	return p
 }
 
-func extractCall(call *syntax.CallExpr, out *Parsed) {
+func extractCall(call *syntax.CallExpr, out *Parsed, depth int) {
 	type token struct {
 		text     string
 		hasSubst bool
@@ -95,6 +111,11 @@ func extractCall(call *syntax.CallExpr, out *Parsed) {
 	}
 	if len(tokens) == 0 {
 		return
+	}
+	if depth > 0 {
+		if _, ok := literalWord(call.Args[len(call.Args)-len(tokens)]); !ok {
+			appendAttrString(out, UnresolvedScript, "dynamic command: "+tokens[0].text)
+		}
 	}
 
 	name := path.Base(tokens[0].text)
@@ -194,6 +215,86 @@ func extractCall(call *syntax.CallExpr, out *Parsed) {
 		SubcommandArgs: subcommandArgs,
 		ArgumentPairs:  argumentPairs(arguments),
 	})
+
+	if _, ok := nestedShells[name]; ok {
+		script, ok := shellScript(call.Args[len(call.Args)-len(rest):])
+		switch {
+		case !ok:
+		case depth >= maxNestedScripts:
+			appendAttrString(out, UnresolvedScript, fmt.Sprintf("nested deeper than %d shells", maxNestedScripts))
+		default:
+			mergeParsed(out, parseBash(script, depth+1))
+		}
+	}
+}
+
+// shellScript returns the -c operand of a shell invocation's arguments.
+func shellScript(args []*syntax.Word) (string, bool) {
+	inline := false
+	for i := 0; i < len(args); i++ {
+		token := wordString(args[i])
+		switch {
+		case token == "--":
+			if inline && i+1 < len(args) {
+				return scriptText(args[i+1]), true
+			}
+			return "", false
+		case token == "-o" || token == "+o" || token == "-O" || token == "+O":
+			i++
+		case strings.HasPrefix(token, "--"):
+		case len(token) > 1 && (token[0] == '-' || token[0] == '+'):
+			if token[0] == '-' && strings.ContainsRune(token[1:], 'c') {
+				inline = true
+			}
+		default:
+			if inline {
+				return scriptText(args[i]), true
+			}
+			return "", false
+		}
+	}
+	return "", false
+}
+
+// scriptText renders a script word as the shell would see it after quote
+// removal; expansions stay unexpanded for the nested parse.
+func scriptText(w *syntax.Word) string {
+	if value, ok := literalWord(w); ok {
+		return value
+	}
+	var buf bytes.Buffer
+	for _, part := range w.Parts {
+		if dq, ok := part.(*syntax.DblQuoted); ok {
+			for _, inner := range dq.Parts {
+				_ = syntax.NewPrinter().Print(&buf, inner)
+			}
+			continue
+		}
+		_ = syntax.NewPrinter().Print(&buf, part)
+	}
+	return buf.String()
+}
+
+func mergeParsed(out *Parsed, nested Parsed) {
+	out.Actions = append(out.Actions, nested.Actions...)
+	out.Commands = append(out.Commands, nested.Commands...)
+	out.Subcommands = append(out.Subcommands, nested.Subcommands...)
+	out.Targets = append(out.Targets, nested.Targets...)
+	out.Flags = append(out.Flags, nested.Flags...)
+	out.Calls = append(out.Calls, nested.Calls...)
+	for key, value := range nested.Attributes {
+		if key == "parse_error" {
+			appendAttrString(out, UnresolvedScript, fmt.Sprintf("nested script does not parse: %v", value))
+			continue
+		}
+		if values, ok := value.([]string); ok {
+			for _, v := range values {
+				appendAttrString(out, key, v)
+			}
+			continue
+		}
+		out.Attributes[key] = value
+	}
 }
 
 // isKnownSubcommand reports whether `<name> <candidate>` is registered in any
