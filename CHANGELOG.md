@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.15](https://github.com/srnnkls/fas/compare/v0.1.0-alpha.14...v0.1.0-alpha.15) (2026-10-16)
+
+
+### Features
+
+* **cli:** skip project rules whose rule_id a global rule declares ([43d316f](https://github.com/srnnkls/fas/commit/43d316f5ac5e45e054136f3b38d3a678bff63802))
+
 ## [0.1.0-alpha.14](https://github.com/srnnkls/fas/compare/v0.1.0-alpha.13...v0.1.0-alpha.14) (2026-10-06)
 
 
