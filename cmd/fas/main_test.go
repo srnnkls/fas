@@ -2513,21 +2513,9 @@ func TestRun_ExplainCmd_ResolvesFromEitherSide_BothPopulated(t *testing.T) {
 	}
 }
 
-// TestRun_ExplainCmd_AmbiguousRuleID_ProjectWins pins the tie-break: when the
-// same rule_id lives in both global and project sets, the project rule is
-// selected. Matches the two-phase override semantics where project effects
-// override global. Implementer: document this choice.
-//
-// To distinguish which rule ran, both fixtures match the same input (so exit
-// code alone can't tell them apart) but carry distinct reasons. Since T9's
-// stdout is empty on match, we can't probe the reason directly — instead we
-// make the project rule NOT match (swap a field) and assert exit 1 proving
-// project was chosen, while global would have matched.
-func TestRun_ExplainCmd_AmbiguousRuleID_ProjectWins(t *testing.T) {
-	// Project's shared-id rule requires flags.force (never present) → would
-	// NOT match a plain Bash payload. Global's shared-id rule matches any
-	// Bash payload. If project wins, exit 1 (project didn't match). If
-	// global wins, exit 0.
+// The project rule misses a plain Bash payload and the global one matches it,
+// so exit 0 proves the global rule was resolved.
+func TestRun_ExplainCmd_AmbiguousRuleID_GlobalWins(t *testing.T) {
 	projectDir := writeRuleFiles(t, map[string]string{
 		"shared.cue": strings.ReplaceAll(missingKeyRule, `"flags-rule"`, `"shared-id"`),
 	})
@@ -2542,12 +2530,8 @@ func TestRun_ExplainCmd_AmbiguousRuleID_ProjectWins(t *testing.T) {
 		"--global-config", globalDir,
 	)
 
-	if res.exit != 1 {
-		t.Fatalf("exit=%d want 1 (project `shared-id` misses, proving project wins over global); stderr=%s",
-			res.exit, res.stderr)
-	}
-	if len(res.stderr) == 0 {
-		t.Errorf("ambiguous-id project-wins no-match: stderr must carry diagnostic; got empty")
+	if res.exit != 0 {
+		t.Fatalf("exit=%d want 0 (global `shared-id` must win); stderr=%s", res.exit, res.stderr)
 	}
 }
 

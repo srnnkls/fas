@@ -193,7 +193,9 @@ stdin JSON
 
 Two rule sets layer: `~/.config/fas/rules/*.cue` (global, evaluated first) and
 `.fas/rules/*.cue` (project). Blocking gates short-circuit; non-blocking
-effects (inject, modify) accumulate across layers.
+effects (inject, modify) accumulate across layers. A project rule whose
+`rule_id` a global rule already declares is skipped (global wins); `fas vet`
+notes each shadowed id.
 
 ## Diagnostics
 

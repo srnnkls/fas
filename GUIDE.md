@@ -482,6 +482,22 @@ $ echo '{"hook_event_name":"PreToolUse","tool_name":"Bash",
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"git add --force is blocked by the global policy layer","additionalContext":"Bash call audited by the global policy layer."}}
 ```
 
+A `rule_id` names one rule across both layers. When a project rule declares a
+`rule_id` that a global rule already declares, the project rule is skipped and
+the global one wins, so a repository cannot disable a global rule by reusing its
+id. This also keeps a rule package that is both deployed globally and linked
+into `.fas/rules/` from firing twice. `fas eval`, `fas vet`, and `fas explain`
+all use the de-duplicated set; `fas vet` counts only the kept rules and notes
+each shadowed id:
+
+```bash
+$ fas vet
+ok: 2 rules loaded (global: 1, project: 1)
+  global:  audit-bash
+  project: no-rm-home
+note: project rule audit-bash shadowed by global
+```
+
 ## Organizing rules into packages
 
 A rules directory loads as CUE *packages*, recursively. Each directory of `.cue`

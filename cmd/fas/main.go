@@ -29,6 +29,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"cuelang.org/go/cue"
@@ -136,6 +137,7 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 		errorln(stderr, err)
 		return exitWithLog(rec, 1)
 	}
+	projectRules, _ = shadowProjectRules(globalRules, projectRules)
 	rec.SetRules(ruleIDs(globalRules), ruleIDs(projectRules))
 
 	if err := checkAdapterCapabilities(ad, globalRules, projectRules); err != nil {
@@ -254,10 +256,9 @@ func runExplain(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 		errorln(stderr, err)
 		return 2
 	}
+	projectRules, _ = shadowProjectRules(globalRules, projectRules)
 
-	// Project-wins tie-break: project rules are searched first so a rule_id
-	// present in both sets resolves to the project definition.
-	resolved, ok := findRuleByID(ruleID, projectRules, globalRules)
+	resolved, ok := findRuleByID(ruleID, globalRules, projectRules)
 	if !ok {
 		errorf(stderr, "rule_id %q not found in project or global rules\n", ruleID)
 		return 2
@@ -359,8 +360,7 @@ func extractCodeFlag(args []string) (code string, found bool, valid bool) {
 }
 
 // findRuleByID walks ruleSets in order and returns the first rule whose
-// `then.rule_id` equals id. Callers supply project rules before global rules
-// to implement the project-wins tie-break for ambiguous ids.
+// `then.rule_id` equals id.
 func findRuleByID(id string, ruleSets ...[]config.Rule) (config.Rule, bool) {
 	for _, rules := range ruleSets {
 		for _, r := range rules {
@@ -370,6 +370,26 @@ func findRuleByID(id string, ruleSets ...[]config.Rule) (config.Rule, bool) {
 		}
 	}
 	return config.Rule{}, false
+}
+
+// shadowProjectRules drops every project rule whose rule_id a global rule
+// already declares. Global wins so a project cannot disable a global rule by reusing its id.
+func shadowProjectRules(globalRules, projectRules []config.Rule) (kept []config.Rule, shadowed []string) {
+	globalIDs := make(map[string]bool, len(globalRules))
+	for _, id := range ruleIDs(globalRules) {
+		globalIDs[id] = true
+	}
+	kept = make([]config.Rule, 0, len(projectRules))
+	for _, r := range projectRules {
+		if r.Then != nil && globalIDs[r.Then.RuleID] {
+			if !slices.Contains(shadowed, r.Then.RuleID) {
+				shadowed = append(shadowed, r.Then.RuleID)
+			}
+			continue
+		}
+		kept = append(kept, r)
+	}
+	return kept, shadowed
 }
 
 // errorf writes a formatted diagnostic to w, discarding the write error.
@@ -1151,6 +1171,9 @@ configured rule sets, and emit a vendor-native response on stdout.
 Pipeline: adapter.ParseInput -> parser.Preprocess -> EvaluatePhases (global,
 then project) -> synthesis.Synthesize -> adapter.RenderOutput.
 
+A project rule whose rule_id is also declared by a global rule is skipped;
+the global rule wins. eval, vet, and explain all use the de-duplicated set.
+
 Flags:
   --harness <name>        Vendor harness to speak: claude, codex, or pi (default: claude).
   --config <path>         Project rules directory (default: `+defaultProjectRulesDir+`).
@@ -1177,12 +1200,13 @@ Subcommands:
                           Loads both rule sets, runs all checks (package
                           clauses, duplicate names, structural lint, schema
                           validation, adapter capabilities), and prints a
-                          summary on success. No stdin is read. Exit 0 on
-                          valid, 1 on validation error, 2 on usage error.
+                          summary on success, with a note for each
+                          project rule shadowed by a global rule_id. No
+                          stdin is read. Exit 0 on valid, 1 on validation
+                          error, 2 on usage error.
   explain <rule_id>       Run a single rule (resolved by rule_id across
-                          project+global sets; project wins on conflict)
-                          against stdin. The rule_id must precede any
-                          flags. Implicit --explain=missed; stdin carries
+                          global+project sets) against stdin. The rule_id
+                          must precede any flags. Implicit --explain=missed; stdin carries
                           the vendor-native payload. Exit 0 on match, 1
                           on no-match (diagnostic on stderr), 2 on engine
                           error.
@@ -1280,13 +1304,14 @@ func runVet(stdout, stderr io.Writer, args []string) int {
 		return 1
 	}
 
+	projectRules, shadowedIDs := shadowProjectRules(globalRules, projectRules)
 	globalIDs := ruleIDs(globalRules)
 	projectIDs := ruleIDs(projectRules)
 	total := len(globalIDs) + len(projectIDs)
 
 	switch resolvedFormat {
 	case formatJSON:
-		renderVetSummaryJSON(stdout, globalIDs, projectIDs)
+		renderVetSummaryJSON(stdout, globalIDs, projectIDs, shadowedIDs)
 	case formatSARIF:
 		_, _ = stdout.Write(diag.RenderSARIF(nil))
 	default:
@@ -1297,6 +1322,9 @@ func runVet(stdout, stderr io.Writer, args []string) int {
 		}
 		for _, id := range projectIDs {
 			_, _ = fmt.Fprintf(stdout, "  project: %s\n", id)
+		}
+		for _, id := range shadowedIDs {
+			_, _ = fmt.Fprintf(stdout, "note: project rule %s shadowed by global\n", id)
 		}
 	}
 	return 0
@@ -1342,24 +1370,29 @@ func collectDiagErrors(err error, dst *[]diag.Diagnostic) {
 }
 
 type vetSummary struct {
-	Status       string   `json:"status"`
-	GlobalRules  []string `json:"global_rules"`
-	ProjectRules []string `json:"project_rules"`
-	Total        int      `json:"total"`
+	Status        string   `json:"status"`
+	GlobalRules   []string `json:"global_rules"`
+	ProjectRules  []string `json:"project_rules"`
+	ShadowedRules []string `json:"shadowed_rules"`
+	Total         int      `json:"total"`
 }
 
-func renderVetSummaryJSON(w io.Writer, globalIDs, projectIDs []string) {
+func renderVetSummaryJSON(w io.Writer, globalIDs, projectIDs, shadowedIDs []string) {
 	if globalIDs == nil {
 		globalIDs = []string{}
 	}
 	if projectIDs == nil {
 		projectIDs = []string{}
 	}
+	if shadowedIDs == nil {
+		shadowedIDs = []string{}
+	}
 	data, _ := json.Marshal(vetSummary{
-		Status:       "ok",
-		GlobalRules:  globalIDs,
-		ProjectRules: projectIDs,
-		Total:        len(globalIDs) + len(projectIDs),
+		Status:        "ok",
+		GlobalRules:   globalIDs,
+		ProjectRules:  projectIDs,
+		ShadowedRules: shadowedIDs,
+		Total:         len(globalIDs) + len(projectIDs),
 	})
 	data = append(data, '\n')
 	_, _ = w.Write(data)
