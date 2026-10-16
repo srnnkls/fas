@@ -1,6 +1,7 @@
 package parser_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -108,5 +109,16 @@ func TestBash_Calls_ShellScriptFileIsNotParsed(t *testing.T) {
 	got := parser.ParseBash(`bash rm.sh -c`)
 	if _, ok := findCall(got.Calls, "rm"); ok {
 		t.Errorf("script file operand parsed as inline script: %+v", got.Calls)
+	}
+}
+
+func TestBash_Calls_DeeplyNestedShellScript(t *testing.T) {
+	script := "rm -rf x"
+	for range 10 {
+		script = "sh -c '" + strings.ReplaceAll(script, "'", `'\''`) + "'"
+	}
+	got := parser.ParseBash(script)
+	if _, ok := findCall(got.Calls, "rm"); !ok {
+		t.Errorf("calls %+v missing rm nested 10 levels deep", got.Calls)
 	}
 }

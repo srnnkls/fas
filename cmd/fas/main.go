@@ -902,8 +902,37 @@ func evaluate(
 	}
 
 	out := synthesis.Synthesize(matches, defaultSizeBudget)
+	denyUnresolved(&out, input)
 	resp, err := ad.RenderOutput(out, hookEventName)
 	return resp, matches, diags, input, err
+}
+
+// denyUnresolved blocks a call whose nested shell script the parser could not
+// resolve: rules never saw its commands, so no rule outcome may allow it.
+func denyUnresolved(out *envelope.OutputEnvelope, input *envelope.Input) {
+	if out.Category != envelope.Allowing || len(input.ToolInput) == 0 {
+		return
+	}
+	var toolInput struct {
+		Parsed struct {
+			Attributes map[string]any `json:"attributes"`
+		} `json:"parsed"`
+	}
+	if err := json.Unmarshal(input.ToolInput, &toolInput); err != nil {
+		return
+	}
+	reasons, _ := toolInput.Parsed.Attributes[parser.UnresolvedScript].([]any)
+	if len(reasons) == 0 {
+		return
+	}
+	text := make([]string, len(reasons))
+	for i, r := range reasons {
+		text[i] = fmt.Sprint(r)
+	}
+	reason := "Unresolved nested shell script (" + strings.Join(text, "; ") + "): run its commands directly."
+	out.Category = envelope.Blocking
+	out.UserReason = reason
+	out.UpdatedInput = nil
 }
 
 // prepareInput runs the adapter parse and preprocessor. It returns the

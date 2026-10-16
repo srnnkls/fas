@@ -21,7 +21,11 @@ func ParseBash(command string) Parsed {
 }
 
 // maxNestedScripts bounds recursion into `sh -c` scripts.
-const maxNestedScripts = 4
+const maxNestedScripts = 32
+
+// UnresolvedScript is the attribute listing why a nested shell script could
+// not be fully parsed. Its presence means the parsed facts are incomplete.
+const UnresolvedScript = "unresolved_script"
 
 // nestedShells run their -c operand as a script.
 var nestedShells = map[string]struct{}{
@@ -107,6 +111,11 @@ func extractCall(call *syntax.CallExpr, out *Parsed, depth int) {
 	}
 	if len(tokens) == 0 {
 		return
+	}
+	if depth > 0 {
+		if _, ok := literalWord(call.Args[len(call.Args)-len(tokens)]); !ok {
+			appendAttrString(out, UnresolvedScript, "dynamic command: "+tokens[0].text)
+		}
 	}
 
 	name := path.Base(tokens[0].text)
@@ -207,8 +216,13 @@ func extractCall(call *syntax.CallExpr, out *Parsed, depth int) {
 		ArgumentPairs:  argumentPairs(arguments),
 	})
 
-	if _, ok := nestedShells[name]; ok && depth < maxNestedScripts {
-		if script, ok := shellScript(call.Args[len(call.Args)-len(rest):]); ok {
+	if _, ok := nestedShells[name]; ok {
+		script, ok := shellScript(call.Args[len(call.Args)-len(rest):])
+		switch {
+		case !ok:
+		case depth >= maxNestedScripts:
+			appendAttrString(out, UnresolvedScript, fmt.Sprintf("nested deeper than %d shells", maxNestedScripts))
+		default:
 			mergeParsed(out, parseBash(script, depth+1))
 		}
 	}
@@ -269,6 +283,10 @@ func mergeParsed(out *Parsed, nested Parsed) {
 	out.Flags = append(out.Flags, nested.Flags...)
 	out.Calls = append(out.Calls, nested.Calls...)
 	for key, value := range nested.Attributes {
+		if key == "parse_error" {
+			appendAttrString(out, UnresolvedScript, fmt.Sprintf("nested script does not parse: %v", value))
+			continue
+		}
 		if values, ok := value.([]string); ok {
 			for _, v := range values {
 				appendAttrString(out, key, v)
